@@ -35,46 +35,48 @@ function getDb() {
   return admin.firestore();
 }
 
-// --- Discord Bot REST API (for editing/posting in channels) ---
+// --- Discord Bot REST API (edit existing embed with context) ---
 async function postContextToDiscord(issue: Record<string, unknown>, issueId: string, context: string, author: string) {
   const botToken = process.env.DISCORD_BOT_TOKEN;
   if (!botToken) return;
 
-  // Determine the channel and message to reply to
+  // Determine channel and message to edit (works for both pending and approved issues)
   const channelId = (issue.triageChannelId as string) || (issue.pendingChannelId as string);
-  const replyToMessageId = (issue.triageMessageId as string) || (issue.pendingReplyMessageId as string);
-  if (!channelId) return;
+  const messageId = (issue.triageMessageId as string) || (issue.pendingReplyMessageId as string);
+  if (!channelId || !messageId) return;
 
-  const statusLabel = issue.status === "pending" ? "Pending" : "Open";
-  const embed = {
-    color: 0x5865f2,
-    title: "💬 Context Added via MCP",
-    description: (context as string).slice(0, 4096),
-    fields: [
-      { name: "Issue", value: `${issue.summary || "Untitled"} (\`${issueId}\`)`, inline: true },
-      { name: "Status", value: statusLabel, inline: true },
-      { name: "Added by", value: author, inline: true },
-    ],
-    footer: { text: `Issue ID: ${issueId} | via Pokedex MCP` },
-    timestamp: new Date().toISOString(),
+  const headers = {
+    Authorization: `Bot ${botToken}`,
+    "Content-Type": "application/json",
   };
 
-  const payload: Record<string, unknown> = { embeds: [embed] };
-  if (replyToMessageId) {
-    payload.message_reference = { message_id: replyToMessageId, fail_if_not_exists: false };
-  }
-
   try {
-    await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bot ${botToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
+    // Fetch the existing message to get its current embeds
+    const getRes = await fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${messageId}`, { headers });
+    if (!getRes.ok) return;
+
+    const msg = await getRes.json() as { embeds?: Array<Record<string, unknown>> };
+    const embeds = msg.embeds || [];
+    if (embeds.length === 0) return;
+
+    // Update the first embed — add/replace the context field
+    const embed = embeds[0];
+    const fields = (embed.fields as Array<{ name: string; value: string; inline?: boolean }>) || [];
+
+    // Remove any existing "💬 Context Added" field so we replace it with the latest
+    const filtered = fields.filter((f: { name: string }) => !f.name.startsWith("💬"));
+    filtered.push({ name: "💬 Context Added", value: `**${author}**: ${context.slice(0, 240)}` });
+    embed.fields = filtered;
+    embed.timestamp = new Date().toISOString();
+
+    // PATCH the message with updated embed
+    await fetch(`https://discord.com/api/v10/channels/${channelId}/messages/${messageId}`, {
+      method: "PATCH",
+      headers,
+      body: JSON.stringify({ embeds: [embed] }),
     });
   } catch (err) {
-    console.error("Discord context notification failed:", err);
+    console.error("Discord context embed edit failed:", err);
   }
 }
 
