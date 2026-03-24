@@ -2,6 +2,22 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 const CHANGELOG = [
   {
+    version: '1.4.1',
+    date: '2026-03-23',
+    changes: [
+      'Triage embeds now update live when users add context in threads',
+      'Additional context from threads is shown in the triage embed',
+    ],
+  },
+  {
+    version: '1.4.0',
+    date: '2026-03-23',
+    changes: [
+      'Added `/feedback` command — AI-powered analysis of forum feedback, grouped by theme and priority',
+      'Feedback supports public/ephemeral visibility toggle',
+    ],
+  },
+  {
     version: '1.3.0',
     date: '2026-03-23',
     changes: [

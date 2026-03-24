@@ -37,6 +37,7 @@ async function execute(interaction) {
           '`/config set <key> <value>` — Change a setting (admin only)',
           '`/config get <key>` — View a specific setting',
           '`/config reset <key>` — Reset a setting to default (admin only)',
+          '`/feedback` — Organize and summarize feedback forum posts',
         ].join('\n'),
       },
       {

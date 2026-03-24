@@ -9,6 +9,7 @@ const { handleThreadMessage } = require('./triggers/thread');
 const configCommand = require('./commands/config');
 const helpCommand = require('./commands/help');
 const changelogCommand = require('./commands/changelog');
+const feedbackCommand = require('./commands/feedback');
 
 const client = new Client({
   intents: [
@@ -25,7 +26,7 @@ async function registerCommands() {
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   await rest.put(
     Routes.applicationGuildCommands(process.env.DISCORD_APP_ID, process.env.DISCORD_GUILD_ID),
-    { body: [configCommand.data.toJSON(), helpCommand.data.toJSON(), changelogCommand.data.toJSON()] },
+    { body: [configCommand.data.toJSON(), helpCommand.data.toJSON(), changelogCommand.data.toJSON(), feedbackCommand.data.toJSON()] },
   );
   console.log('Slash commands registered.');
 }
@@ -89,7 +90,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
 // Handle slash commands
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
-  const commands = { config: configCommand, help: helpCommand, changelog: changelogCommand };
+  const commands = { config: configCommand, help: helpCommand, changelog: changelogCommand, feedback: feedbackCommand };
   const command = commands[interaction.commandName];
   if (!command) return;
 

@@ -110,4 +110,4 @@ function startDigestScheduler(guild) {
   }, { timezone: 'UTC' });
 }
 
-module.exports = { postIssueEmbed, startDigestScheduler, findTriageChannel };
+module.exports = { postIssueEmbed, startDigestScheduler, findTriageChannel, buildIssueEmbed };

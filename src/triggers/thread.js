@@ -63,8 +63,8 @@ async function handleThreadMessage(message) {
       const priorityChanged = newClassification.priority !== updatedIssue.priority;
       const categoryChanged = newClassification.category !== updatedIssue.category;
 
-      // Update the triage embed if it exists and something changed
-      if (updatedIssue.triageMessageId && (priorityChanged || categoryChanged)) {
+      // Always update the triage embed with new context
+      if (updatedIssue.triageMessageId) {
         const triageChannelName = getConfig('triage_channel') || 'eng-triage';
         const guild = message.guild;
         const triageChannel = guild.channels.cache.find(
@@ -75,11 +75,23 @@ async function handleThreadMessage(message) {
           try {
             const triageMsg = await triageChannel.messages.fetch(updatedIssue.triageMessageId);
             const updatedEmbed = triage.buildIssueEmbed(
-              { ...updatedIssue, ...newClassification, text: fullContext },
+              { ...updatedIssue, ...newClassification, text: updatedIssue.text },
               updatedIssue.id
             );
-            // Add an "Updated" field
-            updatedEmbed.addFields({ name: '🔄 Updated', value: 'Reclassified with additional context from reporter' });
+
+            // Show additional context from the thread
+            const contextSummary = threadContext.map((c, i) => `${i + 1}. ${c.text.slice(0, 150)}`).join('\n');
+            if (contextSummary) {
+              updatedEmbed.addFields({ name: '💬 Additional Context', value: contextSummary.slice(0, 1024) });
+            }
+
+            if (priorityChanged || categoryChanged) {
+              updatedEmbed.addFields({ name: '🔄 Reclassified', value: 'Updated with additional context from reporter' });
+            } else {
+              updatedEmbed.addFields({ name: '🔄 Updated', value: 'New context added by reporter' });
+            }
+
+            updatedEmbed.setTimestamp();
             await triageMsg.edit({ embeds: [updatedEmbed] });
           } catch {
             // Triage message may have been deleted
