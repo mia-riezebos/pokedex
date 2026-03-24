@@ -1,5 +1,6 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 const admin = require('firebase-admin');
+const { getConfig } = require('../config/config');
 
 // XP cooldown — 1 minute between XP gains per user
 const XP_COOLDOWN = 60_000;
@@ -183,8 +184,9 @@ async function awardXP(message) {
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   }, { merge: true });
 
-  // Announce level up
-  if (newLevel > oldLevel) {
+  // Announce level up (respects level_announce config)
+  const announce = getConfig('level_announce');
+  if (newLevel > oldLevel && (announce === true || announce === 'true')) {
     const rank = getRankTitle(newLevel);
     const embed = new EmbedBuilder()
       .setColor(0xffd700)

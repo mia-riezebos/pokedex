@@ -2,6 +2,13 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.0.3',
+    date: '2026-03-24',
+    changes: [
+      'Added `level_announce` config option — use `/config set level_announce false` to disable level-up messages in chat',
+    ],
+  },
+  {
     version: '2.0.2',
     date: '2026-03-24',
     changes: [
