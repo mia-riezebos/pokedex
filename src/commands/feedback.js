@@ -1,6 +1,17 @@
 const { SlashCommandBuilder, EmbedBuilder, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { getConfig } = require('../config/config');
 const { findTriageChannel } = require('../services/triage');
+const firestore = require('../services/firestore');
+
+function buildFeedbackThemeButtonsWithId(issueId) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`triage_ack_${issueId}`).setLabel('Acknowledged').setEmoji('👀').setStyle(ButtonStyle.Primary),
+    new ButtonBuilder().setCustomId(`triage_fix_${issueId}`).setLabel('Fixed').setEmoji('✅').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`triage_wontfix_${issueId}`).setLabel("Won't Fix").setEmoji('🚫').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`triage_escalate_${issueId}`).setLabel('Escalate').setEmoji('🔺').setStyle(ButtonStyle.Danger),
+    new ButtonBuilder().setCustomId(`triage_delete_${issueId}`).setLabel('Delete').setEmoji('🗑️').setStyle(ButtonStyle.Danger),
+  );
+}
 
 function buildFeedbackThemeButtons(themeIndex) {
   return new ActionRowBuilder().addComponents(
@@ -218,15 +229,40 @@ async function execute(interaction) {
     return interaction.editReply('Failed to analyze feedback. Try again later.');
   }
 
-  const triageChannel = findTriageChannel(guild);
-  if (triageChannel) {
-    await postToTriage(triageChannel, analysis, feedbackChannel, feedbackData.length, interaction.user.username);
+  // Save each theme as an issue in Firestore
+  const savedIssueIds = [];
+  for (const theme of (analysis.themes || [])) {
+    try {
+      const issueData = {
+        messageId: `feedback-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        guildId: guild.id,
+        channelId: feedbackChannel.id,
+        reporterId: interaction.user.id,
+        reporterName: interaction.user.username,
+        text: `[Feedback Theme] ${theme.description || ''}\n\nUser quotes: ${(theme.user_quotes || []).join(' | ')}\n\nSuggested action: ${theme.suggested_action || 'None'}`,
+        priority: theme.priority || 'medium',
+        category: theme.category || 'feature_request',
+        summary: theme.name || 'Feedback theme',
+        reasoning: theme.priority_reasoning || `From /feedback analysis of #${feedbackChannel.name}`,
+        source: 'feedback',
+      };
+      const issueId = await firestore.saveIssue(issueData);
+      savedIssueIds.push(issueId);
+    } catch (err) {
+      console.error('Failed to save feedback theme to Firestore:', err.message);
+      savedIssueIds.push(null);
+    }
   }
 
-  await sendAnalysisReply(interaction, analysis, feedbackChannel, feedbackData.length, !!triageChannel);
+  const triageChannel = findTriageChannel(guild);
+  if (triageChannel) {
+    await postToTriage(triageChannel, analysis, feedbackChannel, feedbackData.length, interaction.user.username, savedIssueIds);
+  }
+
+  await sendAnalysisReply(interaction, analysis, feedbackChannel, feedbackData.length, !!triageChannel, savedIssueIds.filter(Boolean).length);
 }
 
-async function postToTriage(triageChannel, analysis, sourceChannel, threadCount, requestedBy) {
+async function postToTriage(triageChannel, analysis, sourceChannel, threadCount, requestedBy, savedIssueIds = []) {
   const PRIORITY_COLORS = { critical: 0xff0000, high: 0xff8c00, medium: 0xffd700, low: 0x00cc00 };
   const PRIORITY_EMOJI = { critical: '🔴', high: '🟠', medium: '🟡', low: '🟢' };
   const OWNER_EMOJI = { backend: '⚙️', frontend: '🖥️', mobile: '📱', infra: '🏗️', design: '🎨', product: '📋' };
@@ -353,10 +389,18 @@ async function postToTriage(triageChannel, analysis, sourceChannel, threadCount,
     }
 
     // Related posts count
-    embed.setFooter({ text: `Related posts: ${theme.posts?.length || 0} | Source: #${sourceChannel.name}` });
+    const issueId = savedIssueIds[i];
+    embed.setFooter({ text: `${issueId ? `Issue ID: ${issueId} | ` : ''}Related posts: ${theme.posts?.length || 0} | Source: #${sourceChannel.name}` });
 
-    const buttons = buildFeedbackThemeButtons(i);
-    await triageChannel.send({ embeds: [embed], components: [buttons] });
+    // Use real issue ID for buttons if saved, otherwise use index
+    const buttonId = issueId || `fb_${i}`;
+    const buttons = issueId ? buildFeedbackThemeButtonsWithId(buttonId) : buildFeedbackThemeButtons(i);
+    const msg = await triageChannel.send({ embeds: [embed], components: [buttons] });
+
+    // Update Firestore with triage message ID
+    if (issueId && msg) {
+      try { await firestore.updateIssueTriageMessageId(issueId, msg.id); } catch {}
+    }
   }
 
   // === SUMMARY FOOTER ===
@@ -377,7 +421,7 @@ async function postToTriage(triageChannel, analysis, sourceChannel, threadCount,
   await triageChannel.send({ embeds: [footerEmbed] });
 }
 
-async function sendAnalysisReply(interaction, analysis, channel, threadCount, postedToTriage) {
+async function sendAnalysisReply(interaction, analysis, channel, threadCount, postedToTriage, savedCount = 0) {
   const SENTIMENT_EMOJI = { positive: '😊', mixed: '😐', negative: '😟' };
 
   const embed = new EmbedBuilder()
@@ -405,7 +449,7 @@ async function sendAnalysisReply(interaction, analysis, channel, threadCount, po
   }
 
   if (postedToTriage) {
-    embed.setFooter({ text: 'Detailed report posted to #eng-triage with full breakdown per theme' });
+    embed.setFooter({ text: `Detailed report posted to #eng-triage | ${savedCount} themes saved to dashboard` });
   } else {
     embed.setFooter({ text: 'Warning: eng-triage channel not found — report not posted' });
   }
