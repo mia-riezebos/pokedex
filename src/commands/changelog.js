@@ -2,6 +2,17 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 const CHANGELOG = [
   {
+    version: '1.6.0',
+    date: '2026-03-23',
+    changes: [
+      '`/feedback` triage output is now highly detailed — includes priority reasoning, user quotes, affected areas, reproducibility, suggested owners, dependencies, workarounds, and specific engineering actions',
+      'AI prompt upgraded for poke.com-specific analysis with critical/high/medium/low priority levels',
+      'Added priority breakdown summary at end of triage report',
+      'Quick wins and risk assessment sections added to triage output',
+      'Fetches up to 10 messages per thread for better context',
+    ],
+  },
+  {
     version: '1.5.1',
     date: '2026-03-23',
     changes: [
