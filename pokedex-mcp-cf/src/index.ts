@@ -46,6 +46,54 @@ function rateLimitResponse(resetIn: number): Response {
   );
 }
 
+// === Spam / Quality Filter ===
+
+interface FilterResult {
+  pass: boolean;
+  reason?: string;
+}
+
+function filterIssue(title: string, description: string): FilterResult {
+  const combined = `${title} ${description}`.toLowerCase();
+
+  // 1. Too short — not actionable
+  if (title.length < 5) return { pass: false, reason: "Title too short. Please provide a clear summary (at least 5 characters)." };
+  if (description.length < 15) return { pass: false, reason: "Description too short. Please include enough detail for engineers to understand the issue (at least 15 characters)." };
+
+  // 2. Gibberish / keyboard spam detection
+  const gibberishPattern = /^[a-z]{1,3}(\s[a-z]{1,3}){0,2}$|(.)\2{4,}|^[^a-zA-Z]*$/;
+  if (gibberishPattern.test(title.trim())) return { pass: false, reason: "Title appears to be gibberish. Please describe the actual issue." };
+
+  // 3. Repetitive characters
+  if (/(.)\1{5,}/.test(combined)) return { pass: false, reason: "Report contains excessive repeated characters." };
+
+  // 4. Just greetings / not an issue
+  const greetings = ["hello", "hi", "hey", "sup", "yo", "test", "testing", "asdf", "qwerty", "foo", "bar", "baz", "lol", "lmao", "bruh"];
+  const titleWords = title.toLowerCase().trim().split(/\s+/);
+  if (titleWords.length <= 2 && greetings.includes(titleWords[0])) return { pass: false, reason: "This doesn't appear to be a bug report. Please describe what went wrong." };
+
+  // 5. All caps rage (likely not actionable)
+  const uppercaseRatio = (combined.match(/[A-Z]/g) || []).length / Math.max(combined.length, 1);
+  if (combined.length > 20 && uppercaseRatio > 0.7) return { pass: false, reason: "Please avoid excessive caps. Describe the issue clearly so engineers can help." };
+
+  // 6. URL spam — multiple links in short text
+  const urlCount = (combined.match(/https?:\/\//g) || []).length;
+  if (urlCount > 3 && combined.length < 200) return { pass: false, reason: "Report contains too many links relative to its content." };
+
+  // 7. Duplicate word spam ("bug bug bug bug")
+  const words = combined.split(/\s+/);
+  if (words.length > 3) {
+    const unique = new Set(words);
+    if (unique.size / words.length < 0.3) return { pass: false, reason: "Report contains too many repeated words." };
+  }
+
+  // 8. Profanity / abuse filter (basic)
+  const abusePatterns = /\b(fuck\s*you|kill\s*yourself|kys|stfu|die|hack|ddos|dox)\b/i;
+  if (abusePatterns.test(combined)) return { pass: false, reason: "Report contains inappropriate content. Please be respectful." };
+
+  return { pass: true };
+}
+
 // === JWT / Firestore Auth ===
 
 async function createJWT(env: Env): Promise<string> {
@@ -421,6 +469,11 @@ export default {
 
         try {
           if (params.name === "pokedex_report_bug") {
+            // Spam/quality filter
+            const filter = filterIssue(args.title as string, args.description as string);
+            if (!filter.pass) {
+              return Response.json({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: JSON.stringify({ error: "rejected", reason: filter.reason }, null, 2) }] } });
+            }
             const data: Record<string, unknown> = {
               messageId: `mcp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
               guildId: env.DISCORD_GUILD_ID || "mcp", channelId: "mcp",
@@ -437,6 +490,10 @@ export default {
           }
 
           if (params.name === "pokedex_suggest_feature") {
+            const filter = filterIssue(args.title as string, args.description as string);
+            if (!filter.pass) {
+              return Response.json({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: JSON.stringify({ error: "rejected", reason: filter.reason }, null, 2) }] } });
+            }
             const data: Record<string, unknown> = {
               messageId: `mcp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
               guildId: env.DISCORD_GUILD_ID || "mcp", channelId: "mcp",
