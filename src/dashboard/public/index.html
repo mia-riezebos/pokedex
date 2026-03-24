@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pokedex — Issue Dashboard</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #c9d1d9; min-height: 100vh; }
+    a { color: #58a6ff; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .header { background: #161b22; border-bottom: 1px solid #30363d; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; }
+    .header h1 { font-size: 20px; color: #f0f6fc; }
+    .header h1 span { color: #ffd700; }
+    .header .refresh { background: #21262d; border: 1px solid #30363d; color: #c9d1d9; padding: 6px 14px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+    .header .refresh:hover { background: #30363d; }
+
+    .stats-bar { display: flex; gap: 16px; padding: 16px 24px; flex-wrap: wrap; }
+    .stat-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 16px 20px; flex: 1; min-width: 140px; }
+    .stat-card .label { font-size: 12px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; }
+    .stat-card .value { font-size: 28px; font-weight: 700; color: #f0f6fc; margin-top: 4px; }
+    .stat-card.critical .value { color: #ff4444; }
+    .stat-card.high .value { color: #ff8c00; }
+    .stat-card.medium .value { color: #ffd700; }
+    .stat-card.low .value { color: #00cc00; }
+
+    .controls { padding: 12px 24px; display: flex; gap: 10px; flex-wrap: wrap; }
+    .controls select, .controls input { background: #161b22; border: 1px solid #30363d; color: #c9d1d9; padding: 8px 12px; border-radius: 6px; font-size: 13px; }
+    .controls input { flex: 1; min-width: 200px; }
+
+    .issues { padding: 0 24px 24px; }
+    .issue-table { width: 100%; border-collapse: collapse; }
+    .issue-table th { text-align: left; padding: 10px 12px; font-size: 12px; color: #8b949e; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #30363d; }
+    .issue-table td { padding: 12px; border-bottom: 1px solid #21262d; font-size: 14px; vertical-align: top; }
+    .issue-table tr:hover { background: #161b22; }
+
+    .priority-badge { padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+    .priority-badge.critical { background: rgba(255,68,68,0.15); color: #ff4444; }
+    .priority-badge.high { background: rgba(255,140,0,0.15); color: #ff8c00; }
+    .priority-badge.medium { background: rgba(255,215,0,0.15); color: #ffd700; }
+    .priority-badge.low { background: rgba(0,204,0,0.15); color: #00cc00; }
+    .priority-badge.unclassified { background: rgba(128,128,128,0.15); color: #808080; }
+
+    .category-tag { background: #21262d; padding: 2px 8px; border-radius: 4px; font-size: 11px; color: #8b949e; }
+
+    .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+    .status-dot.open { background: #3fb950; }
+    .status-dot.closed, .status-dot.fixed { background: #8b949e; }
+    .status-dot.acknowledged { background: #58a6ff; }
+    .status-dot.escalated { background: #ff4444; }
+
+    .issue-summary { color: #f0f6fc; font-weight: 500; }
+    .issue-meta { color: #8b949e; font-size: 12px; margin-top: 4px; }
+    .reporter { color: #58a6ff; }
+
+    .empty { text-align: center; padding: 60px; color: #8b949e; }
+    .empty .icon { font-size: 48px; margin-bottom: 12px; }
+
+    .loading { text-align: center; padding: 40px; color: #8b949e; }
+
+    .issue-detail { display: none; background: #161b22; border: 1px solid #30363d; border-radius: 8px; margin: 8px 24px; padding: 20px; }
+    .issue-detail.active { display: block; }
+    .issue-detail h3 { color: #f0f6fc; margin-bottom: 12px; }
+    .issue-detail .field { margin-bottom: 10px; }
+    .issue-detail .field-label { font-size: 12px; color: #8b949e; text-transform: uppercase; }
+    .issue-detail .field-value { color: #c9d1d9; margin-top: 2px; }
+    .issue-detail .reasoning { background: #0d1117; padding: 10px; border-radius: 4px; font-size: 13px; color: #8b949e; }
+
+    @media (max-width: 768px) {
+      .stats-bar { flex-direction: column; }
+      .controls { flex-direction: column; }
+      .issue-table { font-size: 12px; }
+      .issue-table th:nth-child(4), .issue-table td:nth-child(4) { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1><span>Pokedex</span> Issue Dashboard</h1>
+    <button class="refresh" onclick="loadData()">Refresh</button>
+  </div>
+
+  <div class="stats-bar" id="stats">
+    <div class="stat-card"><div class="label">Total</div><div class="value" id="stat-total">-</div></div>
+    <div class="stat-card"><div class="label">Open</div><div class="value" id="stat-open">-</div></div>
+    <div class="stat-card"><div class="label">Closed</div><div class="value" id="stat-closed">-</div></div>
+    <div class="stat-card critical"><div class="label">Critical</div><div class="value" id="stat-critical">-</div></div>
+    <div class="stat-card high"><div class="label">High</div><div class="value" id="stat-high">-</div></div>
+    <div class="stat-card medium"><div class="label">Medium</div><div class="value" id="stat-medium">-</div></div>
+    <div class="stat-card low"><div class="label">Low</div><div class="value" id="stat-low">-</div></div>
+  </div>
+
+  <div class="controls">
+    <select id="filter-status" onchange="filterIssues()">
+      <option value="">All Status</option>
+      <option value="open" selected>Open</option>
+      <option value="closed">Closed</option>
+      <option value="fixed">Fixed</option>
+      <option value="acknowledged">Acknowledged</option>
+      <option value="escalated">Escalated</option>
+    </select>
+    <select id="filter-priority" onchange="filterIssues()">
+      <option value="">All Priority</option>
+      <option value="critical">Critical</option>
+      <option value="high">High</option>
+      <option value="medium">Medium</option>
+      <option value="low">Low</option>
+    </select>
+    <select id="filter-category" onchange="filterIssues()">
+      <option value="">All Categories</option>
+      <option value="bug">Bug</option>
+      <option value="feature_request">Feature Request</option>
+      <option value="ux_issue">UX Issue</option>
+      <option value="performance">Performance</option>
+      <option value="security">Security</option>
+      <option value="infrastructure">Infrastructure</option>
+      <option value="other">Other</option>
+    </select>
+    <input type="text" id="search" placeholder="Search issues..." oninput="filterIssues()">
+  </div>
+
+  <div class="issues">
+    <div class="loading" id="loading">Loading issues...</div>
+    <table class="issue-table" id="issue-table" style="display:none;">
+      <thead>
+        <tr>
+          <th>Status</th>
+          <th>Priority</th>
+          <th>Issue</th>
+          <th>Category</th>
+          <th>Reporter</th>
+          <th>Date</th>
+        </tr>
+      </thead>
+      <tbody id="issue-body"></tbody>
+    </table>
+    <div class="empty" id="empty" style="display:none;">
+      <div class="icon">📋</div>
+      <div>No issues found matching your filters.</div>
+    </div>
+  </div>
+
+  <div class="issue-detail" id="issue-detail"></div>
+
+  <script>
+    let allIssues = [];
+
+    async function loadData() {
+      try {
+        const [issuesRes, statsRes] = await Promise.all([
+          fetch('/api/issues'),
+          fetch('/api/stats'),
+        ]);
+
+        const issuesData = await issuesRes.json();
+        const statsData = await statsRes.json();
+
+        allIssues = issuesData.issues || [];
+
+        // Update stats
+        document.getElementById('stat-total').textContent = statsData.total || 0;
+        document.getElementById('stat-open').textContent = statsData.open || 0;
+        document.getElementById('stat-closed').textContent = statsData.closed || 0;
+        document.getElementById('stat-critical').textContent = statsData.byPriority?.critical || 0;
+        document.getElementById('stat-high').textContent = statsData.byPriority?.high || 0;
+        document.getElementById('stat-medium').textContent = statsData.byPriority?.medium || 0;
+        document.getElementById('stat-low').textContent = statsData.byPriority?.low || 0;
+
+        filterIssues();
+        document.getElementById('loading').style.display = 'none';
+      } catch (err) {
+        document.getElementById('loading').textContent = 'Failed to load data. Is the bot running?';
+      }
+    }
+
+    function filterIssues() {
+      const status = document.getElementById('filter-status').value;
+      const priority = document.getElementById('filter-priority').value;
+      const category = document.getElementById('filter-category').value;
+      const search = document.getElementById('search').value.toLowerCase();
+
+      let filtered = allIssues;
+      if (status) filtered = filtered.filter(i => i.status === status);
+      if (priority) filtered = filtered.filter(i => i.priority === priority);
+      if (category) filtered = filtered.filter(i => i.category === category);
+      if (search) filtered = filtered.filter(i =>
+        (i.summary || '').toLowerCase().includes(search) ||
+        (i.text || '').toLowerCase().includes(search) ||
+        (i.reporterName || '').toLowerCase().includes(search) ||
+        (i.id || '').toLowerCase().includes(search)
+      );
+
+      renderIssues(filtered);
+    }
+
+    function renderIssues(issues) {
+      const table = document.getElementById('issue-table');
+      const body = document.getElementById('issue-body');
+      const empty = document.getElementById('empty');
+
+      if (issues.length === 0) {
+        table.style.display = 'none';
+        empty.style.display = 'block';
+        return;
+      }
+
+      table.style.display = 'table';
+      empty.style.display = 'none';
+
+      body.innerHTML = issues.map(issue => {
+        const date = issue.createdAt ? new Date(issue.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : '-';
+        const status = issue.status || 'open';
+
+        return `<tr onclick="showDetail('${issue.id}')" style="cursor:pointer;">
+          <td><span class="status-dot ${status}"></span>${status}</td>
+          <td><span class="priority-badge ${issue.priority || 'unclassified'}">${issue.priority || '?'}</span></td>
+          <td>
+            <div class="issue-summary">${escapeHtml(issue.summary || 'No summary')}</div>
+            <div class="issue-meta">${escapeHtml((issue.text || '').slice(0, 80))}${(issue.text || '').length > 80 ? '...' : ''}</div>
+          </td>
+          <td><span class="category-tag">${issue.category || 'other'}</span></td>
+          <td><span class="reporter">${escapeHtml(issue.reporterName || 'unknown')}</span></td>
+          <td>${date}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    function showDetail(issueId) {
+      const issue = allIssues.find(i => i.id === issueId);
+      if (!issue) return;
+
+      const detail = document.getElementById('issue-detail');
+      const date = issue.createdAt ? new Date(issue.createdAt).toLocaleString() : 'Unknown';
+
+      detail.innerHTML = `
+        <h3>${escapeHtml(issue.summary || 'No summary')}</h3>
+        <div class="field"><div class="field-label">Issue ID</div><div class="field-value">${issue.id}</div></div>
+        <div class="field"><div class="field-label">Status</div><div class="field-value"><span class="status-dot ${issue.status || 'open'}"></span>${issue.status || 'open'}</div></div>
+        <div class="field"><div class="field-label">Priority</div><div class="field-value"><span class="priority-badge ${issue.priority}">${issue.priority}</span></div></div>
+        <div class="field"><div class="field-label">Category</div><div class="field-value"><span class="category-tag">${issue.category || 'other'}</span></div></div>
+        <div class="field"><div class="field-label">Reporter</div><div class="field-value">${escapeHtml(issue.reporterName || 'unknown')}</div></div>
+        <div class="field"><div class="field-label">Reported</div><div class="field-value">${date}</div></div>
+        <div class="field"><div class="field-label">Full Report</div><div class="field-value">${escapeHtml(issue.text || '(no text)')}</div></div>
+        <div class="field"><div class="field-label">AI Reasoning</div><div class="reasoning">${escapeHtml(issue.reasoning || 'No reasoning')}</div></div>
+        ${issue.threadContext?.length ? `<div class="field"><div class="field-label">Thread Context (${issue.threadContext.length} updates)</div><div class="field-value">${issue.threadContext.map(c => escapeHtml(typeof c === 'string' ? c : c.text || '')).join('<br>')}</div></div>` : ''}
+      `;
+      detail.classList.add('active');
+      detail.scrollIntoView({ behavior: 'smooth' });
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    // Auto-refresh every 30 seconds
+    loadData();
+    setInterval(loadData, 30000);
+  </script>
+</body>
+</html>

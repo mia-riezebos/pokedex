@@ -2,6 +2,14 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 const CHANGELOG = [
   {
+    version: '2.0.0',
+    date: '2026-03-23',
+    changes: [
+      '**Duplicate detection** — when a new issue matches an existing open one, the bot shows the match with confidence % and lets you confirm or override',
+      '**Web dashboard** — live issue dashboard at the bot\'s URL with filters, search, stats, and detail view (auto-refreshes every 30s)',
+    ],
+  },
+  {
     version: '1.8.0',
     date: '2026-03-23',
     changes: [

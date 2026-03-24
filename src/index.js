@@ -16,6 +16,7 @@ const lockCommand = require('./commands/lock');
 const unlockCommand = require('./commands/unlock');
 const leaderboardCommand = require('./commands/leaderboard');
 const pokedexCommand = require('./commands/pokedex');
+const { startDashboard } = require('./dashboard/server');
 
 const client = new Client({
   intents: [
@@ -205,6 +206,43 @@ async function handleButtonInteraction(interaction) {
     await interaction.update({ embeds: [embed], components: [updatedRow] });
     return;
   }
+
+  // --- Duplicate detection buttons ---
+  if (customId.startsWith('dupe_confirm_')) {
+    // User confirms it's the same issue — just dismiss the embed
+    const embed = EmbedBuilder.from(interaction.message.embeds[0]);
+    embed.setColor(0x2ecc71);
+    embed.setTitle('✅ Duplicate Confirmed');
+    embed.setDescription('Thanks! Your report has been added as additional context to the existing issue.');
+    await interaction.update({ embeds: [embed], components: [] });
+    return;
+  }
+
+  if (customId.startsWith('dupe_new_')) {
+    // User says it's NOT a duplicate — process as new issue
+    const messageId = customId.replace('dupe_new_', '');
+    const embed = EmbedBuilder.from(interaction.message.embeds[0]);
+    embed.setColor(0x3498db);
+    embed.setTitle('🆕 Creating New Issue');
+    embed.setDescription('Got it — creating this as a separate issue.');
+    await interaction.update({ embeds: [embed], components: [] });
+
+    // Re-process the original message through the pipeline (skip dupe check)
+    try {
+      const channel = interaction.message.channel;
+      const originalMsg = await channel.messages.fetch(interaction.message.reference?.messageId || messageId).catch(() => null);
+      if (originalMsg) {
+        const text = originalMsg.content.replace(/<@!?\d+>/g, '').trim();
+        const { processIssueForced } = require('./services/pipeline');
+        if (processIssueForced) {
+          await processIssueForced(originalMsg, text);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to re-process as new issue:', err);
+    }
+    return;
+  }
 }
 
 
@@ -214,6 +252,7 @@ async function main() {
   config.setFirestoreService(firestore);
   await config.init();
   await registerCommands();
+  startDashboard();
   await client.login(process.env.DISCORD_TOKEN);
 }
 
