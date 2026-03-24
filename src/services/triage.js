@@ -1,4 +1,4 @@
-const { EmbedBuilder } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const cron = require('node-cron');
 const { getConfig } = require('../config/config');
 const firestore = require('./firestore');
@@ -10,6 +10,31 @@ const PRIORITY_COLORS = {
   low: 0x00cc00,
   unclassified: 0x808080,
 };
+
+function buildTriageButtons(issueId) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`triage_ack_${issueId}`)
+      .setLabel('Acknowledged')
+      .setEmoji('👀')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId(`triage_fix_${issueId}`)
+      .setLabel('Fixed')
+      .setEmoji('✅')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(`triage_wontfix_${issueId}`)
+      .setLabel("Won't Fix")
+      .setEmoji('🚫')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`triage_escalate_${issueId}`)
+      .setLabel('Escalate')
+      .setEmoji('🔺')
+      .setStyle(ButtonStyle.Danger),
+  );
+}
 
 function buildIssueEmbed(issue, issueId) {
   const color = PRIORITY_COLORS[issue.priority] ?? 0x808080;
@@ -45,7 +70,8 @@ async function postIssueEmbed(guild, issue, issueId) {
   }
 
   const embed = buildIssueEmbed(issue, issueId);
-  const msg = await channel.send({ embeds: [embed] });
+  const buttons = buildTriageButtons(issueId);
+  const msg = await channel.send({ embeds: [embed], components: [buttons] });
   return msg.id;
 }
 
@@ -110,4 +136,4 @@ function startDigestScheduler(guild) {
   }, { timezone: 'UTC' });
 }
 
-module.exports = { postIssueEmbed, startDigestScheduler, findTriageChannel, buildIssueEmbed };
+module.exports = { postIssueEmbed, startDigestScheduler, findTriageChannel, buildIssueEmbed, buildTriageButtons };

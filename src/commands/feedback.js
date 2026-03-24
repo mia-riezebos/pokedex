@@ -1,6 +1,31 @@
-const { SlashCommandBuilder, EmbedBuilder, ChannelType } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { getConfig } = require('../config/config');
 const { findTriageChannel } = require('../services/triage');
+
+function buildFeedbackThemeButtons(themeIndex) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`fb_ack_${themeIndex}`)
+      .setLabel('Acknowledged')
+      .setEmoji('👀')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId(`fb_fix_${themeIndex}`)
+      .setLabel('Fixed')
+      .setEmoji('✅')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(`fb_wontfix_${themeIndex}`)
+      .setLabel("Won't Fix")
+      .setEmoji('🚫')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`fb_escalate_${themeIndex}`)
+      .setLabel('Escalate')
+      .setEmoji('🔺')
+      .setStyle(ButtonStyle.Danger),
+  );
+}
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
@@ -325,7 +350,8 @@ async function postToTriage(triageChannel, analysis, sourceChannel, threadCount,
     // Related posts count
     embed.setFooter({ text: `Related posts: ${theme.posts?.length || 0} | Source: #${sourceChannel.name}` });
 
-    await triageChannel.send({ embeds: [embed] });
+    const buttons = buildFeedbackThemeButtons(i);
+    await triageChannel.send({ embeds: [embed], components: [buttons] });
   }
 
   // === SUMMARY FOOTER ===

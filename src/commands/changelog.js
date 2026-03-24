@@ -2,6 +2,16 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 const CHANGELOG = [
   {
+    version: '1.7.0',
+    date: '2026-03-23',
+    changes: [
+      'Triage embeds now have action buttons: **Acknowledged**, **Fixed**, **Won\'t Fix**, **Escalate**',
+      'Clicking a button updates the embed with who took action and when',
+      'Buttons disable after an action is taken to prevent duplicate clicks',
+      'Works on both individual issue embeds and feedback theme embeds',
+    ],
+  },
+  {
     version: '1.6.0',
     date: '2026-03-23',
     changes: [
