@@ -1,5 +1,5 @@
 require('dotenv/config');
-const { Client, GatewayIntentBits, Partials, REST, Routes } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, REST, Routes, ActivityType } = require('discord.js');
 const firestore = require('./services/firestore');
 const config = require('./config/config');
 const triage = require('./services/triage');
@@ -31,6 +31,12 @@ async function registerCommands() {
 
 client.once('ready', async () => {
   console.log(`Logged in as ${client.user.tag}`);
+
+  // Set rich presence
+  client.user.setPresence({
+    activities: [{ name: 'for bugs | /help', type: ActivityType.Watching }],
+    status: 'online',
+  });
 
   // Check for triage channel
   const guild = client.guilds.cache.get(process.env.DISCORD_GUILD_ID);
