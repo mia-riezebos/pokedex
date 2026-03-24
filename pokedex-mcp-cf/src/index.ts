@@ -8,6 +8,42 @@ interface Env {
   FIREBASE_PRIVATE_KEY: string;
   DISCORD_WEBHOOK_URL: string;
   DISCORD_GUILD_ID: string;
+  RATE_LIMIT: KVNamespace;
+}
+
+// === Rate Limiting ===
+const RATE_LIMIT_WINDOW = 60; // seconds
+const RATE_LIMIT_MAX_READ = 30; // read operations per window
+const RATE_LIMIT_MAX_WRITE = 10; // write operations (report/suggest) per window
+
+async function checkRateLimit(env: Env, ip: string, isWrite: boolean): Promise<{ allowed: boolean; remaining: number; resetIn: number }> {
+  const bucket = isWrite ? "w" : "r";
+  const key = `rl:${bucket}:${ip}`;
+  const max = isWrite ? RATE_LIMIT_MAX_WRITE : RATE_LIMIT_MAX_READ;
+
+  const stored = await env.RATE_LIMIT.get(key);
+  const count = stored ? parseInt(stored, 10) : 0;
+
+  if (count >= max) {
+    return { allowed: false, remaining: 0, resetIn: RATE_LIMIT_WINDOW };
+  }
+
+  await env.RATE_LIMIT.put(key, String(count + 1), { expirationTtl: RATE_LIMIT_WINDOW });
+  return { allowed: true, remaining: max - count - 1, resetIn: RATE_LIMIT_WINDOW };
+}
+
+function rateLimitHeaders(remaining: number, resetIn: number): Record<string, string> {
+  return {
+    "X-RateLimit-Remaining": String(remaining),
+    "X-RateLimit-Reset": String(Math.floor(Date.now() / 1000) + resetIn),
+  };
+}
+
+function rateLimitResponse(resetIn: number): Response {
+  return Response.json(
+    { jsonrpc: "2.0", id: null, error: { code: -32000, message: "Rate limit exceeded. Try again later." } },
+    { status: 429, headers: { "Retry-After": String(resetIn), ...rateLimitHeaders(0, resetIn) } }
+  );
 }
 
 // === JWT / Firestore Auth ===
@@ -338,6 +374,17 @@ export default {
     // MCP endpoint — handle protocol directly (no Express shim needed)
     if (url.pathname === "/mcp" && request.method === "POST") {
       const body = await request.json() as { jsonrpc: string; id: unknown; method: string; params?: unknown };
+      const clientIp = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for") || "unknown";
+
+      // Rate limit write operations (tools/call with write tools)
+      const isWriteCall = body.method === "tools/call" &&
+        ["pokedex_report_bug", "pokedex_suggest_feature"].includes((body.params as any)?.name);
+      const isReadCall = body.method === "tools/call" || body.method === "tools/list";
+
+      if (isWriteCall || isReadCall) {
+        const rl = await checkRateLimit(env, clientIp, isWriteCall);
+        if (!rl.allowed) return rateLimitResponse(rl.resetIn);
+      }
 
       if (body.method === "initialize") {
         return Response.json({
