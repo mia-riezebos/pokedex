@@ -59,7 +59,7 @@ async function processIssue(message, text) {
     }
   }
 
-  // Single acknowledge reply as embed (instead of plain text + separate embed)
+  // Acknowledge reply as embed
   const ack = getConfig('acknowledge');
   if (ack === true || ack === 'true') {
     try {
@@ -70,14 +70,21 @@ async function processIssue(message, text) {
         .setDescription(classification.summary)
         .setFooter({ text: `Issue ID: ${issueId}` });
 
-      // Add follow-up question if the AI wants more info
       if (classification.follow_up) {
-        ackEmbed.addFields({ name: 'Follow-up', value: classification.follow_up });
-      }
+        // Create a thread for follow-up conversation
+        const thread = await message.startThread({
+          name: `${classification.category.replace(/_/g, ' ')}: ${classification.summary.slice(0, 80)}`,
+          autoArchiveDuration: 1440, // 24 hours
+        });
 
-      await message.reply({ embeds: [ackEmbed] });
+        ackEmbed.addFields({ name: 'Follow-up', value: classification.follow_up });
+        await thread.send({ embeds: [ackEmbed] });
+        await thread.send(`<@${message.author.id}> ${classification.follow_up}`);
+      } else {
+        await message.reply({ embeds: [ackEmbed] });
+      }
     } catch {
-      // Best effort — may not have permission to reply
+      // Best effort — may not have permission to reply or create threads
     }
   }
 }
