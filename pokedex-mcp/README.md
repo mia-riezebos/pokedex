@@ -28,11 +28,11 @@ npm run build
 Set these in your shell or `.env`:
 
 ```
-FIREBASE_PROJECT_ID=poke-discord-bot
-FIREBASE_CLIENT_EMAIL=firebase-adminsdk-fbsvc@poke-discord-bot.iam.gserviceaccount.com
+FIREBASE_PROJECT_ID=your-project-id
+FIREBASE_CLIENT_EMAIL=your-service-account@your-project-id.iam.gserviceaccount.com
 FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n..."
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN
-DISCORD_GUILD_ID=1416726763496542243
+DISCORD_GUILD_ID=your-guild-id
 ```
 
 To create a Discord webhook: Server Settings → Integrations → Webhooks → New Webhook → set the channel to `#eng-triage` → Copy URL.
@@ -48,11 +48,11 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
       "command": "node",
       "args": ["/path/to/pokedex-mcp/dist/index.js"],
       "env": {
-        "FIREBASE_PROJECT_ID": "poke-discord-bot",
-        "FIREBASE_CLIENT_EMAIL": "firebase-adminsdk-fbsvc@poke-discord-bot.iam.gserviceaccount.com",
+        "FIREBASE_PROJECT_ID": "your-project-id",
+        "FIREBASE_CLIENT_EMAIL": "your-service-account@your-project-id.iam.gserviceaccount.com",
         "FIREBASE_PRIVATE_KEY": "-----BEGIN PRIVATE KEY-----\\n...",
         "DISCORD_WEBHOOK_URL": "https://discord.com/api/webhooks/YOUR_WEBHOOK_ID/YOUR_WEBHOOK_TOKEN",
-        "DISCORD_GUILD_ID": "1416726763496542243"
+        "DISCORD_GUILD_ID": "your-guild-id"
       }
     }
   }
@@ -70,7 +70,7 @@ Add to `.claude/settings.json`:
       "command": "node",
       "args": ["/path/to/pokedex-mcp/dist/index.js"],
       "env": {
-        "FIREBASE_PROJECT_ID": "poke-discord-bot",
+        "FIREBASE_PROJECT_ID": "your-project-id",
         "FIREBASE_CLIENT_EMAIL": "...",
         "FIREBASE_PRIVATE_KEY": "...",
         "DISCORD_WEBHOOK_URL": "...",
