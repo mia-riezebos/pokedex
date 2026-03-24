@@ -78,7 +78,7 @@
 <body>
   <div class="header">
     <h1><span>Pokedex</span> Issue Dashboard</h1>
-    <button class="refresh" onclick="loadData()">Refresh</button>
+    <button class="refresh" id="refresh-btn">Refresh</button>
   </div>
 
   <div class="stats-bar" id="stats">
@@ -256,6 +256,7 @@
     }
 
     // Auto-refresh every 30 seconds
+    document.getElementById('refresh-btn').addEventListener('click', loadData);
     loadData();
     setInterval(loadData, 30000);
   </script>
