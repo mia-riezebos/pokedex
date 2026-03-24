@@ -37,7 +37,12 @@ const CHANGELOG = [
 
 const commandData = new SlashCommandBuilder()
   .setName('changelog')
-  .setDescription('See what\'s new in Pokedex');
+  .setDescription('See what\'s new in Pokedex')
+  .addBooleanOption(option =>
+    option.setName('public')
+      .setDescription('Show the changelog to everyone in the channel (default: only you)')
+      .setRequired(false)
+  );
 
 async function execute(interaction) {
   const embed = new EmbedBuilder()
@@ -54,7 +59,8 @@ async function execute(interaction) {
 
   embed.setFooter({ text: 'Pokedex — Identifying bugs so engineers don\'t have to hunt for them' });
 
-  await interaction.reply({ embeds: [embed], ephemeral: true });
+  const isPublic = interaction.options.getBoolean('public') ?? false;
+  await interaction.reply({ embeds: [embed], ephemeral: !isPublic });
 }
 
 module.exports = { data: commandData, execute };
