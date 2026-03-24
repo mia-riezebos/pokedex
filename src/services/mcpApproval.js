@@ -6,7 +6,12 @@ const {
   ButtonStyle,
   PermissionFlagsBits,
 } = require('discord.js');
-const { buildIssueEmbed, buildTriageButtons } = require('./triage');
+const firestore = require('./firestore');
+const {
+  findTriageChannel,
+  buildIssueEmbed,
+  buildTriageButtons,
+} = require('./triage');
 
 const APPROVE_EMOJI = '✅';
 const DECLINE_EMOJI = '❌';
@@ -108,16 +113,6 @@ function buildDeclinedEmbed(issue, issueId, username) {
     .addFields({ name: '❌ Declined', value: `by ${username} — <t:${Math.floor(Date.now() / 1000)}:R>` });
 }
 
-function buildDecisionPayload(decision, issue, issueId, username) {
-  if (decision === 'approve') {
-    const embed = buildIssueEmbed(issue, issueId);
-    embed.addFields({ name: '✅ Approved', value: `by ${username} — <t:${Math.floor(Date.now() / 1000)}:R>` });
-    return { embeds: [embed], components: [buildTriageButtons(issueId)] };
-  }
-
-  return { embeds: [buildDeclinedEmbed(issue, issueId, username)], components: [] };
-}
-
 async function addDecisionReactions(message) {
   for (const emoji of [APPROVE_EMOJI, DECLINE_EMOJI]) {
     try {
@@ -189,13 +184,81 @@ async function decidePendingIssue(issueId, decision, user) {
   return { ok: true, issue: updated.data() };
 }
 
-async function fetchPendingReplyMessage(channel, issue) {
-  if (!channel?.messages?.fetch || !issue.pendingReplyMessageId) return null;
+async function fetchMessageById(channel, messageId) {
+  if (!channel?.messages?.fetch || !messageId) return null;
   try {
-    return await channel.messages.fetch(issue.pendingReplyMessageId);
+    return await channel.messages.fetch(messageId);
   } catch {
     return null;
   }
+}
+
+async function deletePendingMessages(channel, issue) {
+  const ids = [issue.pendingReplyMessageId, issue.pendingMessageId]
+    .filter(Boolean)
+    .filter((id, index, arr) => arr.indexOf(id) === index);
+
+  for (const messageId of ids) {
+    const message = await fetchMessageById(channel, messageId);
+    if (!message?.deletable) continue;
+    await message.delete().catch(() => {});
+  }
+}
+
+async function postApprovedIssueToTriage(guild, issue, issueId, username) {
+  const triageChannel = findTriageChannel(guild);
+  if (!triageChannel) {
+    return { ok: false, error: 'Triage channel not found. Approval was not completed.' };
+  }
+
+  const embed = buildIssueEmbed(issue, issueId);
+  embed.addFields({ name: '✅ Approved', value: `by ${username} — <t:${Math.floor(Date.now() / 1000)}:R>` });
+
+  const message = await triageChannel.send({
+    embeds: [embed],
+    components: [buildTriageButtons(issueId)],
+  });
+
+  await firestore.updateIssueTriageMessageId(issueId, message.id);
+  return { ok: true, triageChannel };
+}
+
+async function processPendingDecision({ guild, channel, issueId, decision, user }) {
+  const pending = await fetchIssueById(issueId);
+  if (!pending) {
+    return { ok: false, error: 'Issue not found.' };
+  }
+
+  if (decision === 'approve' && !guild) {
+    return { ok: false, error: 'Guild context is required to approve this issue.' };
+  }
+
+  if (decision === 'approve') {
+    const triageChannel = findTriageChannel(guild);
+    if (!triageChannel) {
+      return { ok: false, error: 'Triage channel not found. Approval was not completed.' };
+    }
+  }
+
+  const result = await decidePendingIssue(issueId, decision, user);
+  if (!result.ok) return result;
+
+  if (decision === 'approve') {
+    const triageResult = await postApprovedIssueToTriage(guild, result.issue, issueId, user.username);
+    if (!triageResult.ok) {
+      return triageResult;
+    }
+  }
+
+  await deletePendingMessages(channel, result.issue);
+
+  return {
+    ok: true,
+    issue: result.issue,
+    message: decision === 'approve'
+      ? 'Approved and moved to triage.'
+      : 'Declined and removed from the channel.',
+  };
 }
 
 async function handlePendingReaction(reaction, user) {
@@ -237,18 +300,17 @@ async function handlePendingReaction(reaction, user) {
     return true;
   }
 
-  const result = await decidePendingIssue(resolved.issueId, decision, user);
+  const result = await processPendingDecision({
+    guild: message.guild,
+    channel: message.channel,
+    issueId: resolved.issueId,
+    decision,
+    user,
+    currentMessageId: message.id,
+  });
   if (!result.ok) {
     await reaction.users.remove(user.id).catch(() => {});
     return true;
-  }
-
-  const payload = buildDecisionPayload(decision, result.issue, resolved.issueId, user.username);
-  const replyMessage = await fetchPendingReplyMessage(message.channel, result.issue);
-  if (replyMessage) {
-    await replyMessage.edit(payload);
-  } else if (typeof message.reply === 'function') {
-    await message.reply(payload).catch(() => {});
   }
 
   return true;
@@ -258,8 +320,8 @@ module.exports = {
   APPROVE_EMOJI,
   DECLINE_EMOJI,
   canModerate,
-  buildDecisionPayload,
   decidePendingIssue,
+  processPendingDecision,
   syncPendingWebhookMessage,
   handlePendingReaction,
 };

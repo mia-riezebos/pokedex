@@ -19,8 +19,7 @@ const leaderboardCommand = require('./commands/leaderboard');
 const pokedexCommand = require('./commands/pokedex');
 const {
   canModerate,
-  buildDecisionPayload,
-  decidePendingIssue,
+  processPendingDecision,
   syncPendingWebhookMessage,
   handlePendingReaction,
 } = require('./services/mcpApproval');
@@ -310,17 +309,29 @@ async function handleButtonInteraction(interaction) {
       .replace('mcp_delete_', '');
 
     try {
-      const result = await decidePendingIssue(issueId, decision, user);
+      await interaction.deferReply({ ephemeral: true });
+
+      const result = await processPendingDecision({
+        guild: interaction.guild,
+        channel: interaction.channel,
+        issueId,
+        decision,
+        user,
+      });
+
       if (!result.ok) {
-        await interaction.reply({ content: result.error, ephemeral: true }).catch(() => {});
+        await interaction.editReply({ content: result.error }).catch(() => {});
         return;
       }
 
-      const payload = buildDecisionPayload(decision, result.issue, issueId, user.username);
-      await interaction.update(payload);
+      await interaction.editReply({ content: result.message }).catch(() => {});
     } catch (err) {
       console.error('Failed to process MCP decision:', err);
-      await interaction.reply({ content: 'Failed to process MCP issue.', ephemeral: true }).catch(() => {});
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply({ content: 'Failed to process MCP issue.' }).catch(() => {});
+      } else {
+        await interaction.reply({ content: 'Failed to process MCP issue.', ephemeral: true }).catch(() => {});
+      }
     }
     return;
   }
