@@ -2,6 +2,16 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 const CHANGELOG = [
   {
+    version: '1.5.0',
+    date: '2026-03-23',
+    changes: [
+      'Added `/issue` admin commands — close, reopen, view, list, and status dashboard',
+      'Closing an issue grays out the triage embed and archives the thread',
+      'Reopening restores the embed and unarchives the thread',
+      'Issue dashboard shows open/closed counts by priority',
+    ],
+  },
+  {
     version: '1.4.1',
     date: '2026-03-23',
     changes: [

@@ -38,6 +38,11 @@ async function execute(interaction) {
           '`/config get <key>` — View a specific setting',
           '`/config reset <key>` — Reset a setting to default (admin only)',
           '`/feedback` — Organize and summarize feedback forum posts',
+          '`/issue close <id>` — Close/resolve an issue (admin)',
+          '`/issue reopen <id>` — Reopen a closed issue (admin)',
+          '`/issue view <id>` — View full issue details',
+          '`/issue list [filter]` — List open issues',
+          '`/issue status` — Show issue dashboard & counts',
         ].join('\n'),
       },
       {

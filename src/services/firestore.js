@@ -99,4 +99,47 @@ async function updateIssueClassification(issueId, classification) {
   });
 }
 
-module.exports = { init, isDuplicate, saveIssue, getIssuesSince, getAllConfigOverrides, setConfigOverride, deleteConfigOverride, updateIssueTriageMessageId, updateIssueThreadId, getIssueByThreadId, appendThreadContext, updateIssueClassification };
+async function getIssueById(issueId) {
+  const doc = await db.collection('issues').doc(issueId).get();
+  if (!doc.exists) return null;
+  return { id: doc.id, ...doc.data() };
+}
+
+async function updateIssueStatus(issueId, status, closedBy) {
+  const update = {
+    status,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+  if (status === 'closed') {
+    update.closedBy = closedBy;
+    update.closedAt = admin.firestore.FieldValue.serverTimestamp();
+  }
+  await db.collection('issues').doc(issueId).update(update);
+}
+
+async function getOpenIssues(limit = 25) {
+  const snapshot = await db.collection('issues')
+    .where('status', '==', 'open')
+    .orderBy('createdAt', 'desc')
+    .limit(limit)
+    .get();
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+async function getIssueCounts() {
+  const openSnap = await db.collection('issues').where('status', '==', 'open').get();
+  const closedSnap = await db.collection('issues').where('status', '==', 'closed').get();
+  const open = openSnap.size;
+  const closed = closedSnap.size;
+
+  // Count by priority
+  const byPriority = {};
+  openSnap.forEach(doc => {
+    const p = doc.data().priority || 'unclassified';
+    byPriority[p] = (byPriority[p] || 0) + 1;
+  });
+
+  return { open, closed, total: open + closed, byPriority };
+}
+
+module.exports = { init, isDuplicate, saveIssue, getIssuesSince, getAllConfigOverrides, setConfigOverride, deleteConfigOverride, updateIssueTriageMessageId, updateIssueThreadId, getIssueByThreadId, appendThreadContext, updateIssueClassification, getIssueById, updateIssueStatus, getOpenIssues, getIssueCounts };
