@@ -145,6 +145,11 @@ async function handleButtonInteraction(interaction) {
   const { customId } = interaction;
   const user = interaction.user;
 
+  // --- Changelog pagination buttons ---
+  if (customId.startsWith('changelog_')) {
+    return changelogCommand.handleChangelogButton(interaction);
+  }
+
   // Parse button ID: triage_<action>_<issueId> or fb_<action>_<themeIndex>
   const ACTION_LABELS = {
     ack: { label: '👀 Acknowledged', color: 0x3498db, status: 'acknowledged' },

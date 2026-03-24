@@ -1,5 +1,7 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
+const BOT_VERSION = '2.2.1';
+
 const commandData = new SlashCommandBuilder()
   .setName('ping')
   .setDescription('Check bot latency and uptime');
@@ -21,6 +23,7 @@ async function execute(interaction) {
       { name: '💓 WebSocket', value: `${ws}ms`, inline: true },
       { name: '⏱️ Uptime', value: uptime, inline: true },
       { name: '🏠 Servers', value: `${guilds}`, inline: true },
+      { name: '🔖 Version', value: `v${BOT_VERSION}`, inline: true },
     )
     .setTimestamp();
 

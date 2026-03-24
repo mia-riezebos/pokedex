@@ -1,11 +1,11 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 const CHANGELOG = [
   {
     version: '2.2.1',
     date: '2026-03-24',
     changes: [
-      'MCP context additions now post a "💬 Context Added via MCP" notification directly in Discord — replies to the triage or pending embed so engineers see it immediately',
+      'MCP context additions now edit the existing triage/pending embed directly in Discord instead of posting new messages',
       'Works for both pending (pre-approval) and approved issues — no more silent Firestore-only updates',
       'Channel IDs are now stored alongside message IDs for reliable cross-service Discord notifications',
     ],
@@ -148,6 +148,9 @@ const CHANGELOG = [
   },
 ];
 
+const ITEMS_PER_PAGE = 3;
+const TOTAL_PAGES = Math.ceil(CHANGELOG.length / ITEMS_PER_PAGE);
+
 const commandData = new SlashCommandBuilder()
   .setName('changelog')
   .setDescription('See what\'s new in Pokedex')
@@ -157,12 +160,15 @@ const commandData = new SlashCommandBuilder()
       .setRequired(false)
   );
 
-async function execute(interaction) {
+function buildChangelogPage(page) {
+  const start = page * ITEMS_PER_PAGE;
+  const entries = CHANGELOG.slice(start, start + ITEMS_PER_PAGE);
+
   const embed = new EmbedBuilder()
     .setTitle('Pokedex Changelog')
     .setColor(0x5865f2);
 
-  for (const entry of CHANGELOG) {
+  for (const entry of entries) {
     const lines = entry.changes.map(c => `• ${c}`).join('\n');
     embed.addFields({
       name: `v${entry.version} — ${entry.date}`,
@@ -170,10 +176,51 @@ async function execute(interaction) {
     });
   }
 
-  embed.setFooter({ text: 'Pokedex — Identifying bugs so engineers don\'t have to hunt for them' });
-
-  const isPublic = interaction.options.getBoolean('public') ?? false;
-  await interaction.reply({ embeds: [embed], ephemeral: !isPublic });
+  embed.setFooter({ text: `Page ${page + 1} of ${TOTAL_PAGES} • Pokedex v${CHANGELOG[0].version}` });
+  return embed;
 }
 
-module.exports = { data: commandData, execute };
+function buildPageButtons(page) {
+  return new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`changelog_prev_${page}`)
+      .setLabel('◀ Previous')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(page === 0),
+    new ButtonBuilder()
+      .setCustomId(`changelog_page_${page}`)
+      .setLabel(`${page + 1} / ${TOTAL_PAGES}`)
+      .setStyle(ButtonStyle.Primary)
+      .setDisabled(true),
+    new ButtonBuilder()
+      .setCustomId(`changelog_next_${page}`)
+      .setLabel('Next ▶')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(page >= TOTAL_PAGES - 1),
+  );
+}
+
+async function execute(interaction) {
+  const isPublic = interaction.options.getBoolean('public') ?? false;
+  const page = 0;
+  const embed = buildChangelogPage(page);
+  const buttons = buildPageButtons(page);
+  await interaction.reply({ embeds: [embed], components: [buttons], ephemeral: !isPublic });
+}
+
+async function handleChangelogButton(interaction) {
+  const customId = interaction.customId;
+  const parts = customId.split('_');
+  const action = parts[1]; // prev or next
+  const currentPage = parseInt(parts[2], 10);
+
+  let newPage = currentPage;
+  if (action === 'prev') newPage = Math.max(0, currentPage - 1);
+  if (action === 'next') newPage = Math.min(TOTAL_PAGES - 1, currentPage + 1);
+
+  const embed = buildChangelogPage(newPage);
+  const buttons = buildPageButtons(newPage);
+  await interaction.update({ embeds: [embed], components: [buttons] });
+}
+
+module.exports = { data: commandData, execute, handleChangelogButton };
