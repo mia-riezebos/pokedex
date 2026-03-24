@@ -6,7 +6,7 @@ const triage = require('./services/triage');
 const { handleMention } = require('./triggers/mention');
 const { handleReaction } = require('./triggers/reaction');
 const { handleThreadMessage } = require('./triggers/thread');
-const { startPendingPoller } = require('./services/pending');
+// pending poller replaced by instant webhook message detection
 const configCommand = require('./commands/config');
 const helpCommand = require('./commands/help');
 const changelogCommand = require('./commands/changelog');
@@ -60,12 +60,21 @@ client.once('ready', async () => {
 
     // Start digest scheduler
     triage.startDigestScheduler(guild);
-    startPendingPoller(guild);
   }
 });
 
-// Handle @mentions and thread follow-ups
+// Handle @mentions, thread follow-ups, and webhook pending messages
 client.on('messageCreate', async (message) => {
+  // Check if this is a webhook MCP pending message — reply with approval buttons
+  if (message.webhookId && message.content?.includes('pending approval')) {
+    try {
+      await handleWebhookPending(message);
+    } catch (err) {
+      console.error('Error handling webhook pending:', err);
+    }
+    return;
+  }
+
   if (message.author.bot) return;
 
   // Check if this is a message in an issue thread (no @mention needed)
@@ -86,6 +95,67 @@ client.on('messageCreate', async (message) => {
     console.error('Error handling mention:', err);
   }
 });
+
+// When webhook posts a pending MCP message, bot replies with approve/delete buttons
+async function handleWebhookPending(message) {
+  const admin = require('firebase-admin');
+  const db = admin.firestore();
+
+  // Find the most recent pending MCP issue that doesn't have a pendingMessageId yet
+  const snapshot = await db.collection('issues')
+    .where('status', '==', 'pending')
+    .where('source', '==', 'mcp')
+    .orderBy('createdAt', 'desc')
+    .limit(5)
+    .get();
+
+  if (snapshot.empty) return;
+
+  // Find the one that matches (hasn't been posted yet)
+  for (const doc of snapshot.docs) {
+    const issue = doc.data();
+    if (issue.pendingMessageId) continue;
+
+    const issueId = doc.id;
+
+    // Check if the webhook message content mentions this issue's reporter or summary
+    if (!message.content.includes(issue.reporterName) && !message.content.includes(issue.summary?.slice(0, 30))) continue;
+
+    const embed = new EmbedBuilder()
+      .setTitle(`⏳ MCP Report — ${issue.summary || 'No summary'}`)
+      .setColor(0x9b59b6)
+      .setDescription('Submitted via MCP agent. **Approve** to add to triage or **Delete** to discard.')
+      .addFields(
+        { name: 'Priority', value: issue.priority || 'unknown', inline: true },
+        { name: 'Category', value: issue.category || 'other', inline: true },
+        { name: 'Reporter', value: issue.reporterName || 'unknown', inline: true },
+        { name: 'Description', value: (issue.text || '(no description)').slice(0, 1024) },
+      )
+      .setFooter({ text: `Issue ID: ${issueId}` })
+      .setTimestamp();
+
+    const buttons = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`mcp_approve_${issueId}`)
+        .setLabel('Approve')
+        .setEmoji('✅')
+        .setStyle(2), // Success = 3, but let's use Primary = 1 ... actually ButtonStyle.Success
+      new ButtonBuilder()
+        .setCustomId(`mcp_delete_${issueId}`)
+        .setLabel('Delete')
+        .setStyle(4), // Danger
+    );
+
+    // Reply to the webhook message with the button embed
+    await message.reply({ embeds: [embed], components: [buttons] });
+
+    // Mark as posted
+    await db.collection('issues').doc(issueId).update({ pendingMessageId: message.id });
+
+    console.log(`Posted approval buttons for MCP issue ${issueId}`);
+    break;
+  }
+}
 
 // Handle emoji reactions
 client.on('messageReactionAdd', async (reaction, user) => {
