@@ -156,7 +156,21 @@
       transition: all 0.3s;
       position: relative;
       overflow: hidden;
+      cursor: pointer;
+      user-select: none;
     }
+
+    .stat-card.active {
+      background: var(--glass-strong) !important;
+      border-color: rgba(255,255,255,0.12);
+      box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+    }
+
+    .stat-card.active::before { background: var(--gold-soft) !important; }
+    .stat-card.critical.active::before { background: var(--critical) !important; }
+    .stat-card.high.active::before { background: var(--high) !important; }
+    .stat-card.medium.active::before { background: var(--medium) !important; }
+    .stat-card.low.active::before { background: var(--low) !important; }
 
     .stat-card::before {
       content: '';
@@ -403,13 +417,13 @@
     </div>
 
     <div class="stats-grid anim" style="animation-delay:0.08s">
-      <div class="stat-card glass"><div class="stat-label">Total</div><div class="stat-value" id="stat-total">-</div></div>
-      <div class="stat-card glass"><div class="stat-label">Open</div><div class="stat-value" id="stat-open">-</div></div>
-      <div class="stat-card glass"><div class="stat-label">Closed</div><div class="stat-value" id="stat-closed">-</div></div>
-      <div class="stat-card glass critical"><div class="stat-label">Critical</div><div class="stat-value" id="stat-critical">-</div></div>
-      <div class="stat-card glass high"><div class="stat-label">High</div><div class="stat-value" id="stat-high">-</div></div>
-      <div class="stat-card glass medium"><div class="stat-label">Medium</div><div class="stat-value" id="stat-medium">-</div></div>
-      <div class="stat-card glass low"><div class="stat-label">Low</div><div class="stat-value" id="stat-low">-</div></div>
+      <div class="stat-card glass" data-filter="all"><div class="stat-label">Total</div><div class="stat-value" id="stat-total">-</div></div>
+      <div class="stat-card glass" data-filter="status:open"><div class="stat-label">Open</div><div class="stat-value" id="stat-open">-</div></div>
+      <div class="stat-card glass" data-filter="status:closed"><div class="stat-label">Closed</div><div class="stat-value" id="stat-closed">-</div></div>
+      <div class="stat-card glass critical" data-filter="priority:critical"><div class="stat-label">Critical</div><div class="stat-value" id="stat-critical">-</div></div>
+      <div class="stat-card glass high" data-filter="priority:high"><div class="stat-label">High</div><div class="stat-value" id="stat-high">-</div></div>
+      <div class="stat-card glass medium" data-filter="priority:medium"><div class="stat-label">Medium</div><div class="stat-value" id="stat-medium">-</div></div>
+      <div class="stat-card glass low" data-filter="priority:low"><div class="stat-label">Low</div><div class="stat-value" id="stat-low">-</div></div>
     </div>
 
     <div class="filters anim" style="animation-delay:0.15s">
@@ -518,6 +532,41 @@
 
     ['filter-status','filter-priority','filter-category'].forEach(id => document.getElementById(id).addEventListener('change', filterIssues));
     document.getElementById('search').addEventListener('input', filterIssues);
+
+    // Clickable stat cards
+    document.querySelectorAll('.stat-card[data-filter]').forEach(card => {
+      card.addEventListener('click', () => {
+        const filter = card.dataset.filter;
+
+        // Toggle: if already active, clear it
+        const wasActive = card.classList.contains('active');
+        document.querySelectorAll('.stat-card').forEach(c => c.classList.remove('active'));
+
+        if (wasActive) {
+          // Reset filters
+          document.getElementById('filter-status').value = '';
+          document.getElementById('filter-priority').value = '';
+        } else {
+          card.classList.add('active');
+
+          if (filter === 'all') {
+            document.getElementById('filter-status').value = '';
+            document.getElementById('filter-priority').value = '';
+          } else {
+            const [type, value] = filter.split(':');
+            if (type === 'status') {
+              document.getElementById('filter-status').value = value;
+              document.getElementById('filter-priority').value = '';
+            } else if (type === 'priority') {
+              document.getElementById('filter-priority').value = value;
+              document.getElementById('filter-status').value = '';
+            }
+          }
+        }
+
+        filterIssues();
+      });
+    });
 
     function renderIssues(issues) {
       const wrap = document.getElementById('issues-container');
