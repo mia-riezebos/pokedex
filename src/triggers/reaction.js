@@ -35,6 +35,12 @@ async function handleReaction(reaction, user) {
 
   if (message.webhookId) return;
 
+  // Don't create new issues from messages inside an existing issue thread
+  if (message.channel.isThread()) {
+    const linkedIssue = await require('../services/firestore').getIssueByThreadId(message.channel.id);
+    if (linkedIssue) return;
+  }
+
   // Only process the FIRST reaction — ignore if someone already reacted with this emoji
   if (reaction.count > 1) return;
 

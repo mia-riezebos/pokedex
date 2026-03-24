@@ -107,14 +107,16 @@ client.on('messageCreate', async (message) => {
     console.error('Error awarding XP:', err);
   }
 
-  // Check if this is a message in an issue thread (no @mention needed)
-  if (message.channel.isThread() && !message.mentions.has(client.user)) {
+  // Check if this is a message in an issue thread — route ALL thread messages
+  // through the thread handler first (even @mentions) to prevent duplicate issues
+  if (message.channel.isThread()) {
     try {
-      await handleThreadMessage(message);
+      const handled = await handleThreadMessage(message);
+      if (handled) return; // Was an issue thread — context appended, don't create new issue
     } catch (err) {
       console.error('Error handling thread message:', err);
     }
-    return;
+    // Not an issue thread — fall through to mention handler if applicable
   }
 
   if (!message.mentions.has(client.user)) return;

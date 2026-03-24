@@ -18,22 +18,20 @@ const DEBOUNCE_MS = 5000;
 
 async function handleThreadMessage(message) {
   // Only handle messages in threads
-  if (!message.channel.isThread()) return;
+  if (!message.channel.isThread()) return false;
 
   const threadId = message.channel.id;
 
   // Look up if this thread is linked to an issue
   const issue = await firestore.getIssueByThreadId(threadId);
-  if (!issue) return; // Not one of our issue threads
-
-  // Only track messages from the original reporter
-  if (message.author.id !== issue.reporterId) return;
+  if (!issue) return false; // Not one of our issue threads — let caller handle it
 
   const newText = message.content?.trim();
-  if (!newText) return;
+  if (!newText) return true; // Is an issue thread but empty message — still claim it
 
-  // Append the new context to Firestore
-  await firestore.appendThreadContext(issue.id, newText);
+  // Append the new context to Firestore (include who sent it)
+  const prefix = message.author.id === issue.reporterId ? '' : `[${message.author.username}]: `;
+  await firestore.appendThreadContext(issue.id, `${prefix}${newText}`);
 
   // Debounce — if user is typing multiple messages, wait before reclassifying
   if (pendingUpdates.has(issue.id)) {
@@ -118,6 +116,8 @@ async function handleThreadMessage(message) {
       console.error('Error processing thread context update:', err);
     }
   }, DEBOUNCE_MS));
+
+  return true; // Signal that this was an issue thread — don't create a new issue
 }
 
 module.exports = { handleThreadMessage };

@@ -2,6 +2,15 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.0.1',
+    date: '2026-03-24',
+    changes: [
+      'Fixed duplicate issue creation when users add context in issue threads',
+      'Reactions on messages inside issue threads no longer create new issues',
+      'Thread context from any user (not just reporter) is now tracked',
+    ],
+  },
+  {
     version: '2.0.0',
     date: '2026-03-24',
     changes: [
