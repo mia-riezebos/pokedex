@@ -2,6 +2,15 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.0.4',
+    date: '2026-03-24',
+    changes: [
+      'Added `/merge` — combine multiple issues into one, merging context, attachments, and reporters',
+      'Source issues are marked as "merged" and linked to the target issue',
+      'Cleaned up all test and irrelevant issues from the database',
+    ],
+  },
+  {
     version: '2.0.3',
     date: '2026-03-24',
     changes: [
