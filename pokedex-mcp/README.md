@@ -31,7 +31,7 @@ Set these in your shell or `.env`:
 FIREBASE_PROJECT_ID=poke-discord-bot
 FIREBASE_CLIENT_EMAIL=firebase-adminsdk-fbsvc@poke-discord-bot.iam.gserviceaccount.com
 FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n..."
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/REDACTED_WEBHOOK_ID/REDACTED_WEBHOOK_TOKEN
 DISCORD_GUILD_ID=1416726763496542243
 ```
 
@@ -51,7 +51,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
         "FIREBASE_PROJECT_ID": "poke-discord-bot",
         "FIREBASE_CLIENT_EMAIL": "firebase-adminsdk-fbsvc@poke-discord-bot.iam.gserviceaccount.com",
         "FIREBASE_PRIVATE_KEY": "-----BEGIN PRIVATE KEY-----\\n...",
-        "DISCORD_WEBHOOK_URL": "https://discord.com/api/webhooks/...",
+        "DISCORD_WEBHOOK_URL": "https://discord.com/api/webhooks/REDACTED_WEBHOOK_ID/REDACTED_WEBHOOK_TOKEN",
         "DISCORD_GUILD_ID": "1416726763496542243"
       }
     }
