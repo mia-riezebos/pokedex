@@ -57,12 +57,16 @@ function buildIssueEmbed(issue, issueId) {
     .setColor(color)
     .addFields(
       { name: 'Priority', value: issue.priority, inline: true },
-      { name: 'Category', value: issue.category, inline: true },
+      { name: 'Category', value: issue.category?.replace(/_/g, ' ') || 'other', inline: true },
       { name: 'Reporter', value: issue.reporterName, inline: true },
       { name: 'Reasoning', value: issue.reasoning },
     )
     .setFooter({ text: `Issue ID: ${issueId}` })
     .setTimestamp();
+
+  if (issue.assigneeName) {
+    embed.addFields({ name: 'Assigned To', value: issue.assigneeName, inline: true });
+  }
 
   if (messageLink) {
     embed.addFields({ name: 'Original Message', value: `[Jump to message](${messageLink})` });

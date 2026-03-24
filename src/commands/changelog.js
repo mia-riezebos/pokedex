@@ -2,6 +2,27 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 const CHANGELOG = [
   {
+    version: '2.2.0',
+    date: '2026-03-24',
+    changes: [
+      'Added `/issue context <id> <text>` — anyone can add follow-up context, reproduction steps, or details to an open issue without filing a new one',
+      'Added `pokedex_add_context` MCP tool — AI agents can append context to existing issues via both stdio and Cloudflare Workers MCP servers',
+      'Context additions update the triage embed in #eng-triage and post to the issue thread if one exists',
+      'Closed issues block context additions — reopen first with `/issue reopen`',
+    ],
+  },
+  {
+    version: '2.1.0',
+    date: '2026-03-23',
+    changes: [
+      'Added `/issue mine` — reporters can review their own recent open or closed issues',
+      'Added `/issue search <query>` — search saved issues by keyword without leaving Discord',
+      'Added `/issue assign` and `/issue note` — moderators can track ownership and internal notes directly on issues',
+      'Added `/typechart <type>` — Pokemon type matchup lookup with strengths, weaknesses, immunities, and sample Pokemon',
+      'Triage embeds now show assignees when an issue owner is set',
+    ],
+  },
+  {
     version: '2.0.0',
     date: '2026-03-23',
     changes: [

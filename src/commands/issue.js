@@ -11,9 +11,15 @@ const PRIORITY_COLORS = {
   unclassified: 0x808080,
 };
 
+const STATUS_CHOICES = [
+  { name: 'Open', value: 'open' },
+  { name: 'Closed', value: 'closed' },
+  { name: 'All', value: 'all' },
+];
+
 const commandData = new SlashCommandBuilder()
   .setName('issue')
-  .setDescription('Manage triaged issues (admin)')
+  .setDescription('Manage triaged issues')
   .addSubcommand(sub =>
     sub.setName('close')
       .setDescription('Close/resolve an issue')
@@ -42,13 +48,46 @@ const commandData = new SlashCommandBuilder()
       .addIntegerOption(opt => opt.setName('limit').setDescription('Max issues to show (default: 10)').setRequired(false)))
   .addSubcommand(sub =>
     sub.setName('status')
-      .setDescription('Show issue counts and stats'));
+      .setDescription('Show issue counts and stats'))
+  .addSubcommand(sub =>
+    sub.setName('mine')
+      .setDescription('Show your recent issues')
+      .addStringOption(opt =>
+        opt.setName('status')
+          .setDescription('Which issues to include')
+          .setRequired(false)
+          .addChoices(...STATUS_CHOICES))
+      .addIntegerOption(opt => opt.setName('limit').setDescription('Max issues to show (default: 5)').setRequired(false)))
+  .addSubcommand(sub =>
+    sub.setName('search')
+      .setDescription('Search saved issues by keyword')
+      .addStringOption(opt => opt.setName('query').setDescription('Keyword or phrase').setRequired(true))
+      .addStringOption(opt =>
+        opt.setName('status')
+          .setDescription('Which issues to include')
+          .setRequired(false)
+          .addChoices(...STATUS_CHOICES))
+      .addIntegerOption(opt => opt.setName('limit').setDescription('Max issues to show (default: 8)').setRequired(false)))
+  .addSubcommand(sub =>
+    sub.setName('assign')
+      .setDescription('Assign an issue to a team member')
+      .addStringOption(opt => opt.setName('id').setDescription('Issue ID').setRequired(true))
+      .addUserOption(opt => opt.setName('user').setDescription('Who should own it (default: you)').setRequired(false)))
+  .addSubcommand(sub =>
+    sub.setName('note')
+      .setDescription('Add an internal note to an issue')
+      .addStringOption(opt => opt.setName('id').setDescription('Issue ID').setRequired(true))
+      .addStringOption(opt => opt.setName('note').setDescription('Internal note').setRequired(true)))
+  .addSubcommand(sub =>
+    sub.setName('context')
+      .setDescription('Add follow-up context to an open issue without creating a new one')
+      .addStringOption(opt => opt.setName('id').setDescription('Issue ID').setRequired(true))
+      .addStringOption(opt => opt.setName('text').setDescription('Additional context, details, or reproduction steps').setRequired(true)));
 
 async function execute(interaction) {
   const sub = interaction.options.getSubcommand();
 
-  // Admin check for close/reopen
-  if (['close', 'reopen'].includes(sub)) {
+  if (['close', 'reopen', 'assign', 'note'].includes(sub)) {
     if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
       return interaction.reply({ content: 'You need **Manage Messages** permission to do that.', ephemeral: true });
     }
@@ -60,6 +99,13 @@ async function execute(interaction) {
     case 'view': return handleView(interaction);
     case 'list': return handleList(interaction);
     case 'status': return handleStatus(interaction);
+    case 'mine': return handleMine(interaction);
+    case 'search': return handleSearch(interaction);
+    case 'assign': return handleAssign(interaction);
+    case 'note': return handleNote(interaction);
+    case 'context': return handleContext(interaction);
+    default:
+      return interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
   }
 }
 
@@ -73,14 +119,13 @@ async function handleClose(interaction) {
   if (issue.status === 'closed') return interaction.editReply(`Issue \`${issueId}\` is already closed.`);
 
   await firestore.updateIssueStatus(issueId, 'closed', interaction.user.id);
+  const updatedIssue = await firestore.getIssueById(issueId);
 
-  // Update triage embed to show closed
-  await updateTriageEmbed(interaction.guild, issue, issueId, 'closed', reason, interaction.user.username);
+  await updateTriageEmbed(interaction.guild, updatedIssue, issueId, 'closed', reason, interaction.user.username);
 
-  // Archive the thread if it exists
-  if (issue.threadId) {
+  if (updatedIssue.threadId) {
     try {
-      const thread = await interaction.guild.channels.fetch(issue.threadId);
+      const thread = await interaction.guild.channels.fetch(updatedIssue.threadId);
       if (thread?.isThread()) {
         const closeEmbed = new EmbedBuilder()
           .setColor(0x808080)
@@ -108,14 +153,13 @@ async function handleReopen(interaction) {
   if (issue.status === 'open') return interaction.editReply(`Issue \`${issueId}\` is already open.`);
 
   await firestore.updateIssueStatus(issueId, 'open', null);
+  const updatedIssue = await firestore.getIssueById(issueId);
 
-  // Update triage embed
-  await updateTriageEmbed(interaction.guild, issue, issueId, 'reopened', null, interaction.user.username);
+  await updateTriageEmbed(interaction.guild, updatedIssue, issueId, 'reopened', null, interaction.user.username);
 
-  // Unarchive the thread if it exists
-  if (issue.threadId) {
+  if (updatedIssue.threadId) {
     try {
-      const thread = await interaction.guild.channels.fetch(issue.threadId);
+      const thread = await interaction.guild.channels.fetch(updatedIssue.threadId);
       if (thread?.isThread()) {
         await thread.setArchived(false);
         const reopenEmbed = new EmbedBuilder()
@@ -152,11 +196,15 @@ async function handleView(interaction) {
     .setTitle(issue.summary || 'Untitled Issue')
     .setColor(color)
     .addFields(
-      { name: 'Status', value: issue.status?.toUpperCase() || 'OPEN', inline: true },
+      { name: 'Status', value: (issue.status || 'open').toUpperCase(), inline: true },
       { name: 'Priority', value: issue.priority || 'unclassified', inline: true },
       { name: 'Category', value: issue.category?.replace(/_/g, ' ') || 'other', inline: true },
       { name: 'Reporter', value: issue.reporterName || 'unknown', inline: true },
     );
+
+  if (issue.assigneeName) {
+    embed.addFields({ name: 'Assigned To', value: issue.assigneeName, inline: true });
+  }
 
   if (messageLink) {
     embed.addFields({ name: 'Original Message', value: `[Jump](${messageLink})` });
@@ -178,6 +226,16 @@ async function handleView(interaction) {
     embed.addFields({ name: 'Thread Context', value: ctx.slice(0, 1024) });
   }
 
+  const notes = Array.isArray(issue.notes) ? issue.notes : [];
+  if (notes.length > 0) {
+    const noteLines = notes
+      .slice(-3)
+      .map(note => `• **${note.authorName || 'unknown'}** ${formatRelativeTime(note.createdAt)}\n${note.text}`)
+      .join('\n')
+      .slice(0, 1024);
+    embed.addFields({ name: `Internal Notes (${notes.length})`, value: noteLines });
+  }
+
   if (issue.closedBy) {
     embed.addFields({ name: 'Closed By', value: `<@${issue.closedBy}>`, inline: true });
   }
@@ -190,7 +248,7 @@ async function handleView(interaction) {
 async function handleList(interaction) {
   await interaction.deferReply({ ephemeral: true });
   const filter = interaction.options.getString('filter');
-  const limit = interaction.options.getInteger('limit') || 10;
+  const limit = Math.min(interaction.options.getInteger('limit') || 10, 25);
 
   let issues = await firestore.getOpenIssues(limit);
 
@@ -207,17 +265,10 @@ async function handleList(interaction) {
     .setColor(0x5865f2)
     .setDescription(`Showing ${issues.length} open issue${issues.length !== 1 ? 's' : ''}`);
 
-  for (const issue of issues.slice(0, 10)) {
-    const color = issue.priority === 'critical' ? '🔴' : issue.priority === 'high' ? '🟠' : issue.priority === 'medium' ? '🟡' : '🟢';
-    const hasMessageLink = issue.guildId && issue.channelId && issue.messageId
-      && issue.channelId !== 'mcp'
-      && !String(issue.messageId).startsWith('mcp-');
-    const link = hasMessageLink
-      ? ` — [jump](https://discord.com/channels/${issue.guildId}/${issue.channelId}/${issue.messageId})`
-      : '';
+  for (const issue of issues.slice(0, limit)) {
     embed.addFields({
-      name: `${color} ${issue.summary?.slice(0, 80) || 'Untitled'}`,
-      value: `\`${issue.id}\` • ${issue.priority} • ${issue.category?.replace(/_/g, ' ')}${link}`,
+      name: `${priorityEmoji(issue.priority)} ${issue.summary?.slice(0, 80) || 'Untitled'}`,
+      value: buildIssueListValue(issue),
     });
   }
 
@@ -235,10 +286,7 @@ async function handleStatus(interaction) {
       const order = ['critical', 'high', 'medium', 'low', 'unclassified'];
       return order.indexOf(a) - order.indexOf(b);
     })
-    .map(([p, c]) => {
-      const emoji = p === 'critical' ? '🔴' : p === 'high' ? '🟠' : p === 'medium' ? '🟡' : p === 'low' ? '🟢' : '⚪';
-      return `${emoji} ${p}: **${c}**`;
-    });
+    .map(([priority, count]) => `${priorityEmoji(priority)} ${priority}: **${count}**`);
 
   const embed = new EmbedBuilder()
     .setTitle('Issue Dashboard')
@@ -257,12 +305,171 @@ async function handleStatus(interaction) {
   await interaction.editReply({ embeds: [embed] });
 }
 
-async function updateTriageEmbed(guild, issue, issueId, action, reason, username) {
+async function handleMine(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+  const status = interaction.options.getString('status') || 'all';
+  const limit = Math.min(interaction.options.getInteger('limit') || 5, 10);
+
+  const issues = await firestore.getRecentIssuesByReporter(interaction.user.id, { status, limit });
+  if (issues.length === 0) {
+    return interaction.editReply(`No ${status === 'all' ? '' : `${status} `}issues found for you yet.`);
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle(`Your Issues${status !== 'all' ? ` — ${status.toUpperCase()}` : ''}`)
+    .setColor(0x5865f2)
+    .setDescription(`Showing ${issues.length} recent report${issues.length === 1 ? '' : 's'}`);
+
+  for (const issue of issues) {
+    embed.addFields({
+      name: `${priorityEmoji(issue.priority)} ${issue.summary?.slice(0, 80) || 'Untitled'}`,
+      value: buildIssueListValue(issue),
+    });
+  }
+
+  await interaction.editReply({ embeds: [embed] });
+}
+
+async function handleSearch(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+  const query = interaction.options.getString('query');
+  const status = interaction.options.getString('status') || 'all';
+  const limit = Math.min(interaction.options.getInteger('limit') || 8, 10);
+
+  const issues = await firestore.searchIssues(query, { status, limit });
+  if (issues.length === 0) {
+    return interaction.editReply(`No issues matched \`${query}\`.`);
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle(`Search Results for "${query}"`)
+    .setColor(0x5865f2)
+    .setDescription(`Found ${issues.length} matching issue${issues.length === 1 ? '' : 's'}`);
+
+  for (const issue of issues) {
+    embed.addFields({
+      name: `${priorityEmoji(issue.priority)} ${issue.summary?.slice(0, 80) || 'Untitled'}`,
+      value: buildIssueListValue(issue),
+    });
+  }
+
+  await interaction.editReply({ embeds: [embed] });
+}
+
+async function handleAssign(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+  const issueId = interaction.options.getString('id');
+  const assignee = interaction.options.getUser('user') || interaction.user;
+
+  const issue = await firestore.getIssueById(issueId);
+  if (!issue) return interaction.editReply(`Issue \`${issueId}\` not found.`);
+
+  await firestore.assignIssue(issueId, {
+    assigneeId: assignee.id,
+    assigneeName: assignee.username,
+    assignedBy: interaction.user.id,
+  });
+
+  const updatedIssue = await firestore.getIssueById(issueId);
+  await updateTriageEmbed(interaction.guild, updatedIssue, issueId, 'assigned', assignee.username, interaction.user.username);
+
+  await interaction.editReply(`Assigned issue \`${issueId}\` to **${assignee.username}**.`);
+}
+
+async function handleNote(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+  const issueId = interaction.options.getString('id');
+  const noteText = interaction.options.getString('note').trim();
+
+  const issue = await firestore.getIssueById(issueId);
+  if (!issue) return interaction.editReply(`Issue \`${issueId}\` not found.`);
+
+  await firestore.addIssueNote(issueId, {
+    text: noteText,
+    authorId: interaction.user.id,
+    authorName: interaction.user.username,
+  });
+
+  const updatedIssue = await firestore.getIssueById(issueId);
+  await updateTriageEmbed(interaction.guild, updatedIssue, issueId, 'noted', noteText, interaction.user.username);
+
+  await interaction.editReply(`Added note to issue \`${issueId}\`.`);
+}
+
+async function handleContext(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+  const issueId = interaction.options.getString('id');
+  const text = interaction.options.getString('text').trim();
+
+  const issue = await firestore.getIssueById(issueId);
+  if (!issue) return interaction.editReply(`Issue \`${issueId}\` not found.`);
+
+  if (issue.status === 'closed' || issue.status === 'fixed' || issue.status === 'wontfix') {
+    return interaction.editReply(`Issue \`${issueId}\` is closed. Reopen it first with \`/issue reopen ${issueId}\`.`);
+  }
+
+  const contextEntry = `${interaction.user.username}: ${text}`;
+  await firestore.appendThreadContext(issueId, contextEntry);
+
+  const updatedIssue = await firestore.getIssueById(issueId);
+  await updateTriageEmbed(interaction.guild, updatedIssue, issueId, 'context', text, interaction.user.username);
+
+  // If the issue has a thread, post the context there too
+  if (updatedIssue.threadId) {
+    try {
+      const thread = await interaction.guild.channels.fetch(updatedIssue.threadId);
+      if (thread?.isThread()) {
+        const contextEmbed = new EmbedBuilder()
+          .setColor(0x5865f2)
+          .setTitle('Additional Context Added')
+          .setDescription(text.slice(0, 4096))
+          .setFooter({ text: `Added by ${interaction.user.username} via /issue context` })
+          .setTimestamp();
+        await thread.send({ embeds: [contextEmbed] });
+      }
+    } catch {
+      // Thread may not exist
+    }
+  }
+
+  const contextCount = (updatedIssue.threadContext || []).length;
+  await interaction.editReply(`Added context to issue \`${issueId}\` (${contextCount} context entries total).`);
+}
+
+function buildIssueListValue(issue) {
+  const status = (issue.status || 'open').toUpperCase();
+  const category = issue.category?.replace(/_/g, ' ') || 'other';
+  const assignee = issue.assigneeName ? ` • assigned: ${issue.assigneeName}` : '';
+  const hasMessageLink = issue.guildId && issue.channelId && issue.messageId
+    && issue.channelId !== 'mcp'
+    && !String(issue.messageId).startsWith('mcp-');
+  const link = hasMessageLink
+    ? ` • [jump](https://discord.com/channels/${issue.guildId}/${issue.channelId}/${issue.messageId})`
+    : '';
+
+  return `\`${issue.id}\` • ${status} • ${category}${assignee}${link}`;
+}
+
+function priorityEmoji(priority) {
+  if (priority === 'critical') return '🔴';
+  if (priority === 'high') return '🟠';
+  if (priority === 'medium') return '🟡';
+  if (priority === 'low') return '🟢';
+  return '⚪';
+}
+
+function formatRelativeTime(value) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return '';
+  return `<t:${Math.floor(date.getTime() / 1000)}:R>`;
+}
+
+async function updateTriageEmbed(guild, issue, issueId, action, detail, username) {
   const triageChannelName = getConfig('triage_channel') || 'eng-triage';
-  if (!issue.triageMessageId) return;
+  if (!issue?.triageMessageId) return;
 
   const triageChannel = guild.channels.cache.find(
-    ch => ch.name === triageChannelName && ch.isTextBased()
+    channel => channel.name === triageChannelName && channel.isTextBased()
   );
   if (!triageChannel) return;
 
@@ -272,9 +479,15 @@ async function updateTriageEmbed(guild, issue, issueId, action, reason, username
 
     if (action === 'closed') {
       embed.setColor(0x808080);
-      embed.addFields({ name: '✅ Closed', value: `By **${username}** — ${reason}` });
+      embed.addFields({ name: '✅ Closed', value: `By **${username}** — ${detail}` });
     } else if (action === 'reopened') {
       embed.addFields({ name: '🔄 Reopened', value: `By **${username}**` });
+    } else if (action === 'assigned') {
+      embed.addFields({ name: '👤 Assigned', value: `Set to **${detail}** by **${username}**` });
+    } else if (action === 'noted') {
+      embed.addFields({ name: '📝 Latest Note', value: `**${username}**: ${detail.slice(0, 240)}` });
+    } else if (action === 'context') {
+      embed.addFields({ name: '💬 Context Added', value: `**${username}**: ${detail.slice(0, 240)}` });
     }
 
     embed.setTimestamp();

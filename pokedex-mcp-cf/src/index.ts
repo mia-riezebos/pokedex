@@ -260,6 +260,26 @@ async function firestoreQuery(env: Env, token: string, field: string, value: str
     .map((r) => fromFirestoreDoc(r.document!));
 }
 
+async function firestoreUpdate(env: Env, token: string, docId: string, data: Record<string, unknown>): Promise<boolean> {
+  const fields: Record<string, unknown> = {};
+  const fieldPaths: string[] = [];
+  for (const [k, v] of Object.entries(data)) {
+    fields[k] = toFirestoreValue(v);
+    fieldPaths.push(k);
+  }
+
+  const updateMask = fieldPaths.map(f => `updateMask.fieldPaths=${f}`).join("&");
+  const res = await fetch(
+    `${FIRESTORE_BASE(env.FIREBASE_PROJECT_ID)}/issues/${docId}?${updateMask}`,
+    {
+      method: "PATCH",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ fields }),
+    }
+  );
+  return res.ok;
+}
+
 // === Discord Webhook ===
 
 async function postToDiscord(env: Env, issue: Record<string, unknown>, issueId: string) {
@@ -427,7 +447,7 @@ export default {
 
       // Rate limit write operations (tools/call with write tools)
       const isWriteCall = body.method === "tools/call" &&
-        ["pokedex_report_bug", "pokedex_suggest_feature"].includes((body.params as any)?.name);
+        ["pokedex_report_bug", "pokedex_suggest_feature", "pokedex_add_context"].includes((body.params as any)?.name);
       const isReadCall = body.method === "tools/call" || body.method === "tools/list";
 
       if (isWriteCall || isReadCall) {
@@ -459,6 +479,7 @@ export default {
           { name: "pokedex_suggest_feature", title: "Suggest Feature", description: "Submit a feature request.", inputSchema: { type: "object", properties: { title: { type: "string" }, description: { type: "string" }, reporter_name: { type: "string" }, reporter_id: { type: "string" } }, required: ["title","description","reporter_name"] }, annotations: { readOnlyHint: false } },
           { name: "pokedex_check_issue", title: "Check Issue", description: "Check status of an issue by ID.", inputSchema: { type: "object", properties: { issue_id: { type: "string" } }, required: ["issue_id"] }, annotations: { readOnlyHint: true } },
           { name: "pokedex_my_issues", title: "My Issues", description: "List issues reported by a user.", inputSchema: { type: "object", properties: { reporter_name: { type: "string" }, limit: { type: "number", default: 20 } }, required: ["reporter_name"] }, annotations: { readOnlyHint: true } },
+          { name: "pokedex_add_context", title: "Add Context to Issue", description: "Add follow-up context, reproduction steps, or additional details to an existing open issue without creating a new one.", inputSchema: { type: "object", properties: { issue_id: { type: "string", description: "The issue ID to add context to" }, context: { type: "string", description: "Additional context, details, or reproduction steps" }, author: { type: "string", description: "Your name or username" } }, required: ["issue_id", "context", "author"] }, annotations: { readOnlyHint: false, destructiveHint: false } },
         ];
         return Response.json({ jsonrpc: "2.0", id: body.id, result: { tools } });
       }
@@ -517,6 +538,29 @@ export default {
           if (params.name === "pokedex_my_issues") {
             const issues = await firestoreQuery(env, token, "reporterName", args.reporter_name as string, (args.limit as number) || 20);
             return Response.json({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: JSON.stringify({ reporter: args.reporter_name, total: issues.length, issues: issues.map(i => ({ issueId: i.id, summary: i.summary, status: i.status || "open", priority: i.priority, category: i.category })) }, null, 2) }] } });
+          }
+
+          if (params.name === "pokedex_add_context") {
+            const issue = await firestoreGet(env, token, args.issue_id as string);
+            if (!issue) return Response.json({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: JSON.stringify({ error: "Issue not found" }) }] } });
+
+            const status = (issue.status as string) || "open";
+            if (["closed", "fixed", "wontfix"].includes(status)) {
+              return Response.json({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: JSON.stringify({ error: "Issue is closed. Reopen it first.", issue_id: args.issue_id, status }) }] } });
+            }
+
+            const existingContext = (issue.threadContext as Array<Record<string, string>>) || [];
+            existingContext.push({ text: `${args.author}: ${args.context}`, addedAt: new Date().toISOString() });
+
+            await firestoreUpdate(env, token, args.issue_id as string, {
+              threadContext: existingContext,
+              updatedAt: new Date().toISOString(),
+            });
+
+            return Response.json({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: JSON.stringify({
+              issueId: args.issue_id, summary: issue.summary, contextAdded: { text: args.context, author: args.author },
+              totalContextEntries: existingContext.length, message: `Context added to issue ${args.issue_id}.`,
+            }, null, 2) }] } });
           }
 
           return Response.json({ jsonrpc: "2.0", id: body.id, error: { code: -32601, message: `Unknown tool: ${params.name}` } });

@@ -17,6 +17,7 @@ const lockCommand = require('./commands/lock');
 const unlockCommand = require('./commands/unlock');
 const leaderboardCommand = require('./commands/leaderboard');
 const pokedexCommand = require('./commands/pokedex');
+const typechartCommand = require('./commands/typechart');
 const {
   canModerate,
   processPendingDecision,
@@ -39,7 +40,7 @@ async function registerCommands() {
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   await rest.put(
     Routes.applicationGuildCommands(process.env.DISCORD_APP_ID, process.env.DISCORD_GUILD_ID),
-    { body: [configCommand.data.toJSON(), helpCommand.data.toJSON(), changelogCommand.data.toJSON(), feedbackCommand.data.toJSON(), issueCommand.data.toJSON(), pingCommand.data.toJSON(), lockCommand.data.toJSON(), unlockCommand.data.toJSON(), leaderboardCommand.data.toJSON(), pokedexCommand.data.toJSON()] },
+    { body: [configCommand.data.toJSON(), helpCommand.data.toJSON(), changelogCommand.data.toJSON(), feedbackCommand.data.toJSON(), issueCommand.data.toJSON(), pingCommand.data.toJSON(), lockCommand.data.toJSON(), unlockCommand.data.toJSON(), leaderboardCommand.data.toJSON(), pokedexCommand.data.toJSON(), typechartCommand.data.toJSON()] },
   );
   console.log('Slash commands registered.');
 }
@@ -125,7 +126,7 @@ client.on('interactionCreate', async (interaction) => {
   }
 
   if (!interaction.isChatInputCommand()) return;
-  const commands = { config: configCommand, help: helpCommand, changelog: changelogCommand, feedback: feedbackCommand, issue: issueCommand, ping: pingCommand, lock: lockCommand, unlock: unlockCommand, leaderboard: leaderboardCommand, pokedex: pokedexCommand };
+  const commands = { config: configCommand, help: helpCommand, changelog: changelogCommand, feedback: feedbackCommand, issue: issueCommand, ping: pingCommand, lock: lockCommand, unlock: unlockCommand, leaderboard: leaderboardCommand, pokedex: pokedexCommand, typechart: typechartCommand };
   const command = commands[interaction.commandName];
   if (!command) return;
 

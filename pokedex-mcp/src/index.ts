@@ -274,6 +274,265 @@ server.registerTool(
   }
 );
 
+// Tool 5: Update an issue
+server.registerTool(
+  "pokedex_update_issue",
+  {
+    title: "Update Issue",
+    description:
+      "Update an existing issue's priority, status, or category. Use this to escalate, close, or reclassify issues.",
+    inputSchema: {
+      issue_id: z.string().describe("The issue ID to update"),
+      status: z
+        .enum(["open", "acknowledged", "fixed", "closed", "escalated", "wontfix"])
+        .optional()
+        .describe("New status for the issue"),
+      priority: z
+        .enum(["critical", "high", "medium", "low"])
+        .optional()
+        .describe("New priority level"),
+      category: z
+        .enum(["bug", "performance", "security", "ux_issue", "infrastructure", "feature_request", "other"])
+        .optional()
+        .describe("New category"),
+      reason: z.string().optional().describe("Reason for the update (shown in audit trail)"),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  async ({ issue_id, status, priority, category, reason }) => {
+    const db = getDb();
+    const docRef = db.collection("issues").doc(issue_id);
+    const doc = await docRef.get();
+
+    if (!doc.exists) {
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Issue not found", issue_id }) }] };
+    }
+
+    const updates: Record<string, unknown> = {
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    if (status) updates.status = status;
+    if (priority) updates.priority = priority;
+    if (category) updates.category = category;
+
+    if (status === "closed" || status === "fixed" || status === "wontfix") {
+      updates.closedAt = admin.firestore.FieldValue.serverTimestamp();
+      updates.closedBy = "mcp-agent";
+    }
+
+    if (reason) {
+      updates.notes = admin.firestore.FieldValue.arrayUnion({
+        text: reason,
+        author: "MCP Agent",
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    await docRef.update(updates);
+
+    const updated = (await docRef.get()).data()!;
+    return {
+      content: [{ type: "text" as const, text: JSON.stringify({
+        issueId: issue_id,
+        summary: updated.summary,
+        status: updated.status,
+        priority: updated.priority,
+        category: updated.category,
+        message: `Issue ${issue_id} updated successfully.`,
+      }, null, 2) }],
+    };
+  }
+);
+
+// Tool 6: Search issues
+server.registerTool(
+  "pokedex_search_issues",
+  {
+    title: "Search Issues",
+    description:
+      "Search issues by keyword across summaries and descriptions. Returns matching issues sorted by most recent.",
+    inputSchema: {
+      query: z.string().describe("Search keyword or phrase to find in issue titles and descriptions"),
+      status: z
+        .enum(["open", "closed", "fixed", "acknowledged", "escalated", "all"])
+        .optional()
+        .default("all")
+        .describe("Filter by status"),
+      limit: z.number().optional().default(10).describe("Max results to return"),
+    },
+    annotations: {
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+  },
+  async ({ query, status, limit }) => {
+    const db = getDb();
+    const searchLimit = Math.min(limit || 10, 50);
+    const queryLower = query.toLowerCase();
+
+    // Firestore doesn't support full-text search, so we fetch recent issues and filter client-side
+    let baseQuery = db.collection("issues").orderBy("createdAt", "desc").limit(200);
+
+    if (status && status !== "all") {
+      baseQuery = db.collection("issues")
+        .where("status", "==", status)
+        .orderBy("createdAt", "desc")
+        .limit(200);
+    }
+
+    const snapshot = await baseQuery.get();
+    const matches = snapshot.docs
+      .filter((doc) => {
+        const d = doc.data();
+        const summary = (d.summary || "").toLowerCase();
+        const text = (d.text || "").toLowerCase();
+        const category = (d.category || "").toLowerCase();
+        return summary.includes(queryLower) || text.includes(queryLower) || category.includes(queryLower);
+      })
+      .slice(0, searchLimit)
+      .map((doc) => {
+        const d = doc.data();
+        return {
+          issueId: doc.id,
+          summary: d.summary,
+          status: d.status || "open",
+          priority: d.priority,
+          category: d.category,
+          reporter: d.reporterName,
+          source: d.source || "discord",
+          createdAt: d.createdAt?.toDate?.()?.toISOString() || null,
+        };
+      });
+
+    return {
+      content: [{ type: "text" as const, text: JSON.stringify({
+        query,
+        total: matches.length,
+        issues: matches,
+      }, null, 2) }],
+    };
+  }
+);
+
+// Tool 7: Add comment to an issue
+server.registerTool(
+  "pokedex_add_comment",
+  {
+    title: "Add Comment",
+    description:
+      "Add a comment or follow-up note to an existing issue. Useful for providing additional context, reproduction steps, or status updates.",
+    inputSchema: {
+      issue_id: z.string().describe("The issue ID to comment on"),
+      comment: z.string().describe("The comment text to add"),
+      author: z.string().describe("Your name or username"),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  },
+  async ({ issue_id, comment, author }) => {
+    const db = getDb();
+    const docRef = db.collection("issues").doc(issue_id);
+    const doc = await docRef.get();
+
+    if (!doc.exists) {
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Issue not found", issue_id }) }] };
+    }
+
+    const noteEntry = {
+      text: comment,
+      author,
+      timestamp: new Date().toISOString(),
+    };
+
+    await docRef.update({
+      notes: admin.firestore.FieldValue.arrayUnion(noteEntry),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    const data = doc.data()!;
+    const existingNotes = data.notes || [];
+
+    return {
+      content: [{ type: "text" as const, text: JSON.stringify({
+        issueId: issue_id,
+        summary: data.summary,
+        commentAdded: noteEntry,
+        totalComments: existingNotes.length + 1,
+        message: `Comment added to issue ${issue_id}.`,
+      }, null, 2) }],
+    };
+  }
+);
+
+// Tool 8: Add context to an existing issue (reporter-facing, uses threadContext)
+server.registerTool(
+  "pokedex_add_context",
+  {
+    title: "Add Context to Issue",
+    description:
+      "Add follow-up context, reproduction steps, or additional details to an existing open issue without creating a new one. This is visible to reporters and engineers. Use this when you have more information about a previously reported issue.",
+    inputSchema: {
+      issue_id: z.string().describe("The issue ID to add context to"),
+      context: z.string().describe("The additional context, details, reproduction steps, or follow-up information"),
+      author: z.string().describe("Your name or username"),
+    },
+    annotations: {
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+  },
+  async ({ issue_id, context, author }) => {
+    const db = getDb();
+    const docRef = db.collection("issues").doc(issue_id);
+    const doc = await docRef.get();
+
+    if (!doc.exists) {
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Issue not found", issue_id }) }] };
+    }
+
+    const data = doc.data()!;
+    const status = data.status || "open";
+    if (["closed", "fixed", "wontfix"].includes(status)) {
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Issue is closed. Reopen it first.", issue_id, status }) }] };
+    }
+
+    const existingContext: Array<Record<string, string>> = data.threadContext || [];
+    existingContext.push({
+      text: `${author}: ${context}`,
+      addedAt: new Date().toISOString(),
+    });
+
+    await docRef.update({
+      threadContext: existingContext,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    return {
+      content: [{ type: "text" as const, text: JSON.stringify({
+        issueId: issue_id,
+        summary: data.summary,
+        contextAdded: { text: context, author },
+        totalContextEntries: existingContext.length,
+        message: `Context added to issue ${issue_id}. Total context entries: ${existingContext.length}.`,
+      }, null, 2) }],
+    };
+  }
+);
+
 // --- Start (stdio or HTTP) ---
 async function main() {
   const mode = process.env.MCP_TRANSPORT || "stdio";

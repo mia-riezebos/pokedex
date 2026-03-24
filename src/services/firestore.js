@@ -150,4 +150,105 @@ async function getAllIssues(limit = 500) {
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
-module.exports = { init, isDuplicate, saveIssue, getIssuesSince, getAllConfigOverrides, setConfigOverride, deleteConfigOverride, updateIssueTriageMessageId, updateIssueThreadId, getIssueByThreadId, appendThreadContext, updateIssueClassification, getIssueById, updateIssueStatus, getOpenIssues, getIssueCounts, getAllIssues };
+async function getRecentIssuesByReporter(reporterId, options = {}) {
+  const { status = 'all', limit = 10 } = options;
+  const issues = await getAllIssues(500);
+
+  return issues
+    .filter(issue => issue.reporterId === reporterId)
+    .filter(issue => status === 'all' ? true : (issue.status || 'open') === status)
+    .slice(0, limit);
+}
+
+async function searchIssues(query, options = {}) {
+  const { status = 'all', limit = 10 } = options;
+  const terms = String(query || '')
+    .toLowerCase()
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+
+  if (terms.length === 0) return [];
+
+  const issues = await getAllIssues(500);
+
+  return issues
+    .map(issue => {
+      const summary = String(issue.summary || '').toLowerCase();
+      const text = String(issue.text || '').toLowerCase();
+      const category = String(issue.category || '').toLowerCase();
+      const reporter = String(issue.reporterName || '').toLowerCase();
+      let score = 0;
+
+      for (const term of terms) {
+        if (summary.includes(term)) score += 3;
+        if (text.includes(term)) score += 2;
+        if (category.includes(term)) score += 1;
+        if (reporter.includes(term)) score += 1;
+      }
+
+      return { issue, score };
+    })
+    .filter(({ issue, score }) => score > 0 && (status === 'all' ? true : (issue.status || 'open') === status))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit)
+    .map(({ issue }) => issue);
+}
+
+async function assignIssue(issueId, assignment) {
+  await db.collection('issues').doc(issueId).update({
+    assigneeId: assignment.assigneeId,
+    assigneeName: assignment.assigneeName,
+    assignedBy: assignment.assignedBy,
+    assignedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
+async function addIssueNote(issueId, note) {
+  const docRef = db.collection('issues').doc(issueId);
+  const doc = await docRef.get();
+  if (!doc.exists) return null;
+
+  const data = doc.data();
+  const notes = Array.isArray(data.notes) ? [...data.notes] : [];
+  const storedNote = {
+    text: note.text,
+    authorId: note.authorId,
+    authorName: note.authorName,
+    createdAt: new Date().toISOString(),
+  };
+
+  notes.push(storedNote);
+
+  await docRef.update({
+    notes,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return storedNote;
+}
+
+module.exports = {
+  init,
+  isDuplicate,
+  saveIssue,
+  getIssuesSince,
+  getAllConfigOverrides,
+  setConfigOverride,
+  deleteConfigOverride,
+  updateIssueTriageMessageId,
+  updateIssueThreadId,
+  getIssueByThreadId,
+  appendThreadContext,
+  updateIssueClassification,
+  getIssueById,
+  updateIssueStatus,
+  getOpenIssues,
+  getIssueCounts,
+  getAllIssues,
+  getRecentIssuesByReporter,
+  searchIssues,
+  assignIssue,
+  addIssueNote,
+};
