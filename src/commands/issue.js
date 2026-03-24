@@ -141,7 +141,10 @@ async function handleView(interaction) {
   if (!issue) return interaction.editReply(`Issue \`${issueId}\` not found.`);
 
   const color = PRIORITY_COLORS[issue.priority] ?? 0x808080;
-  const messageLink = issue.guildId && issue.channelId && issue.messageId
+  const hasMessageLink = issue.guildId && issue.channelId && issue.messageId
+    && issue.channelId !== 'mcp'
+    && !String(issue.messageId).startsWith('mcp-');
+  const messageLink = hasMessageLink
     ? `https://discord.com/channels/${issue.guildId}/${issue.channelId}/${issue.messageId}`
     : null;
 
@@ -157,6 +160,8 @@ async function handleView(interaction) {
 
   if (messageLink) {
     embed.addFields({ name: 'Original Message', value: `[Jump](${messageLink})` });
+  } else if (issue.source === 'mcp') {
+    embed.addFields({ name: 'Source', value: 'MCP Agent', inline: true });
   }
 
   if (issue.reasoning) {
@@ -204,7 +209,10 @@ async function handleList(interaction) {
 
   for (const issue of issues.slice(0, 10)) {
     const color = issue.priority === 'critical' ? '🔴' : issue.priority === 'high' ? '🟠' : issue.priority === 'medium' ? '🟡' : '🟢';
-    const link = issue.guildId && issue.channelId && issue.messageId
+    const hasMessageLink = issue.guildId && issue.channelId && issue.messageId
+      && issue.channelId !== 'mcp'
+      && !String(issue.messageId).startsWith('mcp-');
+    const link = hasMessageLink
       ? ` — [jump](https://discord.com/channels/${issue.guildId}/${issue.channelId}/${issue.messageId})`
       : '';
     embed.addFields({

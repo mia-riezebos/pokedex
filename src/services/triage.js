@@ -43,7 +43,14 @@ function buildTriageButtons(issueId) {
 
 function buildIssueEmbed(issue, issueId) {
   const color = PRIORITY_COLORS[issue.priority] ?? 0x808080;
-  const messageLink = `https://discord.com/channels/${issue.guildId}/${issue.channelId}/${issue.messageId}`;
+  const hasOriginalMessageLink = issue.guildId
+    && issue.channelId
+    && issue.messageId
+    && issue.channelId !== 'mcp'
+    && !String(issue.messageId).startsWith('mcp-');
+  const messageLink = hasOriginalMessageLink
+    ? `https://discord.com/channels/${issue.guildId}/${issue.channelId}/${issue.messageId}`
+    : null;
 
   const embed = new EmbedBuilder()
     .setTitle(issue.summary)
@@ -52,11 +59,16 @@ function buildIssueEmbed(issue, issueId) {
       { name: 'Priority', value: issue.priority, inline: true },
       { name: 'Category', value: issue.category, inline: true },
       { name: 'Reporter', value: issue.reporterName, inline: true },
-      { name: 'Original Message', value: `[Jump to message](${messageLink})` },
       { name: 'Reasoning', value: issue.reasoning },
     )
     .setFooter({ text: `Issue ID: ${issueId}` })
     .setTimestamp();
+
+  if (messageLink) {
+    embed.addFields({ name: 'Original Message', value: `[Jump to message](${messageLink})` });
+  } else if (issue.source === 'mcp') {
+    embed.addFields({ name: 'Source', value: 'MCP Agent' });
+  }
 
   // Attach first image as embed image
   if (issue.attachments?.length > 0) {

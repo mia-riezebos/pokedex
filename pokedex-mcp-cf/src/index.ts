@@ -266,15 +266,26 @@ async function postToDiscord(env: Env, issue: Record<string, unknown>, issueId: 
   if (!env.DISCORD_WEBHOOK_URL) return;
 
   const colors: Record<string, number> = { critical: 0xff0000, high: 0xff8c00, medium: 0xffd700, low: 0x00cc00 };
-
-  // Just post a simple webhook notification — the bot will poll for pending issues and add buttons
   await fetch(env.DISCORD_WEBHOOK_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       username: "Pokedex",
       avatar_url: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/137.png",
-      content: `📥 New MCP report from **${issue.reporterName}**: *${issue.summary}* — pending approval (bot will post buttons shortly)`,
+      content: "📥 New MCP report pending approval",
+      embeds: [{
+        title: String(issue.summary || "Untitled report"),
+        color: colors[String(issue.priority || "medium")] ?? 0x9b59b6,
+        description: String(issue.text || "(no description)").slice(0, 4096),
+        fields: [
+          { name: "Reporter", value: String(issue.reporterName || "unknown"), inline: true },
+          { name: "Priority", value: String(issue.priority || "medium"), inline: true },
+          { name: "Category", value: String(issue.category || "other"), inline: true },
+          { name: "Source", value: "MCP Agent", inline: true },
+        ],
+        footer: { text: `Issue ID: ${issueId}` },
+        timestamp: new Date().toISOString(),
+      }],
     }),
   });
 }
@@ -310,7 +321,7 @@ function createServer(env: Env): McpServer {
       category: category || "bug",
       summary: title,
       reasoning: "Reported via Pokedex MCP",
-      status: "open",
+      status: "pending",
       source: "mcp",
       createdAt: new Date().toISOString(),
     };
@@ -348,7 +359,7 @@ function createServer(env: Env): McpServer {
       category: "feature_request",
       summary: title,
       reasoning: "Feature request via Pokedex MCP",
-      status: "open",
+      status: "pending",
       source: "mcp",
       createdAt: new Date().toISOString(),
     };
@@ -490,7 +501,7 @@ export default {
               reporterId: (args.reporter_id as string) || `mcp-${args.reporter_name}`,
               reporterName: args.reporter_name, text: `[FEATURE REQUEST] ${args.description}`,
               priority: "low", category: "feature_request", summary: args.title,
-              reasoning: "Feature request via Pokedex MCP", status: "open", source: "mcp", createdAt: new Date().toISOString(),
+              reasoning: "Feature request via Pokedex MCP", status: "pending", source: "mcp", createdAt: new Date().toISOString(),
             };
             const issueId = await firestoreCreate(env, token, data);
             await postToDiscord(env, data, issueId);
