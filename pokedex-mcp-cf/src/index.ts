@@ -266,15 +266,18 @@ async function postToDiscord(env: Env, issue: Record<string, unknown>, issueId: 
 
   const colors: Record<string, number> = { critical: 0xff0000, high: 0xff8c00, medium: 0xffd700, low: 0x00cc00 };
 
+  // Webhook posts a notification — the bot will pick up pending issues and add buttons
   await fetch(env.DISCORD_WEBHOOK_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       username: "Pokedex",
       avatar_url: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/137.png",
+      content: `📥 **New MCP report pending review** — \`${issueId}\``,
       embeds: [{
-        title: issue.summary as string,
-        color: colors[issue.priority as string] ?? 0x808080,
+        title: `⏳ PENDING — ${issue.summary as string}`,
+        color: 0x9b59b6,
+        description: "This issue was submitted via MCP and needs approval before entering triage.",
         fields: [
           { name: "Priority", value: issue.priority as string, inline: true },
           { name: "Category", value: issue.category as string, inline: true },
@@ -282,7 +285,7 @@ async function postToDiscord(env: Env, issue: Record<string, unknown>, issueId: 
           { name: "Source", value: "MCP Agent", inline: true },
           { name: "Description", value: ((issue.text as string) || "").slice(0, 1024) || "(none)" },
         ],
-        footer: { text: `Issue ID: ${issueId} | via Pokedex MCP` },
+        footer: { text: `Issue ID: ${issueId} | Awaiting approval — use bot buttons to approve or delete` },
         timestamp: new Date().toISOString(),
       }],
     }),
@@ -481,7 +484,7 @@ export default {
               reporterName: args.reporter_name, text: args.description,
               priority: args.priority || "medium", category: args.category || "bug",
               summary: args.title, reasoning: "Reported via Pokedex MCP",
-              status: "open", source: "mcp", createdAt: new Date().toISOString(),
+              status: "pending", source: "mcp", createdAt: new Date().toISOString(),
             };
             if (args.screenshot_url) data.attachments = [{ url: args.screenshot_url, name: "screenshot.png", isImage: true }];
             const issueId = await firestoreCreate(env, token, data);

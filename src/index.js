@@ -6,6 +6,7 @@ const triage = require('./services/triage');
 const { handleMention } = require('./triggers/mention');
 const { handleReaction } = require('./triggers/reaction');
 const { handleThreadMessage } = require('./triggers/thread');
+const { startPendingPoller } = require('./services/pending');
 const configCommand = require('./commands/config');
 const helpCommand = require('./commands/help');
 const changelogCommand = require('./commands/changelog');
@@ -59,6 +60,7 @@ client.once('ready', async () => {
 
     // Start digest scheduler
     triage.startDigestScheduler(guild);
+    startPendingPoller(guild);
   }
 });
 
@@ -269,6 +271,47 @@ async function handleButtonInteraction(interaction) {
       }
     } catch (err) {
       console.error('Failed to re-process as new issue:', err);
+    }
+    return;
+  }
+
+  // --- MCP pending approval buttons ---
+  if (customId.startsWith('mcp_approve_')) {
+    const issueId = customId.replace('mcp_approve_', '');
+    try {
+      const admin = require('firebase-admin');
+      const db = admin.firestore();
+
+      // Update status to open
+      await db.collection('issues').doc(issueId).update({ status: 'open', approvedBy: user.id, approvedAt: admin.firestore.FieldValue.serverTimestamp() });
+
+      // Rebuild as a proper triage embed with full buttons
+      const doc = await db.collection('issues').doc(issueId).get();
+      const issue = doc.data();
+
+      const { buildIssueEmbed, buildTriageButtons } = require('./services/triage');
+      const embed = buildIssueEmbed({ ...issue, messageId: issue.messageId }, issueId);
+      embed.addFields({ name: '✅ Approved', value: `by ${user.username} — <t:${Math.floor(Date.now() / 1000)}:R>` });
+
+      const buttons = buildTriageButtons(issueId);
+      await interaction.update({ embeds: [embed], components: [buttons] });
+    } catch (err) {
+      console.error('Failed to approve MCP issue:', err);
+      await interaction.reply({ content: 'Failed to approve issue.', ephemeral: true }).catch(() => {});
+    }
+    return;
+  }
+
+  if (customId.startsWith('mcp_delete_')) {
+    const issueId = customId.replace('mcp_delete_', '');
+    try {
+      const admin = require('firebase-admin');
+      const db = admin.firestore();
+      await db.collection('issues').doc(issueId).delete();
+      await interaction.message.delete();
+    } catch (err) {
+      console.error('Failed to delete MCP issue:', err);
+      await interaction.reply({ content: 'Failed to delete.', ephemeral: true }).catch(() => {});
     }
     return;
   }
