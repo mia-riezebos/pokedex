@@ -36,6 +36,23 @@ async function processIssue(message, text) {
     // Continue creating the issue if duplicate check fails
   }
 
+  // Collect attachments (screenshots, files)
+  const attachments = [];
+  if (message.attachments?.size > 0) {
+    for (const [, att] of message.attachments) {
+      attachments.push({
+        url: att.url,
+        proxyUrl: att.proxyURL,
+        name: att.name,
+        size: att.size,
+        contentType: att.contentType || '',
+        width: att.width || null,
+        height: att.height || null,
+        isImage: (att.contentType || '').startsWith('image/'),
+      });
+    }
+  }
+
   // Build issue data
   const issueData = {
     messageId: message.id,
@@ -48,6 +65,7 @@ async function processIssue(message, text) {
     category: classification.category,
     summary: classification.summary,
     reasoning: classification.reasoning,
+    attachments: attachments.length > 0 ? attachments : null,
   };
 
   if (classification.raw) {
@@ -161,6 +179,18 @@ async function processIssueForced(message, text) {
 
   const classification = await classifyIssue(text);
 
+  const attachments = [];
+  if (message.attachments?.size > 0) {
+    for (const [, att] of message.attachments) {
+      attachments.push({
+        url: att.url, proxyUrl: att.proxyURL, name: att.name,
+        size: att.size, contentType: att.contentType || '',
+        width: att.width || null, height: att.height || null,
+        isImage: (att.contentType || '').startsWith('image/'),
+      });
+    }
+  }
+
   const issueData = {
     messageId: message.id,
     guildId: message.guild.id,
@@ -172,6 +202,7 @@ async function processIssueForced(message, text) {
     category: classification.category,
     summary: classification.summary,
     reasoning: classification.reasoning,
+    attachments: attachments.length > 0 ? attachments : null,
   };
 
   if (classification.raw) issueData.rawAiResponse = classification.raw;

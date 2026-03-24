@@ -45,7 +45,7 @@ function buildIssueEmbed(issue, issueId) {
   const color = PRIORITY_COLORS[issue.priority] ?? 0x808080;
   const messageLink = `https://discord.com/channels/${issue.guildId}/${issue.channelId}/${issue.messageId}`;
 
-  return new EmbedBuilder()
+  const embed = new EmbedBuilder()
     .setTitle(issue.summary)
     .setColor(color)
     .addFields(
@@ -57,6 +57,24 @@ function buildIssueEmbed(issue, issueId) {
     )
     .setFooter({ text: `Issue ID: ${issueId}` })
     .setTimestamp();
+
+  // Attach first image as embed image
+  if (issue.attachments?.length > 0) {
+    const firstImage = issue.attachments.find(a => a.isImage);
+    if (firstImage) {
+      embed.setImage(firstImage.url);
+    }
+
+    // List all attachments
+    const attLinks = issue.attachments.map(a => {
+      const icon = a.isImage ? '🖼️' : '📎';
+      const size = a.size ? ` (${Math.round(a.size / 1024)}KB)` : '';
+      return `${icon} [${a.name}](${a.url})${size}`;
+    });
+    embed.addFields({ name: 'Attachments', value: attLinks.join('\n') });
+  }
+
+  return embed;
 }
 
 function findTriageChannel(guild) {

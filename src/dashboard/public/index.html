@@ -582,7 +582,7 @@
         return `<div class="issue-card glass anim" style="animation-delay:${Math.min(i*0.03,0.6)}s" data-id="${issue.id}">
           <div class="status"><span class="status-dot ${st}"></span>${st}</div>
           <div><span class="priority ${pr}">${pr}</span></div>
-          <div><div class="issue-title">${esc(issue.summary||'No summary')}</div><div class="issue-excerpt">${esc((issue.text||'').slice(0,100))}${(issue.text||'').length>100?'...':''}</div></div>
+          <div><div class="issue-title">${issue.attachments?.length?'<span style="color:var(--gold-soft);margin-right:4px;" title="Has attachments">🖼️</span>':''}${esc(issue.summary||'No summary')}</div><div class="issue-excerpt">${esc((issue.text||'').slice(0,100))}${(issue.text||'').length>100?'...':''}</div></div>
           <div><span class="category">${(issue.category||'other').replace(/_/g,' ')}</span></div>
           <div class="reporter">${esc(issue.reporterName||'unknown')}</div>
           <div class="date">${date}</div>
@@ -608,6 +608,7 @@
         <div class="d-field"><div class="d-label">Reported</div><div class="d-value">${d}</div></div>
         <div class="d-field"><div class="d-label">Full Report</div><div class="d-value">${esc(i.text||'(no text)')}</div></div>
         <div class="d-field"><div class="d-label">AI Reasoning</div><div class="d-value mono">${esc(i.reasoning||'No reasoning')}</div></div>
+        ${i.attachments?.length?`<div class="d-field"><div class="d-label">Attachments (${i.attachments.length})</div><div class="d-value">${i.attachments.map(a=>a.isImage?`<a href="${esc(a.url)}" target="_blank" style="display:block;margin:8px 0;"><img src="${esc(a.url)}" alt="${esc(a.name)}" style="max-width:100%;border-radius:8px;border:1px solid var(--glass-border);"></a>`:`<a href="${esc(a.url)}" target="_blank" style="color:var(--gold-soft);">📎 ${esc(a.name)} (${Math.round((a.size||0)/1024)}KB)</a>`).join('')}</div></div>`:''}
         ${i.threadContext?.length?`<div class="d-field"><div class="d-label">Thread Context (${i.threadContext.length})</div><div class="d-value mono">${i.threadContext.map(c=>esc(typeof c==='string'?c:c.text||'')).join('\n\n')}</div></div>`:''}`;
       document.getElementById('detail-panel').classList.add('active');
       document.getElementById('detail-backdrop').classList.add('active');
