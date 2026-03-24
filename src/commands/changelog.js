@@ -2,6 +2,22 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.1.2',
+    date: '2026-03-24',
+    changes: [
+      'Added autocomplete dropdowns to `/issue`, `/merge`, `/warn`, `/suggest`, and `/giveaway` — no more typing IDs manually',
+      'All ID-based options now show filtered search results as you type',
+    ],
+  },
+  {
+    version: '2.1.1',
+    date: '2026-03-24',
+    changes: [
+      'Rewrote `/help` — now shows all 30+ commands organized by category (issues, mod, community, fun, settings)',
+      'Added optional `category` parameter to jump straight to a specific section',
+    ],
+  },
+  {
     version: '2.1.0',
     date: '2026-03-24',
     changes: [
