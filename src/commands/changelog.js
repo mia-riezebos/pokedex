@@ -2,6 +2,18 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.0.0',
+    date: '2026-03-24',
+    changes: [
+      'Added `/warn` — issue warnings with infraction history, list, remove, and clear subcommands',
+      'Added `/timeout` — temporarily mute users with preset durations (60s to 28 days)',
+      'Added `/kick` and `/ban` — remove users with reason logging and DM notifications',
+      'Added `/purge` — bulk delete up to 100 messages, optionally filtered by user',
+      'Added `/slowmode` — set or disable channel slowmode (up to 6 hours)',
+      'All moderation actions are logged to Firestore with full infraction history',
+    ],
+  },
+  {
     version: '1.9.0',
     date: '2026-03-24',
     changes: [

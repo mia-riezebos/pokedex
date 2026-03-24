@@ -21,6 +21,12 @@ const typechartCommand = require('./commands/typechart');
 const serverinfoCommand = require('./commands/serverinfo');
 const afkCommand = require('./commands/afk');
 const levelCommand = require('./commands/level');
+const warnCommand = require('./commands/warn');
+const timeoutCommand = require('./commands/timeout');
+const kickCommand = require('./commands/kick');
+const banCommand = require('./commands/ban');
+const purgeCommand = require('./commands/purge');
+const slowmodeCommand = require('./commands/slowmode');
 const {
   canModerate,
   processPendingDecision,
@@ -45,7 +51,7 @@ async function registerCommands() {
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   await rest.put(
     Routes.applicationGuildCommands(process.env.DISCORD_APP_ID, process.env.DISCORD_GUILD_ID),
-    { body: [configCommand.data.toJSON(), helpCommand.data.toJSON(), changelogCommand.data.toJSON(), feedbackCommand.data.toJSON(), issueCommand.data.toJSON(), pingCommand.data.toJSON(), lockCommand.data.toJSON(), unlockCommand.data.toJSON(), leaderboardCommand.data.toJSON(), pokedexCommand.data.toJSON(), typechartCommand.data.toJSON(), serverinfoCommand.data.toJSON(), afkCommand.data.toJSON(), levelCommand.data.toJSON()] },
+    { body: [configCommand.data.toJSON(), helpCommand.data.toJSON(), changelogCommand.data.toJSON(), feedbackCommand.data.toJSON(), issueCommand.data.toJSON(), pingCommand.data.toJSON(), lockCommand.data.toJSON(), unlockCommand.data.toJSON(), leaderboardCommand.data.toJSON(), pokedexCommand.data.toJSON(), typechartCommand.data.toJSON(), serverinfoCommand.data.toJSON(), afkCommand.data.toJSON(), levelCommand.data.toJSON(), warnCommand.data.toJSON(), timeoutCommand.data.toJSON(), kickCommand.data.toJSON(), banCommand.data.toJSON(), purgeCommand.data.toJSON(), slowmodeCommand.data.toJSON()] },
   );
   console.log('Slash commands registered.');
 }
@@ -145,7 +151,7 @@ client.on('interactionCreate', async (interaction) => {
   }
 
   if (!interaction.isChatInputCommand()) return;
-  const commands = { config: configCommand, help: helpCommand, changelog: changelogCommand, feedback: feedbackCommand, issue: issueCommand, ping: pingCommand, lock: lockCommand, unlock: unlockCommand, leaderboard: leaderboardCommand, pokedex: pokedexCommand, typechart: typechartCommand, serverinfo: serverinfoCommand, afk: afkCommand, level: levelCommand };
+  const commands = { config: configCommand, help: helpCommand, changelog: changelogCommand, feedback: feedbackCommand, issue: issueCommand, ping: pingCommand, lock: lockCommand, unlock: unlockCommand, leaderboard: leaderboardCommand, pokedex: pokedexCommand, typechart: typechartCommand, serverinfo: serverinfoCommand, afk: afkCommand, level: levelCommand, warn: warnCommand, timeout: timeoutCommand, kick: kickCommand, ban: banCommand, purge: purgeCommand, slowmode: slowmodeCommand };
   const command = commands[interaction.commandName];
   if (!command) return;
 
