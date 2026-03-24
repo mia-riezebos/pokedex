@@ -1,6 +1,6 @@
 const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
-const BOT_VERSION = '2.0.1';
+const BOT_VERSION = '2.0.2';
 
 const commandData = new SlashCommandBuilder()
   .setName('ping')

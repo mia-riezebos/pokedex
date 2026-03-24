@@ -2,6 +2,13 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.0.2',
+    date: '2026-03-24',
+    changes: [
+      'Added `/deletethread` — delete any thread with an optional reason (requires Manage Threads permission)',
+    ],
+  },
+  {
     version: '2.0.1',
     date: '2026-03-24',
     changes: [
