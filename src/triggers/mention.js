@@ -17,7 +17,7 @@ async function handleMention(message) {
         },
         {
           name: 'Flag a Message',
-          value: 'React with 🐛 on any message to report it as an issue',
+          value: 'React with 🐛 on any message to report it as an issue\nReact with 💡 to submit it as a suggestion',
         },
         {
           name: 'Commands',

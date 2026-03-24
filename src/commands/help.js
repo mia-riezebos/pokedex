@@ -18,6 +18,10 @@ async function execute(interaction) {
         ].join('\n'),
       },
       {
+        name: '💡 Submit a Suggestion',
+        value: 'React with 💡 on any message to submit it as a feature request or idea',
+      },
+      {
         name: '📋 What Happens Next',
         value: [
           '• I classify the issue by **priority** (critical/high/medium/low) and **category** (bug, feature request, etc.)',

@@ -6,9 +6,12 @@ async function handleReaction(reaction, user) {
   // Ignore bot reactions
   if (user.bot) return;
 
-  // Check if the emoji matches the configured trigger
-  const triggerEmoji = getConfig('emoji_trigger');
-  if (reaction.emoji.name !== triggerEmoji) return;
+  // Check if the emoji matches a configured trigger
+  const bugEmoji = getConfig('emoji_trigger');
+  const suggestionEmoji = getConfig('suggestion_emoji');
+  const isBug = reaction.emoji.name === bugEmoji;
+  const isSuggestion = reaction.emoji.name === suggestionEmoji;
+  if (!isBug && !isSuggestion) return;
 
   // Fetch partial message if needed (reactions on uncached messages arrive as partials)
   if (reaction.partial) {
@@ -41,7 +44,8 @@ async function handleReaction(reaction, user) {
     return;
   }
 
-  enqueue(() => processIssue(message, text));
+  const context = isSuggestion ? `[This is a SUGGESTION/FEATURE REQUEST, not a bug report]: ${text}` : text;
+  enqueue(() => processIssue(message, context));
 }
 
 module.exports = { handleReaction };
