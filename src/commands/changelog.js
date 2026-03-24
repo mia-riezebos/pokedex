@@ -2,6 +2,17 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 const CHANGELOG = [
   {
+    version: '1.8.0',
+    date: '2026-03-23',
+    changes: [
+      'Added `/ping` — check bot latency, WebSocket ping, and uptime',
+      'Added `/lock` and `/unlock` — lock/unlock channels during incidents (admin only)',
+      'Added `/leaderboard` — see top bug reporters, critical finds, and issue stats',
+      'Added `/pokedex <pokemon>` — look up any Pokemon with stats, abilities, and type info',
+      'Updated `/help` with all new commands',
+    ],
+  },
+  {
     version: '1.7.0',
     date: '2026-03-23',
     changes: [

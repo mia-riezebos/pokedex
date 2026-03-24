@@ -142,4 +142,12 @@ async function getIssueCounts() {
   return { open, closed, total: open + closed, byPriority };
 }
 
-module.exports = { init, isDuplicate, saveIssue, getIssuesSince, getAllConfigOverrides, setConfigOverride, deleteConfigOverride, updateIssueTriageMessageId, updateIssueThreadId, getIssueByThreadId, appendThreadContext, updateIssueClassification, getIssueById, updateIssueStatus, getOpenIssues, getIssueCounts };
+async function getAllIssues(limit = 500) {
+  const snapshot = await db.collection('issues')
+    .orderBy('createdAt', 'desc')
+    .limit(limit)
+    .get();
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+module.exports = { init, isDuplicate, saveIssue, getIssuesSince, getAllConfigOverrides, setConfigOverride, deleteConfigOverride, updateIssueTriageMessageId, updateIssueThreadId, getIssueByThreadId, appendThreadContext, updateIssueClassification, getIssueById, updateIssueStatus, getOpenIssues, getIssueCounts, getAllIssues };

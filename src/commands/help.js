@@ -46,6 +46,17 @@ async function execute(interaction) {
         ].join('\n'),
       },
       {
+        name: '🛠️ Utility',
+        value: [
+          '`/ping` — Check bot latency and uptime',
+          '`/lock [channel]` — Lock a channel (admin)',
+          '`/unlock [channel]` — Unlock a channel (admin)',
+          '`/leaderboard [type]` — See top bug reporters & stats',
+          '`/pokedex <pokemon>` — Look up a Pokemon',
+          '`/changelog` — View recent bot updates',
+        ].join('\n'),
+      },
+      {
         name: '🔧 Configurable Settings',
         value: [
           '`model` — AI model used for classification',
