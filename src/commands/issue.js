@@ -23,16 +23,16 @@ const commandData = new SlashCommandBuilder()
   .addSubcommand(sub =>
     sub.setName('close')
       .setDescription('Close/resolve an issue')
-      .addStringOption(opt => opt.setName('id').setDescription('Issue ID').setRequired(true))
+      .addStringOption(opt => opt.setName('id').setDescription('Issue ID').setRequired(true).setAutocomplete(true))
       .addStringOption(opt => opt.setName('reason').setDescription('Closure reason').setRequired(false)))
   .addSubcommand(sub =>
     sub.setName('reopen')
       .setDescription('Reopen a closed issue')
-      .addStringOption(opt => opt.setName('id').setDescription('Issue ID').setRequired(true)))
+      .addStringOption(opt => opt.setName('id').setDescription('Issue ID').setRequired(true).setAutocomplete(true)))
   .addSubcommand(sub =>
     sub.setName('view')
       .setDescription('View details of an issue')
-      .addStringOption(opt => opt.setName('id').setDescription('Issue ID').setRequired(true)))
+      .addStringOption(opt => opt.setName('id').setDescription('Issue ID').setRequired(true).setAutocomplete(true)))
   .addSubcommand(sub =>
     sub.setName('list')
       .setDescription('List open issues')
@@ -71,17 +71,17 @@ const commandData = new SlashCommandBuilder()
   .addSubcommand(sub =>
     sub.setName('assign')
       .setDescription('Assign an issue to a team member')
-      .addStringOption(opt => opt.setName('id').setDescription('Issue ID').setRequired(true))
+      .addStringOption(opt => opt.setName('id').setDescription('Issue ID').setRequired(true).setAutocomplete(true))
       .addUserOption(opt => opt.setName('user').setDescription('Who should own it (default: you)').setRequired(false)))
   .addSubcommand(sub =>
     sub.setName('note')
       .setDescription('Add an internal note to an issue')
-      .addStringOption(opt => opt.setName('id').setDescription('Issue ID').setRequired(true))
+      .addStringOption(opt => opt.setName('id').setDescription('Issue ID').setRequired(true).setAutocomplete(true))
       .addStringOption(opt => opt.setName('note').setDescription('Internal note').setRequired(true)))
   .addSubcommand(sub =>
     sub.setName('context')
       .setDescription('Add follow-up context to an open issue without creating a new one')
-      .addStringOption(opt => opt.setName('id').setDescription('Issue ID').setRequired(true))
+      .addStringOption(opt => opt.setName('id').setDescription('Issue ID').setRequired(true).setAutocomplete(true))
       .addStringOption(opt => opt.setName('text').setDescription('Additional context, details, or reproduction steps').setRequired(true)));
 
 async function execute(interaction) {
@@ -497,4 +497,25 @@ async function updateTriageEmbed(guild, issue, issueId, action, detail, username
   }
 }
 
-module.exports = { data: commandData, execute };
+async function autocomplete(interaction) {
+  const focused = interaction.options.getFocused().toLowerCase();
+  try {
+    const issues = await firestore.getAllIssues(50);
+    const filtered = issues
+      .filter(i => {
+        const id = i.id.toLowerCase();
+        const summary = (i.summary || '').toLowerCase();
+        return id.includes(focused) || summary.includes(focused);
+      })
+      .slice(0, 25)
+      .map(i => ({
+        name: `${i.id.slice(0, 8)}… | ${(i.status || 'open').toUpperCase()} | ${(i.summary || 'Untitled').slice(0, 60)}`,
+        value: i.id,
+      }));
+    await interaction.respond(filtered);
+  } catch {
+    await interaction.respond([]);
+  }
+}
+
+module.exports = { data: commandData, execute, autocomplete };

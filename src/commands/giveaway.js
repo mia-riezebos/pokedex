@@ -5,7 +5,7 @@ function getDb() {
   return admin.firestore();
 }
 
-module.exports = {
+const moduleExports = {
   data: new SlashCommandBuilder()
     .setName('giveaway')
     .setDescription('Manage giveaways')
@@ -45,6 +45,7 @@ module.exports = {
             .setName('message_id')
             .setDescription('Message ID of the giveaway')
             .setRequired(true)
+            .setAutocomplete(true)
         )
     ),
 
@@ -258,3 +259,34 @@ function scheduleGiveawayEnd(client, messageId, message, winners, duration) {
     }
   }, duration);
 }
+
+moduleExports.autocomplete = async function autocomplete(interaction) {
+  const focused = interaction.options.getFocused().toLowerCase();
+  const guildId = interaction.guildId;
+  try {
+    const db = getDb();
+    const snapshot = await db.collection('giveaways')
+      .where('guildId', '==', guildId)
+      .orderBy('createdAt', 'desc')
+      .limit(25)
+      .get();
+    const filtered = snapshot.docs
+      .filter(doc => {
+        const d = doc.data();
+        return doc.id.includes(focused) || (d.prize || '').toLowerCase().includes(focused);
+      })
+      .slice(0, 25)
+      .map(doc => {
+        const d = doc.data();
+        return {
+          name: `${d.ended ? 'ENDED' : 'ACTIVE'} | ${(d.prize || 'Unknown').slice(0, 60)}`,
+          value: doc.id,
+        };
+      });
+    await interaction.respond(filtered);
+  } catch {
+    await interaction.respond([]);
+  }
+};
+
+module.exports = moduleExports;

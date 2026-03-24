@@ -201,6 +201,21 @@ client.on('interactionCreate', async (interaction) => {
     return;
   }
 
+  // --- Autocomplete interactions ---
+  if (interaction.isAutocomplete()) {
+    const commands = { issue: issueCommand, merge: mergeCommand, warn: warnCommand, suggest: suggestCommand, giveaway: giveawayCommand };
+    const command = commands[interaction.commandName];
+    if (command?.autocomplete) {
+      try {
+        await command.autocomplete(interaction);
+      } catch (err) {
+        console.error(`Autocomplete error for /${interaction.commandName}:`, err);
+        await interaction.respond([]).catch(() => {});
+      }
+    }
+    return;
+  }
+
   if (!interaction.isChatInputCommand()) return;
   const commands = { config: configCommand, help: helpCommand, changelog: changelogCommand, feedback: feedbackCommand, issue: issueCommand, ping: pingCommand, lock: lockCommand, unlock: unlockCommand, leaderboard: leaderboardCommand, pokedex: pokedexCommand, typechart: typechartCommand, serverinfo: serverinfoCommand, afk: afkCommand, level: levelCommand, warn: warnCommand, timeout: timeoutCommand, kick: kickCommand, ban: banCommand, purge: purgeCommand, slowmode: slowmodeCommand, deletethread: deletethreadCommand, merge: mergeCommand, starboard: starboardCommand, poll: pollCommand, welcome: welcomeCommand, reactionrole: reactionroleCommand, giveaway: giveawayCommand, suggest: suggestCommand };
   const command = commands[interaction.commandName];

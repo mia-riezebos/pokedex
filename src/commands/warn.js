@@ -21,7 +21,7 @@ const commandData = new SlashCommandBuilder()
   .addSubcommand(sub =>
     sub.setName('remove')
       .setDescription('Remove a specific warning by ID')
-      .addStringOption(opt => opt.setName('id').setDescription('Warning ID to remove').setRequired(true)))
+      .addStringOption(opt => opt.setName('id').setDescription('Warning ID to remove').setRequired(true).setAutocomplete(true)))
   .addSubcommand(sub =>
     sub.setName('clear')
       .setDescription('Clear all warnings for a user')
@@ -189,4 +189,35 @@ async function handleClear(interaction) {
   await interaction.editReply({ embeds: [embed] });
 }
 
-module.exports = { data: commandData, execute };
+async function autocomplete(interaction) {
+  const focused = interaction.options.getFocused().toLowerCase();
+  const guildId = interaction.guild.id;
+  try {
+    const db = getDb();
+    const snapshot = await db.collection('infractions')
+      .where('guildId', '==', guildId)
+      .orderBy('createdAt', 'desc')
+      .limit(25)
+      .get();
+    const filtered = snapshot.docs
+      .filter(doc => {
+        const d = doc.data();
+        return doc.id.toLowerCase().includes(focused) ||
+          (d.username || '').toLowerCase().includes(focused) ||
+          (d.reason || '').toLowerCase().includes(focused);
+      })
+      .slice(0, 25)
+      .map(doc => {
+        const d = doc.data();
+        return {
+          name: `${d.type.toUpperCase()} | ${d.username} | ${(d.reason || '').slice(0, 50)}`,
+          value: doc.id,
+        };
+      });
+    await interaction.respond(filtered);
+  } catch {
+    await interaction.respond([]);
+  }
+}
+
+module.exports = { data: commandData, execute, autocomplete };

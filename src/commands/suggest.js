@@ -21,7 +21,7 @@ const statusEmojis = {
   considering: '🤔',
 };
 
-module.exports = {
+const moduleExports = {
   data: new SlashCommandBuilder()
     .setName('suggest')
     .setDescription('Submit, manage, or configure suggestions')
@@ -46,6 +46,7 @@ module.exports = {
             .setName('id')
             .setDescription('The suggestion document ID')
             .setRequired(true)
+            .setAutocomplete(true)
         )
         .addStringOption((option) =>
           option
@@ -267,3 +268,36 @@ async function handleChannel(interaction) {
 function capitalize(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
+
+moduleExports.autocomplete = async function autocomplete(interaction) {
+  const focused = interaction.options.getFocused().toLowerCase();
+  const guildId = interaction.guildId;
+  try {
+    const db = getDb();
+    const snapshot = await db.collection('suggestions')
+      .where('guildId', '==', guildId)
+      .orderBy('createdAt', 'desc')
+      .limit(25)
+      .get();
+    const filtered = snapshot.docs
+      .filter(doc => {
+        const d = doc.data();
+        return doc.id.toLowerCase().includes(focused) ||
+          (d.idea || '').toLowerCase().includes(focused) ||
+          (d.authorName || '').toLowerCase().includes(focused);
+      })
+      .slice(0, 25)
+      .map(doc => {
+        const d = doc.data();
+        return {
+          name: `${(d.status || 'pending').toUpperCase()} | ${d.authorName || '?'} | ${(d.idea || '').slice(0, 55)}`,
+          value: doc.id,
+        };
+      });
+    await interaction.respond(filtered);
+  } catch {
+    await interaction.respond([]);
+  }
+};
+
+module.exports = moduleExports;

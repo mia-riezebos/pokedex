@@ -12,11 +12,13 @@ const commandData = new SlashCommandBuilder()
   .addStringOption(opt =>
     opt.setName('target')
       .setDescription('Issue ID to keep (the primary issue)')
-      .setRequired(true))
+      .setRequired(true)
+      .setAutocomplete(true))
   .addStringOption(opt =>
     opt.setName('sources')
       .setDescription('Issue IDs to merge in (comma-separated)')
-      .setRequired(true))
+      .setRequired(true)
+      .setAutocomplete(true))
   .addStringOption(opt =>
     opt.setName('reason')
       .setDescription('Why these issues are being merged')
@@ -154,4 +156,28 @@ async function execute(interaction) {
   await interaction.editReply({ embeds: [embed] });
 }
 
-module.exports = { data: commandData, execute };
+async function autocomplete(interaction) {
+  const focused = interaction.options.getFocused().toLowerCase();
+  try {
+    const db = getDb();
+    const snapshot = await db.collection('issues').orderBy('createdAt', 'desc').limit(50).get();
+    const filtered = snapshot.docs
+      .filter(doc => {
+        const d = doc.data();
+        return doc.id.toLowerCase().includes(focused) || (d.summary || '').toLowerCase().includes(focused);
+      })
+      .slice(0, 25)
+      .map(doc => {
+        const d = doc.data();
+        return {
+          name: `${doc.id.slice(0, 8)}… | ${(d.status || 'open').toUpperCase()} | ${(d.summary || 'Untitled').slice(0, 60)}`,
+          value: doc.id,
+        };
+      });
+    await interaction.respond(filtered);
+  } catch {
+    await interaction.respond([]);
+  }
+}
+
+module.exports = { data: commandData, execute, autocomplete };
