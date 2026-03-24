@@ -2,6 +2,18 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.1.0',
+    date: '2026-03-24',
+    changes: [
+      'Added `/starboard` — highlight the best messages with ⭐ reactions, auto-reposted to a starboard channel',
+      'Added `/poll` — create reaction-based polls with up to 10 options and optional auto-close timer',
+      'Added `/welcome` — configurable welcome/goodbye embeds when members join or leave',
+      'Added `/reactionrole setup` — self-assign roles by reacting to a setup message',
+      'Added `/giveaway start` and `/giveaway reroll` — timed giveaways with random winner selection',
+      'Added `/suggest` — suggestion board with 👍/👎 voting and status tracking (approved, denied, etc.)',
+    ],
+  },
+  {
     version: '2.0.4',
     date: '2026-03-24',
     changes: [

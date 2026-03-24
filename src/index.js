@@ -29,6 +29,12 @@ const purgeCommand = require('./commands/purge');
 const slowmodeCommand = require('./commands/slowmode');
 const deletethreadCommand = require('./commands/deletethread');
 const mergeCommand = require('./commands/merge');
+const starboardCommand = require('./commands/starboard');
+const pollCommand = require('./commands/poll');
+const welcomeCommand = require('./commands/welcome');
+const reactionroleCommand = require('./commands/reactionrole');
+const giveawayCommand = require('./commands/giveaway');
+const suggestCommand = require('./commands/suggest');
 const {
   canModerate,
   processPendingDecision,
@@ -53,7 +59,7 @@ async function registerCommands() {
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   await rest.put(
     Routes.applicationGuildCommands(process.env.DISCORD_APP_ID, process.env.DISCORD_GUILD_ID),
-    { body: [configCommand.data.toJSON(), helpCommand.data.toJSON(), changelogCommand.data.toJSON(), feedbackCommand.data.toJSON(), issueCommand.data.toJSON(), pingCommand.data.toJSON(), lockCommand.data.toJSON(), unlockCommand.data.toJSON(), leaderboardCommand.data.toJSON(), pokedexCommand.data.toJSON(), typechartCommand.data.toJSON(), serverinfoCommand.data.toJSON(), afkCommand.data.toJSON(), levelCommand.data.toJSON(), warnCommand.data.toJSON(), timeoutCommand.data.toJSON(), kickCommand.data.toJSON(), banCommand.data.toJSON(), purgeCommand.data.toJSON(), slowmodeCommand.data.toJSON(), deletethreadCommand.data.toJSON(), mergeCommand.data.toJSON()] },
+    { body: [configCommand.data.toJSON(), helpCommand.data.toJSON(), changelogCommand.data.toJSON(), feedbackCommand.data.toJSON(), issueCommand.data.toJSON(), pingCommand.data.toJSON(), lockCommand.data.toJSON(), unlockCommand.data.toJSON(), leaderboardCommand.data.toJSON(), pokedexCommand.data.toJSON(), typechartCommand.data.toJSON(), serverinfoCommand.data.toJSON(), afkCommand.data.toJSON(), levelCommand.data.toJSON(), warnCommand.data.toJSON(), timeoutCommand.data.toJSON(), kickCommand.data.toJSON(), banCommand.data.toJSON(), purgeCommand.data.toJSON(), slowmodeCommand.data.toJSON(), deletethreadCommand.data.toJSON(), mergeCommand.data.toJSON(), starboardCommand.data.toJSON(), pollCommand.data.toJSON(), welcomeCommand.data.toJSON(), reactionroleCommand.data.toJSON(), giveawayCommand.data.toJSON(), suggestCommand.data.toJSON()] },
   );
   console.log('Slash commands registered.');
 }
@@ -137,6 +143,47 @@ client.on('messageReactionAdd', async (reaction, user) => {
   } catch (err) {
     console.error('Error handling reaction:', err);
   }
+
+  // Starboard — check for ⭐ reactions
+  try {
+    await starboardCommand.handleStarReaction(reaction, user);
+  } catch (err) {
+    console.error('Error handling starboard:', err);
+  }
+
+  // Reaction roles — add role on react
+  try {
+    await reactionroleCommand.handleReactionRoleAdd(reaction, user);
+  } catch (err) {
+    console.error('Error handling reaction role add:', err);
+  }
+});
+
+// Reaction role removal
+client.on('messageReactionRemove', async (reaction, user) => {
+  try {
+    if (reaction.partial) await reaction.fetch().catch(() => {});
+    await reactionroleCommand.handleReactionRoleRemove(reaction, user);
+  } catch (err) {
+    console.error('Error handling reaction role remove:', err);
+  }
+});
+
+// Welcome / Goodbye
+client.on('guildMemberAdd', async (member) => {
+  try {
+    await welcomeCommand.handleMemberJoin(member);
+  } catch (err) {
+    console.error('Error handling member join:', err);
+  }
+});
+
+client.on('guildMemberRemove', async (member) => {
+  try {
+    await welcomeCommand.handleMemberLeave(member);
+  } catch (err) {
+    console.error('Error handling member leave:', err);
+  }
 });
 
 // Handle slash commands and button interactions
@@ -155,7 +202,7 @@ client.on('interactionCreate', async (interaction) => {
   }
 
   if (!interaction.isChatInputCommand()) return;
-  const commands = { config: configCommand, help: helpCommand, changelog: changelogCommand, feedback: feedbackCommand, issue: issueCommand, ping: pingCommand, lock: lockCommand, unlock: unlockCommand, leaderboard: leaderboardCommand, pokedex: pokedexCommand, typechart: typechartCommand, serverinfo: serverinfoCommand, afk: afkCommand, level: levelCommand, warn: warnCommand, timeout: timeoutCommand, kick: kickCommand, ban: banCommand, purge: purgeCommand, slowmode: slowmodeCommand, deletethread: deletethreadCommand, merge: mergeCommand };
+  const commands = { config: configCommand, help: helpCommand, changelog: changelogCommand, feedback: feedbackCommand, issue: issueCommand, ping: pingCommand, lock: lockCommand, unlock: unlockCommand, leaderboard: leaderboardCommand, pokedex: pokedexCommand, typechart: typechartCommand, serverinfo: serverinfoCommand, afk: afkCommand, level: levelCommand, warn: warnCommand, timeout: timeoutCommand, kick: kickCommand, ban: banCommand, purge: purgeCommand, slowmode: slowmodeCommand, deletethread: deletethreadCommand, merge: mergeCommand, starboard: starboardCommand, poll: pollCommand, welcome: welcomeCommand, reactionrole: reactionroleCommand, giveaway: giveawayCommand, suggest: suggestCommand };
   const command = commands[interaction.commandName];
   if (!command) return;
 
