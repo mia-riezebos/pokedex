@@ -2,6 +2,14 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.3.0',
+    date: '2026-03-24',
+    changes: [
+      '`/ping` now shows the bot version number',
+      '`/changelog` is now paginated — browse with Previous/Next buttons instead of one giant embed',
+    ],
+  },
+  {
     version: '2.2.1',
     date: '2026-03-24',
     changes: [
