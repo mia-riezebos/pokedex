@@ -267,49 +267,16 @@ async function postToDiscord(env: Env, issue: Record<string, unknown>, issueId: 
 
   const colors: Record<string, number> = { critical: 0xff0000, high: 0xff8c00, medium: 0xffd700, low: 0x00cc00 };
 
-  // Post webhook with ?wait=true to get message ID, then add reactions
-  const webhookRes = await fetch(`${env.DISCORD_WEBHOOK_URL}?wait=true`, {
+  // Just post a simple webhook notification — the bot will poll for pending issues and add buttons
+  await fetch(env.DISCORD_WEBHOOK_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       username: "Pokedex",
       avatar_url: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/137.png",
-      content: `📥 **New MCP report pending review** — React ✅ to approve or ❌ to delete`,
-      embeds: [{
-        title: `⏳ PENDING — ${issue.summary as string}`,
-        color: 0x9b59b6,
-        description: "Submitted via MCP agent. React to approve or delete.",
-        fields: [
-          { name: "Priority", value: issue.priority as string, inline: true },
-          { name: "Category", value: issue.category as string, inline: true },
-          { name: "Reporter", value: issue.reporterName as string, inline: true },
-          { name: "Source", value: "MCP Agent", inline: true },
-          { name: "Description", value: ((issue.text as string) || "").slice(0, 1024) || "(none)" },
-        ],
-        footer: { text: `Issue ID: ${issueId} | ✅ = approve | ❌ = delete` },
-        timestamp: new Date().toISOString(),
-      }],
+      content: `📥 New MCP report from **${issue.reporterName}**: *${issue.summary}* — pending approval (bot will post buttons shortly)`,
     }),
   });
-
-  if (webhookRes.ok) {
-    const msg = await webhookRes.json() as { id: string; channel_id: string };
-    const botToken = env.DISCORD_BOT_TOKEN;
-    if (botToken && msg.id && msg.channel_id) {
-      // Add reactions to the webhook message
-      const base = `https://discord.com/api/v10/channels/${msg.channel_id}/messages/${msg.id}/reactions`;
-      await fetch(`${base}/%E2%9C%85/@me`, { method: "PUT", headers: { Authorization: `Bot ${botToken}` } });
-      await fetch(`${base}/%E2%9D%8C/@me`, { method: "PUT", headers: { Authorization: `Bot ${botToken}` } });
-
-      // Save the webhook message ID so the bot can find it
-      const token = await getAccessToken(env);
-      await fetch(`${FIRESTORE_BASE(env.FIREBASE_PROJECT_ID)}/issues/${issueId}?updateMask.fieldPaths=pendingMessageId&updateMask.fieldPaths=pendingChannelId`, {
-        method: "PATCH",
-        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ fields: { pendingMessageId: { stringValue: msg.id }, pendingChannelId: { stringValue: msg.channel_id } } }),
-      });
-    }
-  }
 }
 
 // === MCP Server Setup ===
