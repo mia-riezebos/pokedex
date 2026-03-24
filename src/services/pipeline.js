@@ -77,6 +77,11 @@ async function processIssue(message, text) {
           autoArchiveDuration: 1440, // 24 hours
         });
 
+        // Save thread ID to Firestore so we can track follow-up messages
+        if (issueId !== 'unknown') {
+          await firestore.updateIssueThreadId(issueId, thread.id).catch(() => {});
+        }
+
         ackEmbed.addFields({ name: 'Follow-up', value: classification.follow_up });
         await thread.send({ embeds: [ackEmbed] });
         await thread.send(`<@${message.author.id}> ${classification.follow_up}`);

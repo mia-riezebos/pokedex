@@ -65,4 +65,38 @@ async function updateIssueTriageMessageId(issueId, triageMessageId) {
   await db.collection('issues').doc(issueId).update({ triageMessageId });
 }
 
-module.exports = { init, isDuplicate, saveIssue, getIssuesSince, getAllConfigOverrides, setConfigOverride, deleteConfigOverride, updateIssueTriageMessageId };
+async function updateIssueThreadId(issueId, threadId) {
+  await db.collection('issues').doc(issueId).update({ threadId });
+}
+
+async function getIssueByThreadId(threadId) {
+  const snapshot = await db.collection('issues')
+    .where('threadId', '==', threadId)
+    .limit(1)
+    .get();
+  if (snapshot.empty) return null;
+  const doc = snapshot.docs[0];
+  return { id: doc.id, ...doc.data() };
+}
+
+async function appendThreadContext(issueId, newText) {
+  const doc = await db.collection('issues').doc(issueId).get();
+  if (!doc.exists) return null;
+  const data = doc.data();
+  const existingContext = data.threadContext || [];
+  existingContext.push({ text: newText, addedAt: new Date().toISOString() });
+  await db.collection('issues').doc(issueId).update({ threadContext: existingContext });
+  return { id: doc.id, ...data, threadContext: existingContext };
+}
+
+async function updateIssueClassification(issueId, classification) {
+  await db.collection('issues').doc(issueId).update({
+    priority: classification.priority,
+    category: classification.category,
+    summary: classification.summary,
+    reasoning: classification.reasoning,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
+module.exports = { init, isDuplicate, saveIssue, getIssuesSince, getAllConfigOverrides, setConfigOverride, deleteConfigOverride, updateIssueTriageMessageId, updateIssueThreadId, getIssueByThreadId, appendThreadContext, updateIssueClassification };

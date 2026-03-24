@@ -5,6 +5,7 @@ const config = require('./config/config');
 const triage = require('./services/triage');
 const { handleMention } = require('./triggers/mention');
 const { handleReaction } = require('./triggers/reaction');
+const { handleThreadMessage } = require('./triggers/thread');
 const configCommand = require('./commands/config');
 const helpCommand = require('./commands/help');
 const changelogCommand = require('./commands/changelog');
@@ -53,9 +54,20 @@ client.once('ready', async () => {
   }
 });
 
-// Handle @mentions
+// Handle @mentions and thread follow-ups
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
+
+  // Check if this is a message in an issue thread (no @mention needed)
+  if (message.channel.isThread() && !message.mentions.has(client.user)) {
+    try {
+      await handleThreadMessage(message);
+    } catch (err) {
+      console.error('Error handling thread message:', err);
+    }
+    return;
+  }
+
   if (!message.mentions.has(client.user)) return;
 
   try {

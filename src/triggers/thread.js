@@ -1,0 +1,111 @@
+const { EmbedBuilder } = require('discord.js');
+const firestore = require('../services/firestore');
+const { classifyIssue } = require('../services/openrouter');
+const triage = require('../services/triage');
+const { getConfig } = require('../config/config');
+
+const PRIORITY_COLORS = {
+  critical: 0xff0000,
+  high: 0xff8c00,
+  medium: 0xffd700,
+  low: 0x00cc00,
+  unclassified: 0x808080,
+};
+
+// Debounce map — wait a bit in case the user sends multiple messages quickly
+const pendingUpdates = new Map();
+const DEBOUNCE_MS = 5000;
+
+async function handleThreadMessage(message) {
+  // Only handle messages in threads
+  if (!message.channel.isThread()) return;
+
+  const threadId = message.channel.id;
+
+  // Look up if this thread is linked to an issue
+  const issue = await firestore.getIssueByThreadId(threadId);
+  if (!issue) return; // Not one of our issue threads
+
+  // Only track messages from the original reporter
+  if (message.author.id !== issue.reporterId) return;
+
+  const newText = message.content?.trim();
+  if (!newText) return;
+
+  // Append the new context to Firestore
+  await firestore.appendThreadContext(issue.id, newText);
+
+  // Debounce — if user is typing multiple messages, wait before reclassifying
+  if (pendingUpdates.has(issue.id)) {
+    clearTimeout(pendingUpdates.get(issue.id));
+  }
+
+  pendingUpdates.set(issue.id, setTimeout(async () => {
+    pendingUpdates.delete(issue.id);
+
+    try {
+      // Get the updated issue with all context
+      const updatedIssue = await firestore.getIssueByThreadId(threadId);
+      if (!updatedIssue) return;
+
+      // Build full context for reclassification
+      const threadContext = updatedIssue.threadContext || [];
+      const additionalInfo = threadContext.map(c => c.text).join('\n');
+      const fullContext = `Original report: ${updatedIssue.text}\n\nAdditional information from reporter:\n${additionalInfo}`;
+
+      // Reclassify with full context
+      const newClassification = await classifyIssue(fullContext);
+
+      // Update Firestore with new classification
+      await firestore.updateIssueClassification(updatedIssue.id, newClassification);
+
+      // Check if priority or category changed
+      const priorityChanged = newClassification.priority !== updatedIssue.priority;
+      const categoryChanged = newClassification.category !== updatedIssue.category;
+
+      // Update the triage embed if it exists and something changed
+      if (updatedIssue.triageMessageId && (priorityChanged || categoryChanged)) {
+        const triageChannelName = getConfig('triage_channel') || 'eng-triage';
+        const guild = message.guild;
+        const triageChannel = guild.channels.cache.find(
+          ch => ch.name === triageChannelName && ch.isTextBased()
+        );
+
+        if (triageChannel) {
+          try {
+            const triageMsg = await triageChannel.messages.fetch(updatedIssue.triageMessageId);
+            const updatedEmbed = triage.buildIssueEmbed(
+              { ...updatedIssue, ...newClassification, text: fullContext },
+              updatedIssue.id
+            );
+            // Add an "Updated" field
+            updatedEmbed.addFields({ name: '🔄 Updated', value: 'Reclassified with additional context from reporter' });
+            await triageMsg.edit({ embeds: [updatedEmbed] });
+          } catch {
+            // Triage message may have been deleted
+          }
+        }
+      }
+
+      // Acknowledge in the thread
+      const color = PRIORITY_COLORS[newClassification.priority] ?? 0x808080;
+      const updateEmbed = new EmbedBuilder()
+        .setColor(color)
+        .setDescription(`Got it — I've updated this issue with your new info.`)
+        .setFooter({ text: `Issue ID: ${updatedIssue.id}` });
+
+      if (priorityChanged || categoryChanged) {
+        const changes = [];
+        if (priorityChanged) changes.push(`Priority: ${updatedIssue.priority} → **${newClassification.priority}**`);
+        if (categoryChanged) changes.push(`Category: ${updatedIssue.category.replace(/_/g, ' ')} → **${newClassification.category.replace(/_/g, ' ')}**`);
+        updateEmbed.addFields({ name: 'Classification Updated', value: changes.join('\n') });
+      }
+
+      await message.channel.send({ embeds: [updateEmbed] });
+    } catch (err) {
+      console.error('Error processing thread context update:', err);
+    }
+  }, DEBOUNCE_MS));
+}
+
+module.exports = { handleThreadMessage };
