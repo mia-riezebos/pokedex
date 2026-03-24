@@ -2,6 +2,15 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 const CHANGELOG = [
   {
+    version: '2.2.1',
+    date: '2026-03-24',
+    changes: [
+      'MCP context additions now post a "💬 Context Added via MCP" notification directly in Discord — replies to the triage or pending embed so engineers see it immediately',
+      'Works for both pending (pre-approval) and approved issues — no more silent Firestore-only updates',
+      'Channel IDs are now stored alongside message IDs for reliable cross-service Discord notifications',
+    ],
+  },
+  {
     version: '2.2.0',
     date: '2026-03-24',
     changes: [

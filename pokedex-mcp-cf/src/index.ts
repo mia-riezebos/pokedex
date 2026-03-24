@@ -280,6 +280,49 @@ async function firestoreUpdate(env: Env, token: string, docId: string, data: Rec
   return res.ok;
 }
 
+// === Discord Bot REST API (for posting context notifications) ===
+
+async function postContextToDiscord(env: Env, issue: Record<string, unknown>, issueId: string, context: string, author: string) {
+  if (!env.DISCORD_BOT_TOKEN) return;
+
+  // Determine channel and message to reply to (works for both pending and approved issues)
+  const channelId = (issue.triageChannelId as string) || (issue.pendingChannelId as string);
+  const replyToMessageId = (issue.triageMessageId as string) || (issue.pendingReplyMessageId as string);
+  if (!channelId) return;
+
+  const statusLabel = issue.status === "pending" ? "Pending" : "Open";
+  const embed = {
+    color: 0x5865f2,
+    title: "💬 Context Added via MCP",
+    description: context.slice(0, 4096),
+    fields: [
+      { name: "Issue", value: `${issue.summary || "Untitled"} (\`${issueId}\`)`, inline: true },
+      { name: "Status", value: statusLabel, inline: true },
+      { name: "Added by", value: author, inline: true },
+    ],
+    footer: { text: `Issue ID: ${issueId} | via Pokedex MCP` },
+    timestamp: new Date().toISOString(),
+  };
+
+  const payload: Record<string, unknown> = { embeds: [embed] };
+  if (replyToMessageId) {
+    payload.message_reference = { message_id: replyToMessageId, fail_if_not_exists: false };
+  }
+
+  try {
+    await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bot ${env.DISCORD_BOT_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch {
+    // Silently fail — context was still saved to Firestore
+  }
+}
+
 // === Discord Webhook ===
 
 async function postToDiscord(env: Env, issue: Record<string, unknown>, issueId: string) {
@@ -557,9 +600,15 @@ export default {
               updatedAt: new Date().toISOString(),
             });
 
+            // Re-fetch the issue to get channel/message IDs for Discord notification
+            const updatedIssue = await firestoreGet(env, token, args.issue_id as string);
+            if (updatedIssue) {
+              await postContextToDiscord(env, updatedIssue, args.issue_id as string, args.context as string, args.author as string);
+            }
+
             return Response.json({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: JSON.stringify({
               issueId: args.issue_id, summary: issue.summary, contextAdded: { text: args.context, author: args.author },
-              totalContextEntries: existingContext.length, message: `Context added to issue ${args.issue_id}.`,
+              totalContextEntries: existingContext.length, message: `Context added to issue ${args.issue_id}. Discord notification sent.`,
             }, null, 2) }] } });
           }
 

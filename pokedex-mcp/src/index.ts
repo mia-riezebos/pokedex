@@ -35,6 +35,49 @@ function getDb() {
   return admin.firestore();
 }
 
+// --- Discord Bot REST API (for editing/posting in channels) ---
+async function postContextToDiscord(issue: Record<string, unknown>, issueId: string, context: string, author: string) {
+  const botToken = process.env.DISCORD_BOT_TOKEN;
+  if (!botToken) return;
+
+  // Determine the channel and message to reply to
+  const channelId = (issue.triageChannelId as string) || (issue.pendingChannelId as string);
+  const replyToMessageId = (issue.triageMessageId as string) || (issue.pendingReplyMessageId as string);
+  if (!channelId) return;
+
+  const statusLabel = issue.status === "pending" ? "Pending" : "Open";
+  const embed = {
+    color: 0x5865f2,
+    title: "💬 Context Added via MCP",
+    description: (context as string).slice(0, 4096),
+    fields: [
+      { name: "Issue", value: `${issue.summary || "Untitled"} (\`${issueId}\`)`, inline: true },
+      { name: "Status", value: statusLabel, inline: true },
+      { name: "Added by", value: author, inline: true },
+    ],
+    footer: { text: `Issue ID: ${issueId} | via Pokedex MCP` },
+    timestamp: new Date().toISOString(),
+  };
+
+  const payload: Record<string, unknown> = { embeds: [embed] };
+  if (replyToMessageId) {
+    payload.message_reference = { message_id: replyToMessageId, fail_if_not_exists: false };
+  }
+
+  try {
+    await fetch(`https://discord.com/api/v10/channels/${channelId}/messages`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bot ${botToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+  } catch (err) {
+    console.error("Discord context notification failed:", err);
+  }
+}
+
 // --- Discord Webhook ---
 async function postToDiscordWebhook(issue: Record<string, unknown>, issueId: string) {
   const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
@@ -521,13 +564,18 @@ server.registerTool(
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
+    // Post context notification to Discord (works for both pending and approved issues)
+    const updatedDoc = await docRef.get();
+    const updatedData = updatedDoc.data()!;
+    await postContextToDiscord(updatedData, issue_id, context, author);
+
     return {
       content: [{ type: "text" as const, text: JSON.stringify({
         issueId: issue_id,
         summary: data.summary,
         contextAdded: { text: context, author },
         totalContextEntries: existingContext.length,
-        message: `Context added to issue ${issue_id}. Total context entries: ${existingContext.length}.`,
+        message: `Context added to issue ${issue_id}. Total context entries: ${existingContext.length}. Discord notification sent.`,
       }, null, 2) }],
     };
   }

@@ -122,6 +122,7 @@ async function syncPendingWebhookMessage(message) {
   await getDb().collection('issues').doc(issueId).update({
     pendingMessageId: message.id,
     pendingReplyMessageId: reply.id,
+    pendingChannelId: message.channel.id,
   });
 
   return true;
@@ -202,6 +203,7 @@ async function postApprovedIssueToTriage(guild, issue, issueId, username) {
   });
 
   await firestore.updateIssueTriageMessageId(issueId, message.id);
+  await firestore.updateIssueTriageChannelId(issueId, triageChannel.id);
   return { ok: true, triageChannel };
 }
 

@@ -65,6 +65,10 @@ async function updateIssueTriageMessageId(issueId, triageMessageId) {
   await db.collection('issues').doc(issueId).update({ triageMessageId });
 }
 
+async function updateIssueTriageChannelId(issueId, triageChannelId) {
+  await db.collection('issues').doc(issueId).update({ triageChannelId });
+}
+
 async function updateIssueThreadId(issueId, threadId) {
   await db.collection('issues').doc(issueId).update({ threadId });
 }
@@ -238,6 +242,7 @@ module.exports = {
   setConfigOverride,
   deleteConfigOverride,
   updateIssueTriageMessageId,
+  updateIssueTriageChannelId,
   updateIssueThreadId,
   getIssueByThreadId,
   appendThreadContext,

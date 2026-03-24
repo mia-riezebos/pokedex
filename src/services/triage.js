@@ -111,6 +111,10 @@ async function postIssueEmbed(guild, issue, issueId) {
   const embed = buildIssueEmbed(issue, issueId);
   const buttons = buildTriageButtons(issueId);
   const msg = await channel.send({ embeds: [embed], components: [buttons] });
+
+  // Store channel ID alongside message ID so MCP servers can post updates via REST API
+  await firestore.updateIssueTriageChannelId(issueId, channel.id);
+
   return msg.id;
 }
 
