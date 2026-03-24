@@ -34,7 +34,7 @@ client.once('ready', async () => {
 
   // Set rich presence
   client.user.setPresence({
-    activities: [{ name: 'for bugs | /help', type: ActivityType.Watching }],
+    activities: [{ name: 'for bugs | /help + @pierre for support', type: ActivityType.Watching }],
     status: 'online',
   });
 
