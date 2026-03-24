@@ -33,6 +33,8 @@ async function handleReaction(reaction, user) {
     }
   }
 
+  if (message.webhookId) return;
+
   const text = message.content?.trim();
   if (!text) {
     // Per spec: reply when message has no understandable content

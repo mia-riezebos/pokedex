@@ -21,7 +21,6 @@ const {
   canModerate,
   processPendingDecision,
   syncPendingWebhookMessage,
-  handlePendingReaction,
 } = require('./services/mcpApproval');
 const { startDashboard } = require('./dashboard/server');
 
@@ -104,8 +103,6 @@ client.on('messageCreate', async (message) => {
 // Handle emoji reactions
 client.on('messageReactionAdd', async (reaction, user) => {
   try {
-    const handled = await handlePendingReaction(reaction, user);
-    if (handled) return;
     await handleReaction(reaction, user);
   } catch (err) {
     console.error('Error handling reaction:', err);
