@@ -1,22 +1,23 @@
 const { SlashCommandBuilder, EmbedBuilder, ChannelType } = require('discord.js');
 const { getConfig } = require('../config/config');
+const { findTriageChannel } = require('../services/triage');
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 const commandData = new SlashCommandBuilder()
   .setName('feedback')
-  .setDescription('Organize and summarize feedback forum posts')
+  .setDescription('Organize and summarize feedback forum posts into eng-triage')
   .addStringOption(opt =>
     opt.setName('channel')
-      .setDescription('Feedback forum channel name (default: feedback)')
+      .setDescription('Feedback channel name (default: feedback)')
       .setRequired(false))
   .addIntegerOption(opt =>
     opt.setName('limit')
-      .setDescription('Max number of threads to analyze (default: 20)')
+      .setDescription('Max number of threads/messages to analyze (default: 20)')
       .setRequired(false))
   .addStringOption(opt =>
     opt.setName('visibility')
-      .setDescription('Who can see the response')
+      .setDescription('Who can see the summary response')
       .setRequired(false)
       .addChoices(
         { name: 'Only me', value: 'ephemeral' },
@@ -29,7 +30,7 @@ async function organizeFeedback(threads) {
     `[${i + 1}] "${t.name}" by ${t.authorName} (${t.messageCount} replies, ${t.tags.join(', ') || 'no tags'})\n${t.firstMessage || '(no content)'}`
   ).join('\n\n---\n\n');
 
-  const systemPrompt = `You are Pokedex, an AI assistant for poke.com. Analyze these Discord forum feedback posts and organize them.
+  const systemPrompt = `You are Pokedex, an AI assistant for poke.com. Analyze these Discord feedback posts and organize them.
 
 Return ONLY valid JSON with this structure:
 {
@@ -82,6 +83,20 @@ Group similar feedback into themes. Sort themes by priority (high first). Be spe
   }
 }
 
+function findFeedbackChannel(guild, channelName) {
+  // Normalize: strip invisible chars, lowercase, trim
+  const normalize = (s) => s.replace(/[^\x20-\x7E]/g, '').toLowerCase().trim();
+  const target = normalize(channelName);
+
+  return guild.channels.cache.find(ch => {
+    // Match forums, text channels, and announcement channels
+    const validTypes = [ChannelType.GuildForum, ChannelType.GuildText, ChannelType.GuildAnnouncement];
+    if (!validTypes.includes(ch.type)) return false;
+    const name = normalize(ch.name);
+    return name === target || name.includes(target);
+  });
+}
+
 async function execute(interaction) {
   const channelName = interaction.options.getString('channel') || 'feedback';
   const limit = interaction.options.getInteger('limit') || 20;
@@ -90,115 +105,115 @@ async function execute(interaction) {
 
   await interaction.deferReply({ ephemeral });
 
-  // Find the forum channel
   const guild = interaction.guild;
-  const forumChannel = guild.channels.cache.find(
-    ch => (ch.type === ChannelType.GuildForum || ch.type === ChannelType.GuildText) &&
-      ch.name.toLowerCase().includes(channelName.toLowerCase())
-  );
 
-  if (!forumChannel) {
-    return interaction.editReply(`Could not find a forum/channel matching "${channelName}". Make sure the channel exists and I have access.`);
+  // Find the feedback channel
+  const feedbackChannel = findFeedbackChannel(guild, channelName);
+
+  if (!feedbackChannel) {
+    // List available channels to help debug
+    const channels = guild.channels.cache
+      .filter(ch => [ChannelType.GuildForum, ChannelType.GuildText].includes(ch.type))
+      .map(ch => `\`${ch.name}\` (${ch.type === ChannelType.GuildForum ? 'forum' : 'text'})`)
+      .slice(0, 15)
+      .join('\n');
+    return interaction.editReply(`Could not find a channel matching "${channelName}".\n\nAvailable channels:\n${channels}`);
   }
 
-  // Fetch active threads
-  let threads = [];
+  // Collect feedback data
+  let feedbackData = [];
   try {
-    if (forumChannel.type === ChannelType.GuildForum) {
-      const fetched = await forumChannel.threads.fetchActive();
-      const archived = await forumChannel.threads.fetchArchived({ limit });
-      threads = [...fetched.threads.values(), ...archived.threads.values()];
+    if (feedbackChannel.type === ChannelType.GuildForum) {
+      // Forum channel — fetch threads
+      const fetched = await feedbackChannel.threads.fetchActive();
+      const archived = await feedbackChannel.threads.fetchArchived({ limit }).catch(() => ({ threads: new Map() }));
+      const threads = [...fetched.threads.values(), ...archived.threads.values()];
+
+      for (const thread of threads.slice(0, limit)) {
+        try {
+          const messages = await thread.messages.fetch({ limit: 1 });
+          const first = messages.last();
+          const availableTags = feedbackChannel.availableTags || [];
+          const tagNames = (thread.appliedTags || []).map(tagId => {
+            const tag = availableTags.find(t => t.id === tagId);
+            return tag?.name || 'unknown';
+          });
+
+          feedbackData.push({
+            name: thread.name,
+            authorName: thread.ownerId ? (await guild.members.fetch(thread.ownerId).catch(() => null))?.user?.username || 'unknown' : 'unknown',
+            messageCount: thread.messageCount || 0,
+            tags: tagNames,
+            firstMessage: first?.content?.slice(0, 500) || '(no content)',
+          });
+        } catch {
+          // Skip unreadable threads
+        }
+      }
     } else {
-      // Regular text channel — fetch recent messages instead
-      const messages = await forumChannel.messages.fetch({ limit });
-      threads = messages.map(m => ({
-        name: m.content.slice(0, 50) || 'Untitled',
-        authorName: m.author.username,
-        messageCount: 0,
-        tags: [],
-        firstMessage: m.content,
-      }));
-
-      if (threads.length === 0) {
-        return interaction.editReply(`No messages found in #${forumChannel.name}.`);
-      }
-
-      const analysis = await organizeFeedback(threads);
-      if (!analysis) {
-        return interaction.editReply('Failed to analyze feedback. Try again later.');
-      }
-
-      return sendAnalysisEmbeds(interaction, analysis, forumChannel, threads.length);
+      // Text channel — fetch recent messages
+      const messages = await feedbackChannel.messages.fetch({ limit });
+      feedbackData = [...messages.values()]
+        .filter(m => !m.author.bot)
+        .map(m => ({
+          name: m.content.slice(0, 50) || 'Untitled',
+          authorName: m.author.username,
+          messageCount: 0,
+          tags: [],
+          firstMessage: m.content,
+        }));
     }
   } catch (err) {
-    console.error('Failed to fetch threads:', err);
-    return interaction.editReply('Failed to fetch threads. Make sure I have access to the channel.');
+    console.error('Failed to fetch feedback:', err);
+    return interaction.editReply('Failed to fetch feedback. Make sure I have access to the channel.');
   }
 
-  if (threads.length === 0) {
-    return interaction.editReply(`No threads found in #${forumChannel.name}.`);
+  if (feedbackData.length === 0) {
+    return interaction.editReply(`No feedback found in #${feedbackChannel.name}.`);
   }
 
-  // Collect thread data
-  const threadData = [];
-  for (const thread of threads.slice(0, limit)) {
-    try {
-      const messages = await thread.messages.fetch({ limit: 1 });
-      const first = messages.last();
-      const availableTags = forumChannel.availableTags || [];
-      const tagNames = (thread.appliedTags || []).map(tagId => {
-        const tag = availableTags.find(t => t.id === tagId);
-        return tag?.name || 'unknown';
-      });
-
-      threadData.push({
-        name: thread.name,
-        authorName: thread.ownerId ? (await thread.guild.members.fetch(thread.ownerId).catch(() => null))?.user?.username || 'unknown' : 'unknown',
-        messageCount: thread.messageCount || 0,
-        tags: tagNames,
-        firstMessage: first?.content?.slice(0, 500) || '(no content)',
-      });
-    } catch {
-      // Skip threads we can't read
-    }
-  }
-
-  if (threadData.length === 0) {
-    return interaction.editReply('Could not read any threads. Check bot permissions.');
-  }
-
-  const analysis = await organizeFeedback(threadData);
+  // Analyze with AI
+  const analysis = await organizeFeedback(feedbackData);
   if (!analysis) {
     return interaction.editReply('Failed to analyze feedback. Try again later.');
   }
 
-  await sendAnalysisEmbeds(interaction, analysis, forumChannel, threadData.length);
+  // Post organized feedback to eng-triage
+  const triageChannel = findTriageChannel(guild);
+  if (triageChannel) {
+    await postToTriage(triageChannel, analysis, feedbackChannel, feedbackData.length, interaction.user.username);
+  }
+
+  // Reply to the user with summary
+  await sendAnalysisReply(interaction, analysis, feedbackChannel, feedbackData.length, !!triageChannel);
 }
 
-async function sendAnalysisEmbeds(interaction, analysis, channel, threadCount) {
+async function postToTriage(triageChannel, analysis, sourceChannel, threadCount, requestedBy) {
   const PRIORITY_COLORS = { high: 0xff8c00, medium: 0xffd700, low: 0x00cc00 };
-  const SENTIMENT_EMOJI = { positive: '😊', mixed: '😐', negative: '😟' };
 
-  // Summary embed
-  const summaryEmbed = new EmbedBuilder()
-    .setTitle(`📊 Feedback Analysis — #${channel.name}`)
+  // Header embed
+  const headerEmbed = new EmbedBuilder()
+    .setTitle(`📊 Feedback Report — #${sourceChannel.name}`)
     .setColor(0x5865f2)
     .setDescription(analysis.summary || 'No summary available.')
     .addFields(
-      { name: 'Threads Analyzed', value: `${threadCount}`, inline: true },
-      { name: 'Themes Found', value: `${analysis.themes?.length || 0}`, inline: true },
-      { name: 'Sentiment', value: `${SENTIMENT_EMOJI[analysis.sentiment] || '😐'} ${analysis.sentiment || 'mixed'}`, inline: true },
-    );
+      { name: 'Posts Analyzed', value: `${threadCount}`, inline: true },
+      { name: 'Themes', value: `${analysis.themes?.length || 0}`, inline: true },
+      { name: 'Requested By', value: requestedBy, inline: true },
+    )
+    .setTimestamp();
 
   if (analysis.top_requests?.length > 0) {
-    summaryEmbed.addFields({
+    headerEmbed.addFields({
       name: '🔥 Top Requests',
       value: analysis.top_requests.map((r, i) => `${i + 1}. ${r}`).join('\n'),
     });
   }
 
-  // Theme embeds
-  const themeEmbeds = (analysis.themes || []).slice(0, 5).map((theme, i) => {
+  await triageChannel.send({ embeds: [headerEmbed] });
+
+  // Post each theme as a separate embed for easy tracking
+  for (const theme of (analysis.themes || []).slice(0, 8)) {
     const color = PRIORITY_COLORS[theme.priority] || 0x808080;
     const embed = new EmbedBuilder()
       .setTitle(`${theme.actionable ? '🎯' : '💬'} ${theme.name}`)
@@ -214,10 +229,37 @@ async function sendAnalysisEmbeds(interaction, analysis, channel, threadCount) {
       embed.addFields({ name: 'Suggested Action', value: theme.suggested_action });
     }
 
-    return embed;
-  });
+    await triageChannel.send({ embeds: [embed] });
+  }
+}
 
-  await interaction.editReply({ embeds: [summaryEmbed, ...themeEmbeds] });
+async function sendAnalysisReply(interaction, analysis, channel, threadCount, postedToTriage) {
+  const SENTIMENT_EMOJI = { positive: '😊', mixed: '😐', negative: '😟' };
+
+  const embed = new EmbedBuilder()
+    .setTitle(`📊 Feedback Analysis — #${channel.name}`)
+    .setColor(0x5865f2)
+    .setDescription(analysis.summary || 'No summary available.')
+    .addFields(
+      { name: 'Posts Analyzed', value: `${threadCount}`, inline: true },
+      { name: 'Themes Found', value: `${analysis.themes?.length || 0}`, inline: true },
+      { name: 'Sentiment', value: `${SENTIMENT_EMOJI[analysis.sentiment] || '😐'} ${analysis.sentiment || 'mixed'}`, inline: true },
+    );
+
+  if (analysis.top_requests?.length > 0) {
+    embed.addFields({
+      name: '🔥 Top Requests',
+      value: analysis.top_requests.map((r, i) => `${i + 1}. ${r}`).join('\n'),
+    });
+  }
+
+  if (postedToTriage) {
+    embed.setFooter({ text: 'Full report posted to #eng-triage' });
+  } else {
+    embed.setFooter({ text: 'Warning: eng-triage channel not found — report not posted' });
+  }
+
+  await interaction.editReply({ embeds: [embed] });
 }
 
 module.exports = { data: commandData, execute };

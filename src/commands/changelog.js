@@ -2,6 +2,15 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 const CHANGELOG = [
   {
+    version: '1.5.1',
+    date: '2026-03-23',
+    changes: [
+      '`/feedback` now posts organized themes directly to #eng-triage',
+      'Fixed channel detection for forum channels with special characters',
+      'Shows available channels when feedback channel not found',
+    ],
+  },
+  {
     version: '1.5.0',
     date: '2026-03-23',
     changes: [
