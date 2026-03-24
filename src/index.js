@@ -142,6 +142,23 @@ async function handleButtonInteraction(interaction) {
     const parts = customId.split('_');
     const action = parts[1];
     const issueId = parts.slice(2).join('_');
+
+    // Handle delete separately
+    if (action === 'delete') {
+      try {
+        // Delete from Firestore
+        const admin = require('firebase-admin');
+        const db = admin.firestore();
+        await db.collection('issues').doc(issueId).delete();
+        // Delete the triage message
+        await interaction.message.delete();
+      } catch (err) {
+        console.error('Failed to delete issue:', err);
+        await interaction.reply({ content: 'Failed to delete issue.', ephemeral: true });
+      }
+      return;
+    }
+
     const actionInfo = ACTION_LABELS[action];
     if (!actionInfo) return;
 
@@ -165,7 +182,7 @@ async function handleButtonInteraction(interaction) {
       const btn = ButtonBuilder.from(component);
       if (component.customId === customId) {
         btn.setDisabled(false);
-        btn.setStyle(2); // Secondary style to show it was selected
+        btn.setStyle(2);
       } else {
         btn.setDisabled(true);
       }
@@ -181,6 +198,18 @@ async function handleButtonInteraction(interaction) {
     const parts = customId.split('_');
     const action = parts[1];
     const themeIndex = parts[2];
+
+    // Handle delete — just remove the message
+    if (action === 'delete') {
+      try {
+        await interaction.message.delete();
+      } catch (err) {
+        console.error('Failed to delete feedback embed:', err);
+        await interaction.reply({ content: 'Failed to delete.', ephemeral: true });
+      }
+      return;
+    }
+
     const actionInfo = ACTION_LABELS[action];
     if (!actionInfo) return;
 

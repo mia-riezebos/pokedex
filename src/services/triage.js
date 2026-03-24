@@ -33,6 +33,11 @@ function buildTriageButtons(issueId) {
       .setLabel('Escalate')
       .setEmoji('🔺')
       .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId(`triage_delete_${issueId}`)
+      .setLabel('Delete')
+      .setEmoji('🗑️')
+      .setStyle(ButtonStyle.Danger),
   );
 }
 

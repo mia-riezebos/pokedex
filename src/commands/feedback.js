@@ -24,6 +24,11 @@ function buildFeedbackThemeButtons(themeIndex) {
       .setLabel('Escalate')
       .setEmoji('🔺')
       .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId(`fb_delete_${themeIndex}`)
+      .setLabel('Delete')
+      .setEmoji('🗑️')
+      .setStyle(ButtonStyle.Danger),
   );
 }
 
