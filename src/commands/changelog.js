@@ -2,6 +2,13 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '1.8.1',
+    date: '2026-03-24',
+    changes: [
+      'Fixed duplicate issue creation when multiple users react to the same message — only the first reaction triggers an issue now',
+    ],
+  },
+  {
     version: '1.8.0',
     date: '2026-03-24',
     changes: [

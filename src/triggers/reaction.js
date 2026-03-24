@@ -35,6 +35,13 @@ async function handleReaction(reaction, user) {
 
   if (message.webhookId) return;
 
+  // Only process the FIRST reaction — ignore if someone already reacted with this emoji
+  if (reaction.count > 1) return;
+
+  // Also check Firestore in case the bot restarted and lost cache
+  const alreadyFiled = await require('../services/firestore').isDuplicate(message.id);
+  if (alreadyFiled) return;
+
   const text = message.content?.trim();
   if (!text) {
     // Per spec: reply when message has no understandable content
