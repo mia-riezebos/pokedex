@@ -274,7 +274,7 @@ async function postToDiscord(env: Env, issue: Record<string, unknown>, issueId: 
     body: JSON.stringify({
       username: "Pokedex",
       avatar_url: "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/137.png",
-      content: `📥 **New MCP report pending review** — React ✅ to approve or 🗑️ to delete`,
+      content: `📥 **New MCP report pending review** — React ✅ to approve or ❌ to delete`,
       embeds: [{
         title: `⏳ PENDING — ${issue.summary as string}`,
         color: 0x9b59b6,
@@ -286,7 +286,7 @@ async function postToDiscord(env: Env, issue: Record<string, unknown>, issueId: 
           { name: "Source", value: "MCP Agent", inline: true },
           { name: "Description", value: ((issue.text as string) || "").slice(0, 1024) || "(none)" },
         ],
-        footer: { text: `Issue ID: ${issueId} | ✅ = approve | 🗑️ = delete` },
+        footer: { text: `Issue ID: ${issueId} | ✅ = approve | ❌ = delete` },
         timestamp: new Date().toISOString(),
       }],
     }),
@@ -299,7 +299,7 @@ async function postToDiscord(env: Env, issue: Record<string, unknown>, issueId: 
       // Add reactions to the webhook message
       const base = `https://discord.com/api/v10/channels/${msg.channel_id}/messages/${msg.id}/reactions`;
       await fetch(`${base}/%E2%9C%85/@me`, { method: "PUT", headers: { Authorization: `Bot ${botToken}` } });
-      await fetch(`${base}/%F0%9F%97%91%EF%B8%8F/@me`, { method: "PUT", headers: { Authorization: `Bot ${botToken}` } });
+      await fetch(`${base}/%E2%9D%8C/@me`, { method: "PUT", headers: { Authorization: `Bot ${botToken}` } });
 
       // Save the webhook message ID so the bot can find it
       const token = await getAccessToken(env);

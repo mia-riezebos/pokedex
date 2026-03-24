@@ -101,7 +101,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
 
   // Check if this is a pending MCP approval reaction
   const emoji = reaction.emoji.name;
-  if (emoji === '✅' || emoji === '🗑️') {
+  if (emoji === '✅' || emoji === '❌') {
     try {
       await handleMcpReaction(reaction, user, emoji);
     } catch (err) {
@@ -152,7 +152,7 @@ async function handleMcpReaction(reaction, user, emoji) {
     await message.reactions.removeAll().catch(() => {});
 
     console.log(`MCP issue ${issueId} approved by ${user.username}`);
-  } else if (emoji === '🗑️') {
+  } else if (emoji === '❌') {
     // Delete
     await db.collection('issues').doc(issueId).delete();
     await message.delete().catch(() => {});
