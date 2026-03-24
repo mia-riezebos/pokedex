@@ -2,6 +2,16 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '1.9.0',
+    date: '2026-03-24',
+    changes: [
+      'Added `/serverinfo` — server stats, member counts, channels, boosts, roles, and creation date',
+      'Added `/afk <reason>` — set yourself as AFK; anyone who pings you gets notified, and you\'re welcomed back when you return',
+      'Added `/level check` and `/level top` — XP leveling system with ranks, progress bars, and a leaderboard',
+      'XP is earned per message (15-25 XP, 1-minute cooldown) with level-up announcements',
+    ],
+  },
+  {
     version: '1.8.1',
     date: '2026-03-24',
     changes: [

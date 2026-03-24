@@ -18,6 +18,9 @@ const unlockCommand = require('./commands/unlock');
 const leaderboardCommand = require('./commands/leaderboard');
 const pokedexCommand = require('./commands/pokedex');
 const typechartCommand = require('./commands/typechart');
+const serverinfoCommand = require('./commands/serverinfo');
+const afkCommand = require('./commands/afk');
+const levelCommand = require('./commands/level');
 const {
   canModerate,
   processPendingDecision,
@@ -31,6 +34,8 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildPresences,
   ],
   partials: [Partials.Message, Partials.Reaction],
 });
@@ -40,7 +45,7 @@ async function registerCommands() {
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   await rest.put(
     Routes.applicationGuildCommands(process.env.DISCORD_APP_ID, process.env.DISCORD_GUILD_ID),
-    { body: [configCommand.data.toJSON(), helpCommand.data.toJSON(), changelogCommand.data.toJSON(), feedbackCommand.data.toJSON(), issueCommand.data.toJSON(), pingCommand.data.toJSON(), lockCommand.data.toJSON(), unlockCommand.data.toJSON(), leaderboardCommand.data.toJSON(), pokedexCommand.data.toJSON(), typechartCommand.data.toJSON()] },
+    { body: [configCommand.data.toJSON(), helpCommand.data.toJSON(), changelogCommand.data.toJSON(), feedbackCommand.data.toJSON(), issueCommand.data.toJSON(), pingCommand.data.toJSON(), lockCommand.data.toJSON(), unlockCommand.data.toJSON(), leaderboardCommand.data.toJSON(), pokedexCommand.data.toJSON(), typechartCommand.data.toJSON(), serverinfoCommand.data.toJSON(), afkCommand.data.toJSON(), levelCommand.data.toJSON()] },
   );
   console.log('Slash commands registered.');
 }
@@ -81,6 +86,20 @@ client.on('messageCreate', async (message) => {
   }
 
   if (message.author.bot) return;
+
+  // AFK system — runs on every non-bot message (welcome back + mention notices)
+  try {
+    await afkCommand.handleAfkMentions(message);
+  } catch (err) {
+    console.error('Error handling AFK:', err);
+  }
+
+  // XP / Level system — award XP for every non-bot message (with cooldown)
+  try {
+    await levelCommand.awardXP(message);
+  } catch (err) {
+    console.error('Error awarding XP:', err);
+  }
 
   // Check if this is a message in an issue thread (no @mention needed)
   if (message.channel.isThread() && !message.mentions.has(client.user)) {
@@ -126,7 +145,7 @@ client.on('interactionCreate', async (interaction) => {
   }
 
   if (!interaction.isChatInputCommand()) return;
-  const commands = { config: configCommand, help: helpCommand, changelog: changelogCommand, feedback: feedbackCommand, issue: issueCommand, ping: pingCommand, lock: lockCommand, unlock: unlockCommand, leaderboard: leaderboardCommand, pokedex: pokedexCommand, typechart: typechartCommand };
+  const commands = { config: configCommand, help: helpCommand, changelog: changelogCommand, feedback: feedbackCommand, issue: issueCommand, ping: pingCommand, lock: lockCommand, unlock: unlockCommand, leaderboard: leaderboardCommand, pokedex: pokedexCommand, typechart: typechartCommand, serverinfo: serverinfoCommand, afk: afkCommand, level: levelCommand };
   const command = commands[interaction.commandName];
   if (!command) return;
 

@@ -24,6 +24,14 @@
         { "fieldPath": "status", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "levels",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "guildId", "order": "ASCENDING" },
+        { "fieldPath": "xp", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
