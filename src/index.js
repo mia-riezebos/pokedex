@@ -89,12 +89,76 @@ client.on('messageCreate', async (message) => {
 
 // Handle emoji reactions
 client.on('messageReactionAdd', async (reaction, user) => {
+  if (user.bot) return;
+
+  // Fetch partials
+  if (reaction.partial) {
+    try { await reaction.fetch(); } catch { return; }
+  }
+  if (reaction.message.partial) {
+    try { await reaction.message.fetch(); } catch { return; }
+  }
+
+  // Check if this is a pending MCP approval reaction
+  const emoji = reaction.emoji.name;
+  if (emoji === '✅' || emoji === '🗑️') {
+    try {
+      await handleMcpReaction(reaction, user, emoji);
+    } catch (err) {
+      console.error('Error handling MCP reaction:', err);
+    }
+  }
+
   try {
     await handleReaction(reaction, user);
   } catch (err) {
     console.error('Error handling reaction:', err);
   }
 });
+
+async function handleMcpReaction(reaction, user, emoji) {
+  const message = reaction.message;
+  const admin = require('firebase-admin');
+  const db = admin.firestore();
+
+  // Look up pending issue by pendingMessageId
+  const snapshot = await db.collection('issues')
+    .where('pendingMessageId', '==', message.id)
+    .where('status', '==', 'pending')
+    .limit(1)
+    .get();
+
+  if (snapshot.empty) return; // Not a pending MCP message
+
+  const doc = snapshot.docs[0];
+  const issue = doc.data();
+  const issueId = doc.id;
+
+  if (emoji === '✅') {
+    // Approve — update to open and rebuild embed
+    await db.collection('issues').doc(issueId).update({
+      status: 'open',
+      approvedBy: user.id,
+      approvedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    const { buildIssueEmbed, buildTriageButtons } = require('./services/triage');
+    const embed = buildIssueEmbed({ ...issue, messageId: issue.messageId }, issueId);
+    embed.addFields({ name: '✅ Approved from MCP', value: `by ${user.username} — <t:${Math.floor(Date.now() / 1000)}:R>` });
+
+    const buttons = buildTriageButtons(issueId);
+    await message.edit({ content: null, embeds: [embed], components: [buttons] });
+    // Remove reactions
+    await message.reactions.removeAll().catch(() => {});
+
+    console.log(`MCP issue ${issueId} approved by ${user.username}`);
+  } else if (emoji === '🗑️') {
+    // Delete
+    await db.collection('issues').doc(issueId).delete();
+    await message.delete().catch(() => {});
+    console.log(`MCP issue ${issueId} deleted by ${user.username}`);
+  }
+}
 
 // Handle slash commands and button interactions
 client.on('interactionCreate', async (interaction) => {
