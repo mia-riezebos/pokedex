@@ -2,6 +2,14 @@ const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 
 const CHANGELOG = [
   {
+    version: '1.3.0',
+    date: '2026-03-23',
+    changes: [
+      'Thread context tracking — Pokedex now listens to replies in issue threads and reclassifies with full context',
+      '`/changelog` now supports `public` option — share it with the channel or keep it private',
+    ],
+  },
+  {
     version: '1.2.0',
     date: '2026-03-23',
     changes: [
