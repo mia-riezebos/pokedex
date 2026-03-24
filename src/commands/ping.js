@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, EmbedBuilder } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 const BOT_VERSION = '2.1.2';
 
@@ -27,7 +27,20 @@ async function execute(interaction) {
     )
     .setTimestamp();
 
-  await interaction.editReply({ embeds: [embed] });
+  const buttons = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setLabel('GitHub')
+      .setStyle(ButtonStyle.Link)
+      .setURL('https://github.com/guirguispierre/pokedex')
+      .setEmoji('🐙'),
+    new ButtonBuilder()
+      .setLabel('@somevyn')
+      .setStyle(ButtonStyle.Link)
+      .setURL('https://x.com/somevyn')
+      .setEmoji('🐦'),
+  );
+
+  await interaction.editReply({ embeds: [embed], components: [buttons] });
 }
 
 function formatUptime(ms) {
