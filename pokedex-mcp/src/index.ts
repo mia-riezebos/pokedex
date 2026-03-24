@@ -2,6 +2,8 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import express from "express";
 import { z } from "zod";
 import admin from "firebase-admin";
 
@@ -19,7 +21,7 @@ function initFirebase() {
 
   if (!projectId || !clientEmail || !privateKey) {
     throw new Error(
-      "Missing Firebase credentials. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY environment variables."
+      "Missing Firebase credentials. Set FIREBASE_PROJECT_ID, FIREBASE_CLIENT_EMAIL, and FIREBASE_PRIVATE_KEY."
     );
   }
 
@@ -134,34 +136,23 @@ server.registerTool(
     };
 
     if (screenshot_url) {
-      issueData.attachments = [
-        {
-          url: screenshot_url,
-          name: "screenshot.png",
-          isImage: true,
-          contentType: "image/png",
-          size: 0,
-        },
-      ];
+      issueData.attachments = [{
+        url: screenshot_url, name: "screenshot.png", isImage: true,
+        contentType: "image/png", size: 0,
+      }];
       issueData.screenshotUrl = screenshot_url;
     }
 
     const docRef = await db.collection("issues").add(issueData);
     const issueId = docRef.id;
 
-    // Post to Discord
     await postToDiscordWebhook(issueData, issueId);
 
-    const result = {
-      issueId,
-      status: "created",
-      priority: issueData.priority,
-      category: issueData.category,
-      message: `Bug reported successfully. Issue ID: ${issueId}. The engineering team has been notified.`,
-    };
-
     return {
-      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      content: [{ type: "text" as const, text: JSON.stringify({
+        issueId, status: "created", priority: issueData.priority, category: issueData.category,
+        message: `Bug reported successfully. Issue ID: ${issueId}. The engineering team has been notified.`,
+      }, null, 2) }],
     };
   }
 );
@@ -171,20 +162,14 @@ server.registerTool(
   "pokedex_suggest_feature",
   {
     title: "Suggest Feature",
-    description:
-      "Submit a feature request or suggestion to the Pokedex engineering team. Saved to the triage system for prioritization.",
+    description: "Submit a feature request or suggestion to the Pokedex engineering team.",
     inputSchema: {
       title: z.string().describe("Short title for the feature request"),
-      description: z.string().describe("Detailed description of the feature — what it should do, why it's useful, how it would work"),
+      description: z.string().describe("Detailed description — what it should do, why it's useful"),
       reporter_name: z.string().describe("Your name or username"),
       reporter_id: z.string().optional().describe("Your unique user ID (optional)"),
     },
-    annotations: {
-      readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: false,
-      openWorldHint: true,
-    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
   async ({ title, description, reporter_name, reporter_id }) => {
     const db = getDb();
@@ -207,18 +192,13 @@ server.registerTool(
 
     const docRef = await db.collection("issues").add(issueData);
     const issueId = docRef.id;
-
     await postToDiscordWebhook(issueData, issueId);
 
-    const result = {
-      issueId,
-      status: "created",
-      category: "feature_request",
-      message: `Feature request submitted. Issue ID: ${issueId}. The team will review it.`,
-    };
-
     return {
-      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      content: [{ type: "text" as const, text: JSON.stringify({
+        issueId, status: "created", category: "feature_request",
+        message: `Feature request submitted. Issue ID: ${issueId}. The team will review it.`,
+      }, null, 2) }],
     };
   }
 );
@@ -232,42 +212,27 @@ server.registerTool(
     inputSchema: {
       issue_id: z.string().describe("The issue ID returned when the bug was reported"),
     },
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   async ({ issue_id }) => {
     const db = getDb();
-
     const doc = await db.collection("issues").doc(issue_id).get();
     if (!doc.exists) {
-      return {
-        content: [{ type: "text", text: JSON.stringify({ error: "Issue not found", issue_id }) }],
-      };
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Issue not found", issue_id }) }] };
     }
 
     const data = doc.data()!;
-    const result = {
-      issueId: doc.id,
-      summary: data.summary,
-      status: data.status || "open",
-      priority: data.priority,
-      category: data.category,
-      reporterName: data.reporterName,
-      text: data.text?.slice(0, 500),
-      reasoning: data.reasoning,
-      source: data.source || "discord",
-      createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
-      closedAt: data.closedAt?.toDate?.()?.toISOString() || null,
-      hasAttachments: (data.attachments?.length || 0) > 0,
-      threadContextCount: data.threadContext?.length || 0,
-    };
-
     return {
-      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      content: [{ type: "text" as const, text: JSON.stringify({
+        issueId: doc.id, summary: data.summary, status: data.status || "open",
+        priority: data.priority, category: data.category, reporterName: data.reporterName,
+        text: data.text?.slice(0, 500), reasoning: data.reasoning,
+        source: data.source || "discord",
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
+        closedAt: data.closedAt?.toDate?.()?.toISOString() || null,
+        hasAttachments: (data.attachments?.length || 0) > 0,
+        threadContextCount: data.threadContext?.length || 0,
+      }, null, 2) }],
     };
   }
 );
@@ -277,73 +242,71 @@ server.registerTool(
   "pokedex_my_issues",
   {
     title: "My Issues",
-    description: "List all issues previously reported by a specific user. Returns recent issues sorted by creation date.",
+    description: "List all issues previously reported by a specific user.",
     inputSchema: {
       reporter_name: z.string().describe("Your name or username to look up"),
-      status: z
-        .enum(["open", "closed", "fixed", "acknowledged", "escalated", "all"])
-        .optional()
-        .default("all")
-        .describe("Filter by issue status"),
-      limit: z.number().optional().default(20).describe("Max number of issues to return (default: 20)"),
+      status: z.enum(["open", "closed", "fixed", "acknowledged", "escalated", "all"]).optional().default("all").describe("Filter by status"),
+      limit: z.number().optional().default(20).describe("Max issues to return"),
     },
-    annotations: {
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   async ({ reporter_name, status, limit }) => {
     const db = getDb();
-
-    let query = db
-      .collection("issues")
-      .where("reporterName", "==", reporter_name)
-      .orderBy("createdAt", "desc")
-      .limit(limit || 20);
+    let query = db.collection("issues").where("reporterName", "==", reporter_name).orderBy("createdAt", "desc").limit(limit || 20);
 
     if (status && status !== "all") {
-      query = db
-        .collection("issues")
-        .where("reporterName", "==", reporter_name)
-        .where("status", "==", status)
-        .orderBy("createdAt", "desc")
-        .limit(limit || 20);
+      query = db.collection("issues").where("reporterName", "==", reporter_name).where("status", "==", status).orderBy("createdAt", "desc").limit(limit || 20);
     }
 
     const snapshot = await query.get();
-
     const issues = snapshot.docs.map((doc) => {
       const d = doc.data();
       return {
-        issueId: doc.id,
-        summary: d.summary,
-        status: d.status || "open",
-        priority: d.priority,
-        category: d.category,
-        source: d.source || "discord",
+        issueId: doc.id, summary: d.summary, status: d.status || "open",
+        priority: d.priority, category: d.category, source: d.source || "discord",
         createdAt: d.createdAt?.toDate?.()?.toISOString() || null,
       };
     });
 
-    const result = {
-      reporter: reporter_name,
-      total: issues.length,
-      issues,
-    };
-
     return {
-      content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+      content: [{ type: "text" as const, text: JSON.stringify({ reporter: reporter_name, total: issues.length, issues }, null, 2) }],
     };
   }
 );
 
-// --- Start ---
+// --- Start (stdio or HTTP) ---
 async function main() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-  console.error("Pokedex MCP server running on stdio");
+  const mode = process.env.MCP_TRANSPORT || "stdio";
+
+  if (mode === "http") {
+    const app = express();
+    app.use(express.json());
+
+    // Health check
+    app.get("/health", (_req, res) => {
+      res.json({ status: "ok", server: "pokedex-mcp-server", version: "1.0.0" });
+    });
+
+    // MCP endpoint
+    app.post("/mcp", async (req, res) => {
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined,
+        enableJsonResponse: true,
+      });
+      res.on("close", () => transport.close());
+      await server.connect(transport);
+      await transport.handleRequest(req, res, req.body);
+    });
+
+    const port = parseInt(process.env.PORT || "3001");
+    app.listen(port, () => {
+      console.log(`Pokedex MCP server running on http://0.0.0.0:${port}/mcp`);
+    });
+  } else {
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
+    console.error("Pokedex MCP server running on stdio");
+  }
 }
 
 main().catch((err) => {
