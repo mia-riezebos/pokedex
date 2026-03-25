@@ -1,6 +1,7 @@
-const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
 const firestore = require('../services/firestore');
-const { buildIssueEmbed } = require('../services/triage');
+const { buildIssueEmbed, postIssueEmbed } = require('../services/triage');
+const { classifyIssue } = require('../services/openrouter');
 const { getConfig } = require('../config/config');
 
 const PRIORITY_COLORS = {
@@ -87,12 +88,20 @@ const commandData = new SlashCommandBuilder()
     sub.setName('revive')
       .setDescription('Reopen a deleted issue and start a thread so the reporter can add context')
       .addStringOption(opt => opt.setName('id').setDescription('Issue ID').setRequired(true).setAutocomplete(true))
-      .addUserOption(opt => opt.setName('user').setDescription('The reporter to ping (default: original reporter)').setRequired(false)));
+      .addUserOption(opt => opt.setName('user').setDescription('The reporter to ping (default: original reporter)').setRequired(false)))
+  .addSubcommand(sub =>
+    sub.setName('recover')
+      .setDescription('Scrape a thread to recreate a hard-deleted issue and continue the conversation')
+      .addChannelOption(opt =>
+        opt.setName('thread')
+          .setDescription('The thread to scrape (or run this inside the thread)')
+          .addChannelTypes(ChannelType.PublicThread, ChannelType.PrivateThread)
+          .setRequired(false)));
 
 async function execute(interaction) {
   const sub = interaction.options.getSubcommand();
 
-  if (['close', 'reopen', 'assign', 'note', 'revive'].includes(sub)) {
+  if (['close', 'reopen', 'assign', 'note', 'revive', 'recover'].includes(sub)) {
     if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
       return interaction.reply({ content: 'You need **Manage Messages** permission to do that.', ephemeral: true });
     }
@@ -110,6 +119,7 @@ async function execute(interaction) {
     case 'note': return handleNote(interaction);
     case 'context': return handleContext(interaction);
     case 'revive': return handleRevive(interaction);
+    case 'recover': return handleRecover(interaction);
     default:
       return interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
   }
@@ -217,7 +227,6 @@ async function handleRevive(interaction) {
   const updatedIssue = await firestore.getIssueById(issueId);
 
   // Re-post the triage embed since the old one was likely deleted
-  const { postIssueEmbed } = require('../services/triage');
   await postIssueEmbed(interaction.guild, updatedIssue, issueId);
   // Refetch to get the new triageMessageId
   const issueFinal = await firestore.getIssueById(issueId);
@@ -259,6 +268,130 @@ async function handleRevive(interaction) {
   await thread.send({ content: `${reporterMention}`, embeds: [introEmbed] });
 
   await interaction.editReply(`Revived issue \`${issueId}\` — thread created: ${thread.toString()}`);
+}
+
+async function handleRecover(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+
+  // Resolve the thread — either from the option or the current channel
+  const threadOption = interaction.options.getChannel('thread');
+  const thread = threadOption || (interaction.channel.isThread() ? interaction.channel : null);
+  if (!thread || !thread.isThread()) {
+    return interaction.editReply('Run this inside a thread, or pass a thread with the `thread` option.');
+  }
+
+  // Check if this thread is already linked to a live issue
+  const existing = await firestore.getIssueByThreadId(thread.id);
+  if (existing) {
+    return interaction.editReply(`This thread is already linked to issue \`${existing.id}\` (status: ${existing.status}). Use \`/issue reopen\` instead.`);
+  }
+
+  // Scrape all messages from the thread
+  let allMessages = [];
+  let lastId;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const batch = await thread.messages.fetch({ limit: 100, ...(lastId && { before: lastId }) });
+    if (batch.size === 0) break;
+    allMessages.push(...batch.values());
+    lastId = batch.last().id;
+    if (batch.size < 100) break;
+  }
+
+  // Sort oldest first
+  allMessages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+
+  if (allMessages.length === 0) {
+    return interaction.editReply('The thread has no messages to recover.');
+  }
+
+  // Identify the reporter — first non-bot message author
+  const firstHumanMsg = allMessages.find(m => !m.author.bot);
+  const reporter = firstHumanMsg?.author;
+
+  // Build the full conversation text for AI classification
+  const humanMessages = allMessages.filter(m => !m.author.bot && m.content?.trim());
+  const conversationText = humanMessages.map(m => m.content.trim()).join('\n');
+
+  if (!conversationText) {
+    return interaction.editReply('No user messages found in the thread to build an issue from.');
+  }
+
+  // Classify the scraped conversation
+  const classification = await classifyIssue(conversationText);
+
+  // Collect any attachments from the conversation
+  const attachments = [];
+  for (const msg of humanMessages) {
+    for (const att of msg.attachments.values()) {
+      attachments.push({ url: att.url, name: att.name, contentType: att.contentType });
+    }
+  }
+
+  // Save the new issue
+  const issueData = {
+    text: conversationText,
+    reporterId: reporter?.id || 'unknown',
+    reporterName: reporter?.username || 'unknown',
+    guildId: interaction.guild.id,
+    channelId: thread.parentId,
+    messageId: firstHumanMsg?.id || null,
+    threadId: thread.id,
+    priority: classification.priority,
+    category: classification.category,
+    summary: classification.summary,
+    reasoning: classification.reasoning,
+    attachments,
+    source: 'recovered',
+  };
+
+  // Build threadContext from all human messages (except the first which becomes the main text)
+  const contextEntries = humanMessages.slice(1).map(m => ({
+    text: `${m.author.id === reporter?.id ? '' : `[${m.author.username}]: `}${m.content.trim()}`,
+    addedAt: m.createdAt.toISOString(),
+  }));
+  if (contextEntries.length > 0) {
+    issueData.threadContext = contextEntries;
+  }
+
+  const issueId = await firestore.saveIssue(issueData);
+
+  // Post triage embed
+  const savedIssue = await firestore.getIssueById(issueId);
+  await postIssueEmbed(interaction.guild, savedIssue, issueId);
+
+  // Unarchive the thread if it was archived
+  if (thread.archived) {
+    try { await thread.setArchived(false); } catch { /* may lack perms */ }
+  }
+
+  // Send a continuation message in the thread so Pokedex keeps the conversation going
+  const color = PRIORITY_COLORS[classification.priority] ?? 0x808080;
+  const recoverEmbed = new EmbedBuilder()
+    .setColor(color)
+    .setTitle('Issue Recovered')
+    .setDescription(
+      `I've recreated this issue from the conversation in this thread.\n\n` +
+      `**Summary:** ${classification.summary}\n` +
+      `**Priority:** ${classification.priority}\n` +
+      `**Category:** ${(classification.category || 'other').replace(/_/g, ' ')}`
+    )
+    .addFields({
+      name: 'What happens next',
+      value: 'This thread is now linked to the new issue. Any messages you send here will automatically update the issue and I\'ll keep tracking everything.',
+    })
+    .setFooter({ text: `New Issue ID: ${issueId}` })
+    .setTimestamp();
+
+  const mention = reporter ? `<@${reporter.id}>` : '';
+  await thread.send({ content: mention, embeds: [recoverEmbed] });
+
+  // Ask the follow-up question if the AI generated one
+  if (classification.follow_up) {
+    await thread.send(classification.follow_up);
+  }
+
+  await interaction.editReply(`Recovered issue \`${issueId}\` from thread ${thread.toString()} — Pokedex is now tracking it.`);
 }
 
 async function handleView(interaction) {
