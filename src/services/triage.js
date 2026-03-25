@@ -12,7 +12,7 @@ const PRIORITY_COLORS = {
 };
 
 function buildTriageButtons(issueId) {
-  return new ActionRowBuilder().addComponents(
+  const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`triage_ack_${issueId}`)
       .setLabel('Acknowledged')
@@ -33,12 +33,20 @@ function buildTriageButtons(issueId) {
       .setLabel('Escalate')
       .setEmoji('🔺')
       .setStyle(ButtonStyle.Danger),
+  );
+  const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`triage_delete_${issueId}`)
       .setLabel('Delete')
       .setEmoji('🗑️')
       .setStyle(ButtonStyle.Danger),
+    new ButtonBuilder()
+      .setCustomId(`triage_gather_${issueId}`)
+      .setLabel('Gather Context')
+      .setEmoji('💬')
+      .setStyle(ButtonStyle.Secondary),
   );
+  return [row1, row2];
 }
 
 function buildIssueEmbed(issue, issueId) {
@@ -90,6 +98,12 @@ function buildIssueEmbed(issue, issueId) {
     embed.addFields({ name: 'Attachments', value: attLinks.join('\n') });
   }
 
+  if (issue.contextComplete === true) {
+    embed.addFields({ name: '✅ Context Complete', value: 'Enough info for a developer to investigate' });
+  } else if (issue.source === 'forum' && issue.contextComplete !== true) {
+    embed.addFields({ name: '⏳ Gathering Context', value: 'Pokedex is talking to the reporter' });
+  }
+
   return embed;
 }
 
@@ -110,7 +124,7 @@ async function postIssueEmbed(guild, issue, issueId) {
 
   const embed = buildIssueEmbed(issue, issueId);
   const buttons = buildTriageButtons(issueId);
-  const msg = await channel.send({ embeds: [embed], components: [buttons] });
+  const msg = await channel.send({ embeds: [embed], components: buttons });
 
   // Store channel ID alongside message ID so MCP servers can post updates via REST API
   await firestore.updateIssueTriageChannelId(issueId, channel.id);
