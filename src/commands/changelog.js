@@ -2,6 +2,21 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.2.1',
+    date: '2026-03-25',
+    changes: [
+      'MCP issues now created as "pending" and require approval before entering triage',
+      'MCP agents can only update issues they created and cannot close or fix issues',
+      'Input length limits on all string fields across both MCP servers',
+      'Spam and quality filters on Node.js MCP server (gibberish, profanity, caps, URL spam)',
+      'Screenshot URL SSRF protection — HTTPS-only, no private IPs, allowlisted image hosts',
+      'Rate limiting on Node.js MCP server (10 writes/min, 30 reads/min)',
+      'Restricted CORS on Cloudflare worker to known origins only',
+      'Sanitized error messages to prevent internal detail leakage',
+      'Fixed threadContext race condition using arrayUnion',
+    ],
+  },
+  {
     version: '2.2.0',
     date: '2026-03-25',
     changes: [
