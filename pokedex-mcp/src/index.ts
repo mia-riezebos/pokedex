@@ -7,6 +7,94 @@ import express from "express";
 import { z } from "zod";
 import admin from "firebase-admin";
 
+// --- Input Validation & Security ---
+const MAX_TITLE_LENGTH = 200;
+const MAX_DESCRIPTION_LENGTH = 4000;
+const MAX_COMMENT_LENGTH = 2000;
+const MAX_CONTEXT_LENGTH = 2000;
+const MAX_NAME_LENGTH = 100;
+const MAX_SEARCH_QUERY_LENGTH = 200;
+
+interface FilterResult {
+  pass: boolean;
+  reason?: string;
+}
+
+function filterIssue(title: string, description: string): FilterResult {
+  const combined = `${title} ${description}`.toLowerCase();
+
+  if (title.length < 5) return { pass: false, reason: "Title too short. Please provide a clear summary (at least 5 characters)." };
+  if (description.length < 15) return { pass: false, reason: "Description too short. Please include enough detail (at least 15 characters)." };
+
+  const gibberishPattern = /^[a-z]{1,3}(\s[a-z]{1,3}){0,2}$|(.)\2{4,}|^[^a-zA-Z]*$/;
+  if (gibberishPattern.test(title.trim())) return { pass: false, reason: "Title appears to be gibberish. Please describe the actual issue." };
+
+  if (/(.)\1{5,}/.test(combined)) return { pass: false, reason: "Report contains excessive repeated characters." };
+
+  const greetings = ["hello", "hi", "hey", "sup", "yo", "test", "testing", "asdf", "qwerty", "foo", "bar", "baz", "lol", "lmao", "bruh"];
+  const titleWords = title.toLowerCase().trim().split(/\s+/);
+  if (titleWords.length <= 2 && greetings.includes(titleWords[0])) return { pass: false, reason: "This doesn't appear to be a bug report. Please describe what went wrong." };
+
+  const uppercaseRatio = (combined.match(/[A-Z]/g) || []).length / Math.max(combined.length, 1);
+  if (combined.length > 20 && uppercaseRatio > 0.7) return { pass: false, reason: "Please avoid excessive caps. Describe the issue clearly." };
+
+  const urlCount = (combined.match(/https?:\/\//g) || []).length;
+  if (urlCount > 3 && combined.length < 200) return { pass: false, reason: "Report contains too many links relative to its content." };
+
+  const words = combined.split(/\s+/);
+  if (words.length > 3) {
+    const unique = new Set(words);
+    if (unique.size / words.length < 0.3) return { pass: false, reason: "Report contains too many repeated words." };
+  }
+
+  const abusePatterns = /\b(fuck\s*you|kill\s*yourself|kys|stfu|die|hack|ddos|dox)\b/i;
+  if (abusePatterns.test(combined)) return { pass: false, reason: "Report contains inappropriate content. Please be respectful." };
+
+  return { pass: true };
+}
+
+function sanitizeString(input: string, maxLength: number): string {
+  return input.slice(0, maxLength).trim();
+}
+
+function isValidScreenshotUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (!["https:"].includes(parsed.protocol)) return false;
+    // Block internal/private network URLs
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0") return false;
+    if (hostname.startsWith("10.") || hostname.startsWith("192.168.") || hostname.startsWith("172.")) return false;
+    if (hostname.endsWith(".local") || hostname.endsWith(".internal")) return false;
+    // Only allow common image hosting domains
+    const allowedDomains = ["cdn.discordapp.com", "media.discordapp.net", "i.imgur.com", "imgur.com", "raw.githubusercontent.com", "user-images.githubusercontent.com"];
+    return allowedDomains.some(d => hostname === d || hostname.endsWith(`.${d}`));
+  } catch {
+    return false;
+  }
+}
+
+// --- Rate Limiting (in-memory for stdio/HTTP mode) ---
+const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX_WRITE = 10;
+const RATE_LIMIT_MAX_READ = 30;
+
+function checkRateLimit(key: string, isWrite: boolean): boolean {
+  const now = Date.now();
+  const max = isWrite ? RATE_LIMIT_MAX_WRITE : RATE_LIMIT_MAX_READ;
+  const bucket = rateLimitBuckets.get(key);
+
+  if (!bucket || now > bucket.resetAt) {
+    rateLimitBuckets.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return true;
+  }
+
+  if (bucket.count >= max) return false;
+  bucket.count++;
+  return true;
+}
+
 // --- Firebase Init ---
 function initFirebase() {
   if (admin.apps.length) return;
@@ -162,25 +250,45 @@ server.registerTool(
     },
   },
   async ({ title, description, priority, category, reporter_name, reporter_id, screenshot_url }) => {
+    // Rate limit
+    const rlKey = `write:${reporter_id || reporter_name}`;
+    if (!checkRateLimit(rlKey, true)) {
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Rate limit exceeded. Try again later." }) }] };
+    }
+
+    // Sanitize inputs
+    const safeTitle = sanitizeString(title, MAX_TITLE_LENGTH);
+    const safeDesc = sanitizeString(description, MAX_DESCRIPTION_LENGTH);
+    const safeName = sanitizeString(reporter_name, MAX_NAME_LENGTH);
+
+    // Spam/quality filter
+    const filter = filterIssue(safeTitle, safeDesc);
+    if (!filter.pass) {
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "rejected", reason: filter.reason }) }] };
+    }
+
     const db = getDb();
 
     const issueData: Record<string, unknown> = {
       messageId: `mcp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       guildId: process.env.DISCORD_GUILD_ID || "mcp",
       channelId: "mcp",
-      reporterId: reporter_id || `mcp-${reporter_name}`,
-      reporterName: reporter_name,
-      text: description,
+      reporterId: reporter_id || `mcp-${safeName}`,
+      reporterName: safeName,
+      text: safeDesc,
       priority: priority || "medium",
       category: category || "bug",
-      summary: title,
+      summary: safeTitle,
       reasoning: "Reported via Pokedex MCP agent integration",
-      status: "open",
+      status: "pending",
       source: "mcp",
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     };
 
     if (screenshot_url) {
+      if (!isValidScreenshotUrl(screenshot_url)) {
+        return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Invalid screenshot URL. Only HTTPS URLs from trusted image hosts are accepted." }) }] };
+      }
       issueData.attachments = [{
         url: screenshot_url, name: "screenshot.png", isImage: true,
         contentType: "image/png", size: 0,
@@ -217,20 +325,37 @@ server.registerTool(
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
   async ({ title, description, reporter_name, reporter_id }) => {
+    // Rate limit
+    const rlKey = `write:${reporter_id || reporter_name}`;
+    if (!checkRateLimit(rlKey, true)) {
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Rate limit exceeded. Try again later." }) }] };
+    }
+
+    // Sanitize inputs
+    const safeTitle = sanitizeString(title, MAX_TITLE_LENGTH);
+    const safeDesc = sanitizeString(description, MAX_DESCRIPTION_LENGTH);
+    const safeName = sanitizeString(reporter_name, MAX_NAME_LENGTH);
+
+    // Spam/quality filter
+    const filter = filterIssue(safeTitle, safeDesc);
+    if (!filter.pass) {
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "rejected", reason: filter.reason }) }] };
+    }
+
     const db = getDb();
 
     const issueData: Record<string, unknown> = {
       messageId: `mcp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       guildId: process.env.DISCORD_GUILD_ID || "mcp",
       channelId: "mcp",
-      reporterId: reporter_id || `mcp-${reporter_name}`,
-      reporterName: reporter_name,
-      text: `[FEATURE REQUEST] ${description}`,
+      reporterId: reporter_id || `mcp-${safeName}`,
+      reporterName: safeName,
+      text: `[FEATURE REQUEST] ${safeDesc}`,
       priority: "low",
       category: "feature_request",
-      summary: title,
+      summary: safeTitle,
       reasoning: "Feature request submitted via Pokedex MCP agent integration",
-      status: "open",
+      status: "pending",
       source: "mcp",
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
     };
@@ -260,10 +385,15 @@ server.registerTool(
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   async ({ issue_id }) => {
+    if (!checkRateLimit(`read:${issue_id}`, false)) {
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Rate limit exceeded. Try again later." }) }] };
+    }
+
     const db = getDb();
-    const doc = await db.collection("issues").doc(issue_id).get();
+    const safeId = sanitizeString(issue_id, 128);
+    const doc = await db.collection("issues").doc(safeId).get();
     if (!doc.exists) {
-      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Issue not found", issue_id }) }] };
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Issue not found", issue_id: safeId }) }] };
     }
 
     const data = doc.data()!;
@@ -296,11 +426,17 @@ server.registerTool(
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   async ({ reporter_name, status, limit }) => {
+    if (!checkRateLimit(`read:${reporter_name}`, false)) {
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Rate limit exceeded. Try again later." }) }] };
+    }
+
+    const safeName = sanitizeString(reporter_name, MAX_NAME_LENGTH);
+    const safeLimit = Math.min(Math.max(limit || 20, 1), 50);
     const db = getDb();
-    let query = db.collection("issues").where("reporterName", "==", reporter_name).orderBy("createdAt", "desc").limit(limit || 20);
+    let query = db.collection("issues").where("reporterName", "==", safeName).orderBy("createdAt", "desc").limit(safeLimit);
 
     if (status && status !== "all") {
-      query = db.collection("issues").where("reporterName", "==", reporter_name).where("status", "==", status).orderBy("createdAt", "desc").limit(limit || 20);
+      query = db.collection("issues").where("reporterName", "==", safeName).where("status", "==", status).orderBy("createdAt", "desc").limit(safeLimit);
     }
 
     const snapshot = await query.get();
@@ -350,12 +486,29 @@ server.registerTool(
     },
   },
   async ({ issue_id, status, priority, category, reason }) => {
+    if (!checkRateLimit(`write:${issue_id}`, true)) {
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Rate limit exceeded. Try again later." }) }] };
+    }
+
     const db = getDb();
-    const docRef = db.collection("issues").doc(issue_id);
+    const safeId = sanitizeString(issue_id, 128);
+    const docRef = db.collection("issues").doc(safeId);
     const doc = await docRef.get();
 
     if (!doc.exists) {
-      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Issue not found", issue_id }) }] };
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Issue not found", issue_id: safeId }) }] };
+    }
+
+    const data = doc.data()!;
+
+    // Authorization: MCP agents can only update issues they created via MCP
+    if (data.source !== "mcp") {
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "MCP agents can only update issues created via MCP.", issue_id: safeId }) }] };
+    }
+
+    // MCP agents cannot directly close/fix issues — that requires moderator action
+    if (status && ["closed", "fixed", "wontfix"].includes(status)) {
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "MCP agents cannot close issues. Only moderators can close issues via Discord.", issue_id: safeId }) }] };
     }
 
     const updates: Record<string, unknown> = {
@@ -366,14 +519,10 @@ server.registerTool(
     if (priority) updates.priority = priority;
     if (category) updates.category = category;
 
-    if (status === "closed" || status === "fixed" || status === "wontfix") {
-      updates.closedAt = admin.firestore.FieldValue.serverTimestamp();
-      updates.closedBy = "mcp-agent";
-    }
-
     if (reason) {
+      const safeReason = sanitizeString(reason, MAX_COMMENT_LENGTH);
       updates.notes = admin.firestore.FieldValue.arrayUnion({
-        text: reason,
+        text: safeReason,
         author: "MCP Agent",
         timestamp: new Date().toISOString(),
       });
@@ -384,12 +533,12 @@ server.registerTool(
     const updated = (await docRef.get()).data()!;
     return {
       content: [{ type: "text" as const, text: JSON.stringify({
-        issueId: issue_id,
+        issueId: safeId,
         summary: updated.summary,
         status: updated.status,
         priority: updated.priority,
         category: updated.category,
-        message: `Issue ${issue_id} updated successfully.`,
+        message: `Issue ${safeId} updated successfully.`,
       }, null, 2) }],
     };
   }
@@ -419,9 +568,14 @@ server.registerTool(
     },
   },
   async ({ query, status, limit }) => {
+    if (!checkRateLimit(`read:search`, false)) {
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Rate limit exceeded. Try again later." }) }] };
+    }
+
     const db = getDb();
     const searchLimit = Math.min(limit || 10, 50);
-    const queryLower = query.toLowerCase();
+    const safeQuery = sanitizeString(query, MAX_SEARCH_QUERY_LENGTH);
+    const queryLower = safeQuery.toLowerCase();
 
     // Firestore doesn't support full-text search, so we fetch recent issues and filter client-side
     let baseQuery = db.collection("issues").orderBy("createdAt", "desc").limit(200);
@@ -487,17 +641,24 @@ server.registerTool(
     },
   },
   async ({ issue_id, comment, author }) => {
+    if (!checkRateLimit(`write:${author}`, true)) {
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Rate limit exceeded. Try again later." }) }] };
+    }
+
     const db = getDb();
-    const docRef = db.collection("issues").doc(issue_id);
+    const safeId = sanitizeString(issue_id, 128);
+    const safeComment = sanitizeString(comment, MAX_COMMENT_LENGTH);
+    const safeAuthor = sanitizeString(author, MAX_NAME_LENGTH);
+    const docRef = db.collection("issues").doc(safeId);
     const doc = await docRef.get();
 
     if (!doc.exists) {
-      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Issue not found", issue_id }) }] };
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Issue not found", issue_id: safeId }) }] };
     }
 
     const noteEntry = {
-      text: comment,
-      author,
+      text: safeComment,
+      author: safeAuthor,
       timestamp: new Date().toISOString(),
     };
 
@@ -511,11 +672,11 @@ server.registerTool(
 
     return {
       content: [{ type: "text" as const, text: JSON.stringify({
-        issueId: issue_id,
+        issueId: safeId,
         summary: data.summary,
         commentAdded: noteEntry,
         totalComments: existingNotes.length + 1,
-        message: `Comment added to issue ${issue_id}.`,
+        message: `Comment added to issue ${safeId}.`,
       }, null, 2) }],
     };
   }
@@ -541,43 +702,52 @@ server.registerTool(
     },
   },
   async ({ issue_id, context, author }) => {
+    if (!checkRateLimit(`write:${author}`, true)) {
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Rate limit exceeded. Try again later." }) }] };
+    }
+
     const db = getDb();
-    const docRef = db.collection("issues").doc(issue_id);
+    const safeId = sanitizeString(issue_id, 128);
+    const safeContext = sanitizeString(context, MAX_CONTEXT_LENGTH);
+    const safeAuthor = sanitizeString(author, MAX_NAME_LENGTH);
+    const docRef = db.collection("issues").doc(safeId);
     const doc = await docRef.get();
 
     if (!doc.exists) {
-      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Issue not found", issue_id }) }] };
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Issue not found", issue_id: safeId }) }] };
     }
 
     const data = doc.data()!;
     const status = data.status || "open";
     if (["closed", "fixed", "wontfix"].includes(status)) {
-      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Issue is closed. Reopen it first.", issue_id, status }) }] };
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Issue is closed. Reopen it first.", issue_id: safeId, status }) }] };
     }
 
-    const existingContext: Array<Record<string, string>> = data.threadContext || [];
-    existingContext.push({
-      text: `${author}: ${context}`,
+    const contextEntry = {
+      text: `${safeAuthor}: ${safeContext}`,
       addedAt: new Date().toISOString(),
-    });
+    };
 
+    // Use arrayUnion to prevent race conditions with concurrent context additions
     await docRef.update({
-      threadContext: existingContext,
+      threadContext: admin.firestore.FieldValue.arrayUnion(contextEntry),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
 
     // Post context notification to Discord (works for both pending and approved issues)
     const updatedDoc = await docRef.get();
     const updatedData = updatedDoc.data()!;
-    await postContextToDiscord(updatedData, issue_id, context, author);
+    await postContextToDiscord(updatedData, safeId, safeContext, safeAuthor);
+
+    const totalEntries = updatedData.threadContext?.length || 1;
 
     return {
       content: [{ type: "text" as const, text: JSON.stringify({
-        issueId: issue_id,
+        issueId: safeId,
         summary: data.summary,
-        contextAdded: { text: context, author },
-        totalContextEntries: existingContext.length,
-        message: `Context added to issue ${issue_id}. Total context entries: ${existingContext.length}. Discord notification sent.`,
+        contextAdded: { text: safeContext, author: safeAuthor },
+        totalContextEntries: totalEntries,
+        message: `Context added to issue ${safeId}. Total context entries: ${totalEntries}. Discord notification sent.`,
       }, null, 2) }],
     };
   }
