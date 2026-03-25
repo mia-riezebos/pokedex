@@ -48,7 +48,8 @@ async function execute(interaction) {
       deleteMessageSeconds: deleteDays * 86400,
     });
   } catch (err) {
-    return interaction.editReply(`Failed to ban: ${err.message}`);
+    console.error('Failed to ban:', err);
+    return interaction.editReply('Failed to ban this user. Please check bot permissions and try again.');
   }
 
   // Log infraction

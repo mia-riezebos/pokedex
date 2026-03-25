@@ -51,7 +51,8 @@ async function execute(interaction) {
     if (err.code === 50034) {
       return interaction.editReply('Cannot delete messages older than 14 days.');
     }
-    return interaction.editReply(`Failed to purge: ${err.message}`);
+    console.error('Failed to purge:', err);
+    return interaction.editReply('Failed to purge messages. Please check bot permissions and try again.');
   }
 }
 

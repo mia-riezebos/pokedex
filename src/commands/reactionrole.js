@@ -9,6 +9,7 @@ module.exports = {
   data: new SlashCommandBuilder()
     .setName('reactionrole')
     .setDescription('Set up reaction role messages')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageRoles)
     .addSubcommand(subcommand =>
       subcommand
         .setName('setup')

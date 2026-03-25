@@ -33,16 +33,21 @@ async function execute(interaction) {
     const key = interaction.options.getString('key');
     let value = interaction.options.getString('value');
 
+    if (value.length > 500) {
+      return interaction.reply({ content: 'Config value too long (max 500 characters).', ephemeral: true });
+    }
+
     // Parse booleans and arrays
     if (value === 'true') value = true;
     else if (value === 'false') value = false;
-    else if (value.includes(',')) value = value.split(',').map(s => s.trim());
+    else if (value.includes(',')) value = value.split(',').map(s => s.trim()).filter(s => s.length > 0);
 
     try {
       await config.setConfigOverride(key, value, interaction.user.id);
       await interaction.reply({ content: `Set \`${key}\` = \`${JSON.stringify(value)}\``, ephemeral: true });
     } catch (err) {
-      await interaction.reply({ content: `Error: ${err.message}`, ephemeral: true });
+      const safeMsg = err.message?.startsWith('Unknown config key') ? err.message : 'Failed to update config.';
+      await interaction.reply({ content: safeMsg, ephemeral: true });
     }
   }
 

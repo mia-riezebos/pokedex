@@ -41,7 +41,8 @@ async function execute(interaction) {
   try {
     await member.kick(reason);
   } catch (err) {
-    return interaction.editReply(`Failed to kick: ${err.message}`);
+    console.error('Failed to kick:', err);
+    return interaction.editReply('Failed to kick this user. Please check bot permissions and try again.');
   }
 
   // Log infraction
