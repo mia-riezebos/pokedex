@@ -118,4 +118,98 @@ async function classifyIssue(text) {
   }
 }
 
-module.exports = { classifyIssue };
+async function evaluateIssueContext(issue, conversationHistory, extraHint) {
+  const model = getConfig('model');
+
+  const transcript = conversationHistory
+    .map(m => `[${m.isBot ? 'Pokedex' : m.author}]: ${m.content}`)
+    .join('\n');
+
+  const contextChecklist = {
+    bug: 'steps to reproduce, expected vs actual behavior, environment/platform, frequency, screenshots or logs',
+    feature_request: 'use case / problem being solved, current workaround, importance to their workflow',
+    ux_issue: 'what they were trying to do, what confused them, where in the app',
+    performance: 'what is slow, how slow (quantify), when it started, device/network info',
+  };
+
+  const checklist = contextChecklist[issue.category] || contextChecklist.bug;
+
+  const systemPrompt = `You are Pokedex, a triage assistant for poke.com's Discord. Your job is to evaluate whether a reported issue has enough context for a developer to investigate and fix it WITHOUT needing to ask the reporter anything.
+
+## Current Issue
+- Summary: ${issue.summary}
+- Priority: ${issue.priority}
+- Category: ${(issue.category || 'other').replace(/_/g, ' ')}
+- Original report: ${(issue.text || '').slice(0, 500)}
+
+## Context Checklist (guidance, not rigid)
+For this category, good reports usually include: ${checklist}
+
+## Rules
+- Phrase questions naturally and conversationally — never as a checklist
+- Skip items the user already covered
+- Ask off-script questions if something unexpected comes up
+- Return shouldReply: false for non-substantive messages (thanks, cool, emojis, greetings)
+- Return shouldReply: true with a triageUpdate when meaningful new context arrives, even days later
+- Return reclassify: true when new info could change priority or category
+- Mark complete: true ONLY when a developer would have enough to start working without further questions
+- If user says "never mind" / "fixed itself" — acknowledge warmly, note self-resolved
+- Keep replies short, friendly, and focused — one question at a time
+${extraHint ? `\n## Additional Instruction\n${extraHint}` : ''}
+
+Return ONLY valid JSON:
+{
+  "complete": boolean,
+  "missing": ["what is still needed"],
+  "shouldReply": boolean,
+  "reply": "what to say to the user" or null,
+  "triageUpdate": "new context summary for the engineering triage embed" or null,
+  "reclassify": boolean
+}`;
+
+  try {
+    const response = await fetch(OPENROUTER_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://poke.com',
+        'X-Title': 'Pokedex Context Evaluator',
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Conversation so far:\n${transcript}` },
+        ],
+        response_format: { type: 'json_object' },
+      }),
+    });
+
+    if (!response.ok) {
+      console.error(`Context evaluator API error: ${response.status}`);
+      return { complete: false, missing: [], shouldReply: false, reply: null, triageUpdate: null, reclassify: false };
+    }
+
+    const data = await response.json();
+    let content = data.choices?.[0]?.message?.content?.trim() ?? '';
+    if (content.startsWith('```')) {
+      content = content.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
+    }
+
+    const parsed = JSON.parse(content);
+    return {
+      complete: !!parsed.complete,
+      missing: Array.isArray(parsed.missing) ? parsed.missing : [],
+      shouldReply: !!parsed.shouldReply,
+      reply: typeof parsed.reply === 'string' ? parsed.reply : null,
+      triageUpdate: typeof parsed.triageUpdate === 'string' ? parsed.triageUpdate : null,
+      reclassify: !!parsed.reclassify,
+    };
+  } catch (err) {
+    console.error('Context evaluator failed:', err.message);
+    return { complete: false, missing: [], shouldReply: false, reply: null, triageUpdate: null, reclassify: false };
+  }
+}
+
+module.exports = { classifyIssue, evaluateIssueContext };
