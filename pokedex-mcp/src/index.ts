@@ -21,7 +21,8 @@ interface FilterResult {
 }
 
 function filterIssue(title: string, description: string): FilterResult {
-  const combined = `${title} ${description}`.toLowerCase();
+  const original = `${title} ${description}`;
+  const combined = original.toLowerCase();
 
   if (title.length < 5) return { pass: false, reason: "Title too short. Please provide a clear summary (at least 5 characters)." };
   if (description.length < 15) return { pass: false, reason: "Description too short. Please include enough detail (at least 15 characters)." };
@@ -35,8 +36,9 @@ function filterIssue(title: string, description: string): FilterResult {
   const titleWords = title.toLowerCase().trim().split(/\s+/);
   if (titleWords.length <= 2 && greetings.includes(titleWords[0])) return { pass: false, reason: "This doesn't appear to be a bug report. Please describe what went wrong." };
 
-  const uppercaseRatio = (combined.match(/[A-Z]/g) || []).length / Math.max(combined.length, 1);
-  if (combined.length > 20 && uppercaseRatio > 0.7) return { pass: false, reason: "Please avoid excessive caps. Describe the issue clearly." };
+  // Check uppercase ratio on original (pre-lowercased) text
+  const uppercaseRatio = (original.match(/[A-Z]/g) || []).length / Math.max(original.length, 1);
+  if (original.length > 20 && uppercaseRatio > 0.7) return { pass: false, reason: "Please avoid excessive caps. Describe the issue clearly." };
 
   const urlCount = (combined.match(/https?:\/\//g) || []).length;
   if (urlCount > 3 && combined.length < 200) return { pass: false, reason: "Report contains too many links relative to its content." };
@@ -64,7 +66,10 @@ function isValidScreenshotUrl(url: string): boolean {
     // Block internal/private network URLs
     const hostname = parsed.hostname.toLowerCase();
     if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0") return false;
-    if (hostname.startsWith("10.") || hostname.startsWith("192.168.") || hostname.startsWith("172.")) return false;
+    if (hostname.startsWith("10.") || hostname.startsWith("192.168.")) return false;
+    // 172.16.0.0 – 172.31.255.255 are private; other 172.x.x.x are public
+    const m172 = hostname.match(/^172\.(\d+)\./);
+    if (m172 && Number(m172[1]) >= 16 && Number(m172[1]) <= 31) return false;
     if (hostname.endsWith(".local") || hostname.endsWith(".internal")) return false;
     // Only allow common image hosting domains
     const allowedDomains = ["cdn.discordapp.com", "media.discordapp.net", "i.imgur.com", "imgur.com", "raw.githubusercontent.com", "user-images.githubusercontent.com"];
@@ -79,14 +84,33 @@ const rateLimitBuckets = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX_WRITE = 10;
 const RATE_LIMIT_MAX_READ = 30;
+const RATE_LIMIT_EVICT_INTERVAL_MS = 300_000;
+
+// Sanitize rate limit keys to prevent bypass via special characters
+function sanitizeRateLimitKey(key: string): string {
+  return key.replace(/[^a-zA-Z0-9:_\-@.]/g, "_").slice(0, 200);
+}
+
+function evictExpiredBuckets(): void {
+  const now = Date.now();
+  for (const [key, bucket] of rateLimitBuckets) {
+    if (now > bucket.resetAt) {
+      rateLimitBuckets.delete(key);
+    }
+  }
+}
+
+// Periodically evict expired entries to prevent unbounded memory growth
+setInterval(evictExpiredBuckets, RATE_LIMIT_EVICT_INTERVAL_MS).unref();
 
 function checkRateLimit(key: string, isWrite: boolean): boolean {
   const now = Date.now();
   const max = isWrite ? RATE_LIMIT_MAX_WRITE : RATE_LIMIT_MAX_READ;
-  const bucket = rateLimitBuckets.get(key);
+  const safeKey = sanitizeRateLimitKey(key);
+  const bucket = rateLimitBuckets.get(safeKey);
 
   if (!bucket || now > bucket.resetAt) {
-    rateLimitBuckets.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    rateLimitBuckets.set(safeKey, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
     return true;
   }
 
@@ -464,6 +488,7 @@ server.registerTool(
       "Update an existing issue's priority, status, or category. Use this to escalate, close, or reclassify issues.",
     inputSchema: {
       issue_id: z.string().describe("The issue ID to update"),
+      reporter_name: z.string().describe("Your name or username (must match the original reporter)"),
       status: z
         .enum(["open", "acknowledged", "fixed", "closed", "escalated", "wontfix"])
         .optional()
@@ -485,13 +510,14 @@ server.registerTool(
       openWorldHint: false,
     },
   },
-  async ({ issue_id, status, priority, category, reason }) => {
+  async ({ issue_id, reporter_name, status, priority, category, reason }) => {
     if (!checkRateLimit(`write:${issue_id}`, true)) {
       return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Rate limit exceeded. Try again later." }) }] };
     }
 
     const db = getDb();
     const safeId = sanitizeString(issue_id, 128);
+    const safeName = sanitizeString(reporter_name, MAX_NAME_LENGTH);
     const docRef = db.collection("issues").doc(safeId);
     const doc = await docRef.get();
 
@@ -504,6 +530,10 @@ server.registerTool(
     // Authorization: MCP agents can only update issues they created via MCP
     if (data.source !== "mcp") {
       return { content: [{ type: "text" as const, text: JSON.stringify({ error: "MCP agents can only update issues created via MCP.", issue_id: safeId }) }] };
+    }
+    // Verify the caller is the original reporter, not just any MCP agent
+    if (data.reporterName !== safeName) {
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "You can only update issues you originally reported.", issue_id: safeId }) }] };
     }
 
     // MCP agents cannot directly close/fix issues — that requires moderator action

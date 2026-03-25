@@ -1,18 +1,80 @@
 const express = require('express');
 const path = require('path');
+const crypto = require('crypto');
 const firestore = require('../services/firestore');
 
 const app = express();
 const PORT = process.env.DASHBOARD_PORT || 3000;
 
+// --- API Authentication ---
+const DASHBOARD_API_KEY = process.env.DASHBOARD_API_KEY || '';
+
+function apiAuth(req, res, next) {
+  if (!DASHBOARD_API_KEY) {
+    const ip = req.ip || req.connection.remoteAddress;
+    if (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1') {
+      return next();
+    }
+    return res.status(403).json({ error: 'Dashboard API is restricted to localhost. Set DASHBOARD_API_KEY to enable remote access.' });
+  }
+
+  const provided = req.headers['x-api-key'] || req.query.api_key;
+  if (!provided || typeof provided !== 'string') {
+    return res.status(401).json({ error: 'Invalid or missing API key.' });
+  }
+  // timingSafeEqual throws if buffers differ in length — check first to avoid 500
+  const providedBuf = Buffer.from(provided);
+  const expectedBuf = Buffer.from(DASHBOARD_API_KEY);
+  if (providedBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(providedBuf, expectedBuf)) {
+    return res.status(401).json({ error: 'Invalid or missing API key.' });
+  }
+  next();
+}
+
+// --- Rate Limiting ---
+const rateLimitMap = new Map();
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 60;
+
+// Evict expired entries every 5 minutes to prevent unbounded memory growth
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, bucket] of rateLimitMap) {
+    if (now > bucket.resetAt) rateLimitMap.delete(key);
+  }
+}, 300_000).unref();
+
+function rateLimit(req, res, next) {
+  const ip = req.ip || req.connection.remoteAddress || 'unknown';
+  const now = Date.now();
+  const bucket = rateLimitMap.get(ip);
+
+  if (!bucket || now > bucket.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return next();
+  }
+
+  if (bucket.count >= RATE_LIMIT_MAX) {
+    res.set('Retry-After', String(Math.ceil((bucket.resetAt - now) / 1000)));
+    return res.status(429).json({ error: 'Rate limit exceeded. Try again later.' });
+  }
+
+  bucket.count++;
+  next();
+}
+
 // Serve static frontend
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Apply auth and rate limiting to all API routes
+app.use('/api', rateLimit, apiAuth);
 
 // API: Get all issues
 app.get('/api/issues', async (req, res) => {
   try {
     const { status, priority, category, limit: limitParam } = req.query;
-    let issues = await firestore.getAllIssues(parseInt(limitParam) || 500);
+    const safeLimit = Math.min(Math.max(parseInt(limitParam) || 100, 1), 500);
+    let issues = await firestore.getAllIssues(safeLimit);
 
     if (status) issues = issues.filter(i => i.status === status);
     if (priority) issues = issues.filter(i => i.priority === priority);
@@ -46,7 +108,12 @@ app.get('/api/stats', async (req, res) => {
 // API: Get single issue
 app.get('/api/issues/:id', async (req, res) => {
   try {
-    const issue = await firestore.getIssueById(req.params.id);
+    const id = req.params.id;
+    if (!id || id.length > 128 || !/^[a-zA-Z0-9_-]+$/.test(id)) {
+      return res.status(400).json({ error: 'Invalid issue ID format' });
+    }
+
+    const issue = await firestore.getIssueById(id);
     if (!issue) return res.status(404).json({ error: 'Issue not found' });
 
     res.json({
@@ -66,8 +133,8 @@ app.use((req, res) => {
 });
 
 function startDashboard() {
-  app.listen(PORT, () => {
-    console.log(`Dashboard running at http://localhost:${PORT}`);
+  app.listen(PORT, '127.0.0.1', () => {
+    console.log(`Dashboard running at http://127.0.0.1:${PORT}`);
   });
 }
 

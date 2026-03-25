@@ -64,7 +64,8 @@ async function execute(interaction) {
   try {
     await member.timeout(durationMs, reason);
   } catch (err) {
-    return interaction.editReply(`Failed to timeout: ${err.message}`);
+    console.error('Failed to timeout:', err);
+    return interaction.editReply('Failed to timeout this user. Please check bot permissions and try again.');
   }
 
   // Log infraction

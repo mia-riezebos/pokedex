@@ -322,15 +322,16 @@ async function handleButtonInteraction(interaction) {
           await thread.setArchived(false);
         }
 
-        // Scrape conversation history
+        // Scrape conversation history (capped at 500 messages to prevent resource exhaustion)
         const allMessages = [];
         let lastId;
-        while (true) {
+        const MAX_CONTEXT_MESSAGES = 500;
+        while (allMessages.length < MAX_CONTEXT_MESSAGES) {
           const batch = await thread.messages.fetch({ limit: 100, ...(lastId && { before: lastId }) });
           if (batch.size === 0) break;
           allMessages.push(...batch.values());
-          lastId = batch.last().id;
           if (batch.size < 100) break;
+          lastId = batch.last().id;
         }
         allMessages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
 

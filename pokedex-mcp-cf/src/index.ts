@@ -63,7 +63,10 @@ function isValidScreenshotUrl(url: string): boolean {
     if (parsed.protocol !== "https:") return false;
     const hostname = parsed.hostname.toLowerCase();
     if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0") return false;
-    if (hostname.startsWith("10.") || hostname.startsWith("192.168.") || hostname.startsWith("172.")) return false;
+    if (hostname.startsWith("10.") || hostname.startsWith("192.168.")) return false;
+    // 172.16.0.0 – 172.31.255.255 are private; other 172.x.x.x are public
+    const m172 = hostname.match(/^172\.(\d+)\./);
+    if (m172 && Number(m172[1]) >= 16 && Number(m172[1]) <= 31) return false;
     if (hostname.endsWith(".local") || hostname.endsWith(".internal")) return false;
     const allowedDomains = ["cdn.discordapp.com", "media.discordapp.net", "i.imgur.com", "imgur.com", "raw.githubusercontent.com", "user-images.githubusercontent.com"];
     return allowedDomains.some(d => hostname === d || hostname.endsWith(`.${d}`));
@@ -80,7 +83,8 @@ interface FilterResult {
 }
 
 function filterIssue(title: string, description: string): FilterResult {
-  const combined = `${title} ${description}`.toLowerCase();
+  const original = `${title} ${description}`;
+  const combined = original.toLowerCase();
 
   // 1. Too short — not actionable
   if (title.length < 5) return { pass: false, reason: "Title too short. Please provide a clear summary (at least 5 characters)." };
@@ -98,9 +102,9 @@ function filterIssue(title: string, description: string): FilterResult {
   const titleWords = title.toLowerCase().trim().split(/\s+/);
   if (titleWords.length <= 2 && greetings.includes(titleWords[0])) return { pass: false, reason: "This doesn't appear to be a bug report. Please describe what went wrong." };
 
-  // 5. All caps rage (likely not actionable)
-  const uppercaseRatio = (combined.match(/[A-Z]/g) || []).length / Math.max(combined.length, 1);
-  if (combined.length > 20 && uppercaseRatio > 0.7) return { pass: false, reason: "Please avoid excessive caps. Describe the issue clearly so engineers can help." };
+  // 5. All caps rage — check on original (pre-lowercased) text
+  const uppercaseRatio = (original.match(/[A-Z]/g) || []).length / Math.max(original.length, 1);
+  if (original.length > 20 && uppercaseRatio > 0.7) return { pass: false, reason: "Please avoid excessive caps. Describe the issue clearly so engineers can help." };
 
   // 6. URL spam — multiple links in short text
   const urlCount = (combined.match(/https?:\/\//g) || []).length;
@@ -636,23 +640,49 @@ export default {
               return Response.json({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: JSON.stringify({ error: "Issue is closed. Reopen it first.", issue_id: safeId, status }) }] } });
             }
 
-            const existingContext = (issue.threadContext as Array<Record<string, string>>) || [];
-            existingContext.push({ text: `${safeAuthor}: ${safeContext}`, addedAt: new Date().toISOString() });
-
-            await firestoreUpdate(env, token, safeId, {
-              threadContext: existingContext,
-              updatedAt: new Date().toISOString(),
-            });
+            // Use Firestore commit API with appendMissingElements transform to avoid race conditions
+            const docPath = `projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents/issues/${safeId}`;
+            const contextEntry = { text: `${safeAuthor}: ${safeContext}`, addedAt: new Date().toISOString() };
+            const commitRes = await fetch(
+              `https://firestore.googleapis.com/v1/projects/${env.FIREBASE_PROJECT_ID}/databases/(default)/documents:commit`,
+              {
+                method: "POST",
+                headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  writes: [
+                    {
+                      transform: {
+                        document: docPath,
+                        fieldTransforms: [
+                          {
+                            fieldPath: "threadContext",
+                            appendMissingElements: { values: [toFirestoreValue(contextEntry)] },
+                          },
+                          {
+                            fieldPath: "updatedAt",
+                            setToServerValue: "REQUEST_TIME",
+                          },
+                        ],
+                      },
+                    },
+                  ],
+                }),
+              }
+            );
+            if (!commitRes.ok) {
+              return Response.json({ jsonrpc: "2.0", id: body.id, error: { code: -32000, message: "Failed to add context. Please try again." } });
+            }
 
             // Re-fetch the issue to get channel/message IDs for Discord notification
             const updatedIssue = await firestoreGet(env, token, safeId);
+            const totalEntries = updatedIssue ? ((updatedIssue.threadContext as unknown[]) || []).length : 1;
             if (updatedIssue) {
               await postContextToDiscord(env, updatedIssue, safeId, safeContext, safeAuthor);
             }
 
             return Response.json({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: JSON.stringify({
               issueId: safeId, summary: issue.summary, contextAdded: { text: safeContext, author: safeAuthor },
-              totalContextEntries: existingContext.length, message: `Context added to issue ${safeId}. Discord notification sent.`,
+              totalContextEntries: totalEntries, message: `Context added to issue ${safeId}. Discord notification sent.`,
             }, null, 2) }] } });
           }
 

@@ -286,16 +286,16 @@ async function handleRecover(interaction) {
     return interaction.editReply(`This thread is already linked to issue \`${existing.id}\` (status: ${existing.status}). Use \`/issue reopen\` instead.`);
   }
 
-  // Scrape all messages from the thread
+  // Scrape all messages from the thread (capped to prevent resource exhaustion)
   let allMessages = [];
   let lastId;
-  // eslint-disable-next-line no-constant-condition
-  while (true) {
+  const MAX_RECOVER_MESSAGES = 500;
+  while (allMessages.length < MAX_RECOVER_MESSAGES) {
     const batch = await thread.messages.fetch({ limit: 100, ...(lastId && { before: lastId }) });
     if (batch.size === 0) break;
     allMessages.push(...batch.values());
-    lastId = batch.last().id;
     if (batch.size < 100) break;
+    lastId = batch.last().id;
   }
 
   // Sort oldest first
