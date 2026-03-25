@@ -237,6 +237,22 @@ async function updateIssueFields(issueId, fields) {
   await db.collection('issues').doc(issueId).update(fields);
 }
 
+async function addReporter(issueId, reporterId, reporterName) {
+  const docRef = db.collection('issues').doc(issueId);
+  const doc = await docRef.get();
+  if (!doc.exists) return null;
+
+  const data = doc.data();
+  const reporters = Array.isArray(data.reporterIds) ? [...data.reporterIds] : [];
+
+  // Don't add if already tracked
+  if (reporters.some(r => r.id === reporterId)) return data;
+
+  reporters.push({ id: reporterId, name: reporterName, addedAt: new Date().toISOString() });
+  await docRef.update({ reporterIds: reporters });
+  return { id: doc.id, ...data, reporterIds: reporters };
+}
+
 async function getForumIssues(limit = 500) {
   const snapshot = await db.collection('issues')
     .where('source', '==', 'forum')
@@ -270,5 +286,6 @@ module.exports = {
   assignIssue,
   addIssueNote,
   updateIssueFields,
+  addReporter,
   getForumIssues,
 };
