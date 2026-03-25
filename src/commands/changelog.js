@@ -2,6 +2,17 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.2.0',
+    date: '2026-03-25',
+    changes: [
+      'Pokedex now auto-engages users in `#feedback` forum posts to gather context — asks smart follow-up questions until developers have enough info to fix issues',
+      'Added "Context Complete" badge on triage embeds so devs can prioritize fully-contexted issues',
+      'Added "Gather Context" button on triage embeds — mods can send Pokedex to ask more questions',
+      '`/feedback analyze` — AI theme report using enriched conversation data instead of raw posts',
+      '`/feedback status` — new dashboard showing feedback pipeline health (completion rates, breakdowns)',
+    ],
+  },
+  {
     version: '2.1.5',
     date: '2026-03-25',
     changes: [
