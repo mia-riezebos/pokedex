@@ -2,6 +2,21 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.3.0',
+    date: '2026-03-25',
+    changes: [
+      'Added `/feedback-triage` — run inside any #feedback forum post to smart-triage it into an issue',
+      'Detects duplicate issues automatically and merges context instead of creating duplicates',
+      'Tracks unique affected users per issue — triage embeds show reporter count',
+      'Auto-links forum threads so future messages update the issue automatically',
+      'Added `/automod` — configurable spam detection, raid protection, and content filtering',
+      'AutoMod catches message spam, duplicate messages, mass mentions, caps abuse, invite links, and blocklisted words',
+      'Raid detection auto-locks server when join velocity spikes',
+      'Hardened dashboard API with stricter rate limiting and auth validation',
+      'Security fixes across bot commands, input handling, and fetch loops',
+    ],
+  },
+  {
     version: '2.2.1',
     date: '2026-03-25',
     changes: [
