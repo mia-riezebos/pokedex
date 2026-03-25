@@ -19,7 +19,13 @@ function apiAuth(req, res, next) {
   }
 
   const provided = req.headers['x-api-key'] || req.query.api_key;
-  if (!provided || !crypto.timingSafeEqual(Buffer.from(provided), Buffer.from(DASHBOARD_API_KEY))) {
+  if (!provided || typeof provided !== 'string') {
+    return res.status(401).json({ error: 'Invalid or missing API key.' });
+  }
+  // timingSafeEqual throws if buffers differ in length — check first to avoid 500
+  const providedBuf = Buffer.from(provided);
+  const expectedBuf = Buffer.from(DASHBOARD_API_KEY);
+  if (providedBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(providedBuf, expectedBuf)) {
     return res.status(401).json({ error: 'Invalid or missing API key.' });
   }
   next();
@@ -29,6 +35,14 @@ function apiAuth(req, res, next) {
 const rateLimitMap = new Map();
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_MAX = 60;
+
+// Evict expired entries every 5 minutes to prevent unbounded memory growth
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, bucket] of rateLimitMap) {
+    if (now > bucket.resetAt) rateLimitMap.delete(key);
+  }
+}, 300_000).unref();
 
 function rateLimit(req, res, next) {
   const ip = req.ip || req.connection.remoteAddress || 'unknown';

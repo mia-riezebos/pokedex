@@ -313,8 +313,8 @@ async function handleButtonInteraction(interaction) {
           const batch = await thread.messages.fetch({ limit: 100, ...(lastId && { before: lastId }) });
           if (batch.size === 0) break;
           allMessages.push(...batch.values());
-          lastId = batch.last().id;
           if (batch.size < 100) break;
+          lastId = batch.last().id;
         }
         allMessages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
 
