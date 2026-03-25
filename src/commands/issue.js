@@ -151,6 +151,15 @@ async function handleReopen(interaction) {
   const issue = await firestore.getIssueById(issueId);
   if (!issue) return interaction.editReply(`Issue \`${issueId}\` not found.`);
   if (issue.status === 'open') return interaction.editReply(`Issue \`${issueId}\` is already open.`);
+  if (issue.status === 'deleted') {
+    // Clear deletion metadata when reopening a soft-deleted issue
+    const admin = require('firebase-admin');
+    const db = admin.firestore();
+    await db.collection('issues').doc(issueId).update({
+      deletedAt: admin.firestore.FieldValue.delete(),
+      deletedBy: admin.firestore.FieldValue.delete(),
+    });
+  }
 
   await firestore.updateIssueStatus(issueId, 'open', null);
   const updatedIssue = await firestore.getIssueById(issueId);

@@ -256,13 +256,16 @@ async function handleButtonInteraction(interaction) {
     const action = parts[1];
     const issueId = parts.slice(2).join('_');
 
-    // Handle delete separately
+    // Handle delete — soft-delete so the issue can still be reopened
     if (action === 'delete') {
       try {
-        // Delete from Firestore
         const admin = require('firebase-admin');
         const db = admin.firestore();
-        await db.collection('issues').doc(issueId).delete();
+        await db.collection('issues').doc(issueId).update({
+          status: 'deleted',
+          deletedAt: new Date().toISOString(),
+          deletedBy: interaction.user.id,
+        });
         // Delete the triage message
         await interaction.message.delete();
       } catch (err) {
