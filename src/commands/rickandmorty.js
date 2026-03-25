@@ -105,7 +105,7 @@ async function execute(interaction) {
 
   if (sub === 'burp') {
     const burp = BURPS[Math.floor(Math.random() * BURPS.length)];
-    return interaction.reply(burp);
+    return interaction.reply({ content: burp });
   }
 
   await interaction.deferReply();
