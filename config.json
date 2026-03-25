@@ -8,5 +8,6 @@
   "summary_interval": "daily",
   "priorities": ["critical", "high", "medium", "low"],
   "categories": ["bug", "feature_request", "ux_issue", "performance", "security", "suggestion", "other"],
-  "level_announce": true
+  "level_announce": true,
+  "feedback_forum": "feedback"
 }
