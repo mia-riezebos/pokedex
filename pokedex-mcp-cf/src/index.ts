@@ -47,6 +47,31 @@ function rateLimitResponse(resetIn: number): Response {
   );
 }
 
+// === Input Length Limits ===
+const MAX_TITLE_LENGTH = 200;
+const MAX_DESCRIPTION_LENGTH = 4000;
+const MAX_CONTEXT_LENGTH = 2000;
+const MAX_NAME_LENGTH = 100;
+
+function sanitizeString(input: string, maxLength: number): string {
+  return String(input || "").slice(0, maxLength).trim();
+}
+
+function isValidScreenshotUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") return false;
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0") return false;
+    if (hostname.startsWith("10.") || hostname.startsWith("192.168.") || hostname.startsWith("172.")) return false;
+    if (hostname.endsWith(".local") || hostname.endsWith(".internal")) return false;
+    const allowedDomains = ["cdn.discordapp.com", "media.discordapp.net", "i.imgur.com", "imgur.com", "raw.githubusercontent.com", "user-images.githubusercontent.com"];
+    return allowedDomains.some(d => hostname === d || hostname.endsWith(`.${d}`));
+  } catch {
+    return false;
+  }
+}
+
 // === Spam / Quality Filter ===
 
 interface FilterResult {
@@ -536,37 +561,50 @@ export default {
 
         try {
           if (params.name === "pokedex_report_bug") {
+            const safeTitle = sanitizeString(args.title as string, MAX_TITLE_LENGTH);
+            const safeDesc = sanitizeString(args.description as string, MAX_DESCRIPTION_LENGTH);
+            const safeName = sanitizeString(args.reporter_name as string, MAX_NAME_LENGTH);
+
             // Spam/quality filter
-            const filter = filterIssue(args.title as string, args.description as string);
+            const filter = filterIssue(safeTitle, safeDesc);
             if (!filter.pass) {
               return Response.json({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: JSON.stringify({ error: "rejected", reason: filter.reason }, null, 2) }] } });
             }
             const data: Record<string, unknown> = {
               messageId: `mcp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
               guildId: env.DISCORD_GUILD_ID || "mcp", channelId: "mcp",
-              reporterId: (args.reporter_id as string) || `mcp-${args.reporter_name}`,
-              reporterName: args.reporter_name, text: args.description,
+              reporterId: (args.reporter_id as string) || `mcp-${safeName}`,
+              reporterName: safeName, text: safeDesc,
               priority: args.priority || "medium", category: args.category || "bug",
-              summary: args.title, reasoning: "Reported via Pokedex MCP",
+              summary: safeTitle, reasoning: "Reported via Pokedex MCP",
               status: "pending", source: "mcp", createdAt: new Date().toISOString(),
             };
-            if (args.screenshot_url) data.attachments = [{ url: args.screenshot_url, name: "screenshot.png", isImage: true }];
+            if (args.screenshot_url) {
+              if (!isValidScreenshotUrl(args.screenshot_url as string)) {
+                return Response.json({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: JSON.stringify({ error: "Invalid screenshot URL. Only HTTPS URLs from trusted image hosts are accepted." }) }] } });
+              }
+              data.attachments = [{ url: args.screenshot_url, name: "screenshot.png", isImage: true }];
+            }
             const issueId = await firestoreCreate(env, token, data);
             await postToDiscord(env, data, issueId);
             return Response.json({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: JSON.stringify({ issueId, status: "created", priority: data.priority, message: `Bug reported. ID: ${issueId}` }, null, 2) }] } });
           }
 
           if (params.name === "pokedex_suggest_feature") {
-            const filter = filterIssue(args.title as string, args.description as string);
+            const safeTitle = sanitizeString(args.title as string, MAX_TITLE_LENGTH);
+            const safeDesc = sanitizeString(args.description as string, MAX_DESCRIPTION_LENGTH);
+            const safeName = sanitizeString(args.reporter_name as string, MAX_NAME_LENGTH);
+
+            const filter = filterIssue(safeTitle, safeDesc);
             if (!filter.pass) {
               return Response.json({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: JSON.stringify({ error: "rejected", reason: filter.reason }, null, 2) }] } });
             }
             const data: Record<string, unknown> = {
               messageId: `mcp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
               guildId: env.DISCORD_GUILD_ID || "mcp", channelId: "mcp",
-              reporterId: (args.reporter_id as string) || `mcp-${args.reporter_name}`,
-              reporterName: args.reporter_name, text: `[FEATURE REQUEST] ${args.description}`,
-              priority: "low", category: "feature_request", summary: args.title,
+              reporterId: (args.reporter_id as string) || `mcp-${safeName}`,
+              reporterName: safeName, text: `[FEATURE REQUEST] ${safeDesc}`,
+              priority: "low", category: "feature_request", summary: safeTitle,
               reasoning: "Feature request via Pokedex MCP", status: "pending", source: "mcp", createdAt: new Date().toISOString(),
             };
             const issueId = await firestoreCreate(env, token, data);
@@ -586,48 +624,61 @@ export default {
           }
 
           if (params.name === "pokedex_add_context") {
-            const issue = await firestoreGet(env, token, args.issue_id as string);
+            const safeId = sanitizeString(args.issue_id as string, 128);
+            const safeContext = sanitizeString(args.context as string, MAX_CONTEXT_LENGTH);
+            const safeAuthor = sanitizeString(args.author as string, MAX_NAME_LENGTH);
+
+            const issue = await firestoreGet(env, token, safeId);
             if (!issue) return Response.json({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: JSON.stringify({ error: "Issue not found" }) }] } });
 
             const status = (issue.status as string) || "open";
             if (["closed", "fixed", "wontfix"].includes(status)) {
-              return Response.json({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: JSON.stringify({ error: "Issue is closed. Reopen it first.", issue_id: args.issue_id, status }) }] } });
+              return Response.json({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: JSON.stringify({ error: "Issue is closed. Reopen it first.", issue_id: safeId, status }) }] } });
             }
 
             const existingContext = (issue.threadContext as Array<Record<string, string>>) || [];
-            existingContext.push({ text: `${args.author}: ${args.context}`, addedAt: new Date().toISOString() });
+            existingContext.push({ text: `${safeAuthor}: ${safeContext}`, addedAt: new Date().toISOString() });
 
-            await firestoreUpdate(env, token, args.issue_id as string, {
+            await firestoreUpdate(env, token, safeId, {
               threadContext: existingContext,
               updatedAt: new Date().toISOString(),
             });
 
             // Re-fetch the issue to get channel/message IDs for Discord notification
-            const updatedIssue = await firestoreGet(env, token, args.issue_id as string);
+            const updatedIssue = await firestoreGet(env, token, safeId);
             if (updatedIssue) {
-              await postContextToDiscord(env, updatedIssue, args.issue_id as string, args.context as string, args.author as string);
+              await postContextToDiscord(env, updatedIssue, safeId, safeContext, safeAuthor);
             }
 
             return Response.json({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: JSON.stringify({
-              issueId: args.issue_id, summary: issue.summary, contextAdded: { text: args.context, author: args.author },
-              totalContextEntries: existingContext.length, message: `Context added to issue ${args.issue_id}. Discord notification sent.`,
+              issueId: safeId, summary: issue.summary, contextAdded: { text: safeContext, author: safeAuthor },
+              totalContextEntries: existingContext.length, message: `Context added to issue ${safeId}. Discord notification sent.`,
             }, null, 2) }] } });
           }
 
           return Response.json({ jsonrpc: "2.0", id: body.id, error: { code: -32601, message: `Unknown tool: ${params.name}` } });
         } catch (err: unknown) {
-          const message = err instanceof Error ? err.message : String(err);
-          return Response.json({ jsonrpc: "2.0", id: body.id, error: { code: -32000, message } });
+          // Do not leak internal error details to the client
+          console.error("MCP tool error:", err instanceof Error ? err.message : String(err));
+          return Response.json({ jsonrpc: "2.0", id: body.id, error: { code: -32000, message: "An internal error occurred. Please try again later." } });
         }
       }
 
       return Response.json({ jsonrpc: "2.0", id: body.id, error: { code: -32601, message: `Method not found: ${body.method}` } });
     }
 
-    // CORS preflight
+    // CORS preflight — restrict to known origins instead of wildcard
     if (request.method === "OPTIONS") {
+      const origin = request.headers.get("Origin") || "";
+      const allowedOrigins = ["https://claude.ai", "https://console.anthropic.com"];
+      const allowOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
       return new Response(null, {
-        headers: { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Methods": "POST, GET, OPTIONS", "Access-Control-Allow-Headers": "Content-Type, Accept" },
+        headers: {
+          "Access-Control-Allow-Origin": allowOrigin,
+          "Access-Control-Allow-Methods": "POST, OPTIONS",
+          "Access-Control-Allow-Headers": "Content-Type, Accept",
+          "Access-Control-Max-Age": "86400",
+        },
       });
     }
 
