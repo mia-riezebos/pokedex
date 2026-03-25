@@ -47,23 +47,33 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 const commandData = new SlashCommandBuilder()
   .setName('feedback')
-  .setDescription('Organize and summarize feedback forum posts into eng-triage')
-  .addStringOption(opt =>
-    opt.setName('channel')
-      .setDescription('Feedback channel name (default: feedback)')
-      .setRequired(false))
-  .addIntegerOption(opt =>
-    opt.setName('limit')
-      .setDescription('Max number of threads/messages to analyze (default: 20)')
-      .setRequired(false))
-  .addStringOption(opt =>
-    opt.setName('visibility')
-      .setDescription('Who can see the summary response')
-      .setRequired(false)
-      .addChoices(
-        { name: 'Only me', value: 'ephemeral' },
-        { name: 'Everyone', value: 'public' },
-      ));
+  .setDescription('Analyze and manage feedback from the forum')
+  .addSubcommand(sub =>
+    sub.setName('analyze')
+      .setDescription('AI theme analysis of feedback forum posts')
+      .addIntegerOption(opt =>
+        opt.setName('limit')
+          .setDescription('Max issues to analyze (default: 20)')
+          .setRequired(false))
+      .addStringOption(opt =>
+        opt.setName('visibility')
+          .setDescription('Who can see the response')
+          .setRequired(false)
+          .addChoices(
+            { name: 'Only me', value: 'ephemeral' },
+            { name: 'Everyone', value: 'public' },
+          )))
+  .addSubcommand(sub =>
+    sub.setName('status')
+      .setDescription('Dashboard overview of feedback pipeline health')
+      .addStringOption(opt =>
+        opt.setName('visibility')
+          .setDescription('Who can see the response')
+          .setRequired(false)
+          .addChoices(
+            { name: 'Only me', value: 'ephemeral' },
+            { name: 'Everyone', value: 'public' },
+          )));
 
 async function organizeFeedback(threads) {
   const model = getConfig('model');
@@ -155,7 +165,13 @@ function findFeedbackChannel(guild, channelName) {
 }
 
 async function execute(interaction) {
-  const channelName = interaction.options.getString('channel') || 'feedback';
+  const sub = interaction.options.getSubcommand();
+  if (sub === 'analyze') return handleAnalyze(interaction);
+  if (sub === 'status') return handleStatus(interaction);
+  return interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
+}
+
+async function handleAnalyze(interaction) {
   const limit = interaction.options.getInteger('limit') || 20;
   const visibility = interaction.options.getString('visibility') || 'ephemeral';
   const ephemeral = visibility === 'ephemeral';
@@ -163,103 +179,142 @@ async function execute(interaction) {
   await interaction.deferReply({ ephemeral });
 
   const guild = interaction.guild;
-  const feedbackChannel = findFeedbackChannel(guild, channelName);
 
-  if (!feedbackChannel) {
-    const channels = guild.channels.cache
-      .filter(ch => [ChannelType.GuildForum, ChannelType.GuildText].includes(ch.type))
-      .map(ch => `\`${ch.name}\` (${ch.type === ChannelType.GuildForum ? 'forum' : 'text'})`)
-      .slice(0, 15)
-      .join('\n');
-    return interaction.editReply(`Could not find a channel matching "${channelName}".\n\nAvailable channels:\n${channels}`);
+  // Read from enriched Firestore data instead of raw forum scraping
+  let issues = await firestore.getForumIssues(limit);
+
+  if (issues.length === 0) {
+    return interaction.editReply('No forum feedback issues found. Make sure the forum trigger is active.');
   }
 
-  let feedbackData = [];
-  try {
-    if (feedbackChannel.type === ChannelType.GuildForum) {
-      const fetched = await feedbackChannel.threads.fetchActive();
-      const archived = await feedbackChannel.threads.fetchArchived({ limit }).catch(() => ({ threads: new Map() }));
-      const threads = [...fetched.threads.values(), ...archived.threads.values()];
-
-      for (const thread of threads.slice(0, limit)) {
-        try {
-          // Fetch more messages for better context
-          const messages = await thread.messages.fetch({ limit: 10 });
-          const allContent = [...messages.values()].reverse().map(m => m.content).filter(Boolean).join('\n');
-          const availableTags = feedbackChannel.availableTags || [];
-          const tagNames = (thread.appliedTags || []).map(tagId => {
-            const tag = availableTags.find(t => t.id === tagId);
-            return tag?.name || 'unknown';
-          });
-
-          feedbackData.push({
-            name: thread.name,
-            authorName: thread.ownerId ? (await guild.members.fetch(thread.ownerId).catch(() => null))?.user?.username || 'unknown' : 'unknown',
-            messageCount: thread.messageCount || 0,
-            tags: tagNames,
-            firstMessage: allContent.slice(0, 1000) || '(no content)',
-          });
-        } catch {
-          // Skip unreadable threads
-        }
-      }
-    } else {
-      const messages = await feedbackChannel.messages.fetch({ limit });
-      feedbackData = [...messages.values()]
-        .filter(m => !m.author.bot)
-        .map(m => ({
-          name: m.content.slice(0, 50) || 'Untitled',
-          authorName: m.author.username,
-          messageCount: 0,
-          tags: [],
-          firstMessage: m.content,
-        }));
-    }
-  } catch (err) {
-    console.error('Failed to fetch feedback:', err);
-    return interaction.editReply('Failed to fetch feedback. Make sure I have access to the channel.');
-  }
-
-  if (feedbackData.length === 0) {
-    return interaction.editReply(`No feedback found in #${feedbackChannel.name}.`);
-  }
+  // Build enriched feedback data from issues
+  const feedbackData = issues.map((issue, i) => ({
+    name: issue.summary || 'Untitled',
+    authorName: issue.reporterName || 'unknown',
+    messageCount: (issue.threadContext || []).length,
+    tags: issue.forumTags || [],
+    firstMessage: buildEnrichedText(issue),
+  }));
 
   const analysis = await organizeFeedback(feedbackData);
   if (!analysis) {
     return interaction.editReply('Failed to analyze feedback. Try again later.');
   }
 
-  // Save each theme as an issue in Firestore
+  // Save each theme as an issue
   const savedIssueIds = [];
   for (const theme of (analysis.themes || [])) {
     try {
       const issueData = {
         messageId: `feedback-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         guildId: guild.id,
-        channelId: feedbackChannel.id,
+        channelId: 'feedback-analysis',
         reporterId: interaction.user.id,
         reporterName: interaction.user.username,
         text: `[Feedback Theme] ${theme.description || ''}\n\nUser quotes: ${(theme.user_quotes || []).join(' | ')}\n\nSuggested action: ${theme.suggested_action || 'None'}`,
         priority: theme.priority || 'medium',
         category: theme.category || 'feature_request',
         summary: theme.name || 'Feedback theme',
-        reasoning: theme.priority_reasoning || `From /feedback analysis of #${feedbackChannel.name}`,
+        reasoning: theme.priority_reasoning || 'From /feedback analyze',
         source: 'feedback',
       };
       const issueId = await firestore.saveIssue(issueData);
       savedIssueIds.push(issueId);
     } catch (err) {
-      console.error('Failed to save feedback theme to Firestore:', err.message);
+      console.error('Failed to save feedback theme:', err.message);
       savedIssueIds.push(null);
     }
   }
 
   const triageChannel = findTriageChannel(guild);
   if (triageChannel) {
-    await postToTriage(triageChannel, analysis, feedbackChannel, feedbackData.length, interaction.user.username, savedIssueIds);
+    await postToTriage(triageChannel, analysis, { name: 'feedback' }, feedbackData.length, interaction.user.username, savedIssueIds);
   }
 
-  await sendAnalysisReply(interaction, analysis, feedbackChannel, feedbackData.length, !!triageChannel, savedIssueIds.filter(Boolean).length);
+  await sendAnalysisReply(interaction, analysis, { name: 'feedback' }, feedbackData.length, !!triageChannel, savedIssueIds.filter(Boolean).length);
+}
+
+function buildEnrichedText(issue) {
+  let text = issue.text || '';
+  const context = (issue.threadContext || []).map(c => c.text).join('\n');
+  if (context) {
+    text += `\n\nAdditional context from conversation:\n${context}`;
+  }
+  if (issue.contextComplete) {
+    text += '\n\n[Context gathering complete]';
+  }
+  return text.slice(0, 2000);
+}
+
+async function handleStatus(interaction) {
+  const visibility = interaction.options.getString('visibility') || 'ephemeral';
+  const ephemeral = visibility === 'ephemeral';
+
+  await interaction.deferReply({ ephemeral });
+
+  const issues = await firestore.getForumIssues();
+
+  // Calculate stats
+  const now = new Date();
+  const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const thisWeek = issues.filter(i => {
+    const created = i.createdAt?.toDate?.() || new Date(i.createdAt);
+    return created >= weekAgo;
+  });
+
+  const complete = issues.filter(i => i.contextComplete === true && i.status === 'open').length;
+  const awaiting = issues.filter(i => !i.contextComplete && i.status === 'open').length;
+  const newThisWeek = thisWeek.length;
+
+  // By category
+  const byCategory = {};
+  for (const issue of issues.filter(i => i.status === 'open')) {
+    const cat = (issue.category || 'other').replace(/_/g, ' ');
+    byCategory[cat] = (byCategory[cat] || 0) + 1;
+  }
+
+  // By priority
+  const byPriority = { critical: 0, high: 0, medium: 0, low: 0 };
+  for (const issue of issues.filter(i => i.status === 'open')) {
+    const p = issue.priority || 'low';
+    if (byPriority[p] !== undefined) byPriority[p]++;
+  }
+
+  // Oldest awaiting context
+  const oldestAwaiting = issues
+    .filter(i => !i.contextComplete && i.status === 'open')
+    .sort((a, b) => {
+      const aTime = a.createdAt?.toDate?.() || new Date(a.createdAt);
+      const bTime = b.createdAt?.toDate?.() || new Date(b.createdAt);
+      return aTime - bTime;
+    })[0];
+
+  const categoryLines = Object.entries(byCategory)
+    .sort((a, b) => b[1] - a[1])
+    .map(([cat, count]) => `${cat}: **${count}**`)
+    .join(' | ') || 'none';
+
+  const embed = new EmbedBuilder()
+    .setTitle('📊 Feedback Pipeline Status')
+    .setColor(0x5865f2)
+    .addFields(
+      { name: '📝 Total Forum Issues', value: `This week: **${newThisWeek}** | All time: **${issues.length}**`, inline: false },
+      { name: '📋 Context Status', value: `✅ Complete: **${complete}** | ⏳ Awaiting reply: **${awaiting}** | 🆕 New this week: **${newThisWeek}**`, inline: false },
+      { name: '📂 By Category', value: categoryLines, inline: false },
+      { name: '🎯 By Priority', value: `🔴 Critical: **${byPriority.critical}** | 🟠 High: **${byPriority.high}** | 🟡 Medium: **${byPriority.medium}** | 🟢 Low: **${byPriority.low}**`, inline: false },
+    )
+    .setTimestamp();
+
+  if (oldestAwaiting) {
+    const created = oldestAwaiting.createdAt?.toDate?.() || new Date(oldestAwaiting.createdAt);
+    const timestamp = Math.floor(created.getTime() / 1000);
+    embed.addFields({
+      name: '⏰ Oldest Awaiting Context',
+      value: `\`${oldestAwaiting.id}\` — ${oldestAwaiting.summary || 'No summary'} (<t:${timestamp}:R>)`,
+    });
+  }
+
+  await interaction.editReply({ embeds: [embed] });
 }
 
 async function postToTriage(triageChannel, analysis, sourceChannel, threadCount, requestedBy, savedIssueIds = []) {
