@@ -2,6 +2,15 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.1.5',
+    date: '2026-03-25',
+    changes: [
+      'Added `/issue recover` — scrapes a thread to recreate a hard-deleted issue and continues the conversation with the reporter automatically',
+      'Added `/issue revive` — reopens a deleted issue and creates a new thread for the reporter to add context',
+      'Delete button on triage embeds now soft-deletes issues instead of permanently removing them, so `/issue reopen` works on deleted issues',
+    ],
+  },
+  {
     version: '2.1.2',
     date: '2026-03-24',
     changes: [
