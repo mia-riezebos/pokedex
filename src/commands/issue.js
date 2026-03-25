@@ -82,12 +82,17 @@ const commandData = new SlashCommandBuilder()
     sub.setName('context')
       .setDescription('Add follow-up context to an open issue without creating a new one')
       .addStringOption(opt => opt.setName('id').setDescription('Issue ID').setRequired(true).setAutocomplete(true))
-      .addStringOption(opt => opt.setName('text').setDescription('Additional context, details, or reproduction steps').setRequired(true)));
+      .addStringOption(opt => opt.setName('text').setDescription('Additional context, details, or reproduction steps').setRequired(true)))
+  .addSubcommand(sub =>
+    sub.setName('revive')
+      .setDescription('Reopen a deleted issue and start a thread so the reporter can add context')
+      .addStringOption(opt => opt.setName('id').setDescription('Issue ID').setRequired(true).setAutocomplete(true))
+      .addUserOption(opt => opt.setName('user').setDescription('The reporter to ping (default: original reporter)').setRequired(false)));
 
 async function execute(interaction) {
   const sub = interaction.options.getSubcommand();
 
-  if (['close', 'reopen', 'assign', 'note'].includes(sub)) {
+  if (['close', 'reopen', 'assign', 'note', 'revive'].includes(sub)) {
     if (!interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
       return interaction.reply({ content: 'You need **Manage Messages** permission to do that.', ephemeral: true });
     }
@@ -104,6 +109,7 @@ async function execute(interaction) {
     case 'assign': return handleAssign(interaction);
     case 'note': return handleNote(interaction);
     case 'context': return handleContext(interaction);
+    case 'revive': return handleRevive(interaction);
     default:
       return interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
   }
@@ -184,6 +190,75 @@ async function handleReopen(interaction) {
   }
 
   await interaction.editReply(`Reopened issue \`${issueId}\``);
+}
+
+async function handleRevive(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+  const issueId = interaction.options.getString('id');
+  const targetUser = interaction.options.getUser('user');
+
+  const issue = await firestore.getIssueById(issueId);
+  if (!issue) return interaction.editReply(`Issue \`${issueId}\` not found.`);
+
+  // Reopen the issue if it's not already open
+  if (issue.status !== 'open') {
+    // Clear deletion metadata if it was soft-deleted
+    if (issue.status === 'deleted') {
+      const admin = require('firebase-admin');
+      const db = admin.firestore();
+      await db.collection('issues').doc(issueId).update({
+        deletedAt: admin.firestore.FieldValue.delete(),
+        deletedBy: admin.firestore.FieldValue.delete(),
+      });
+    }
+    await firestore.updateIssueStatus(issueId, 'open', null);
+  }
+
+  const updatedIssue = await firestore.getIssueById(issueId);
+
+  // Re-post the triage embed since the old one was likely deleted
+  const { postIssueEmbed } = require('../services/triage');
+  await postIssueEmbed(interaction.guild, updatedIssue, issueId);
+  // Refetch to get the new triageMessageId
+  const issueFinal = await firestore.getIssueById(issueId);
+
+  // Determine who to ping — explicit user or original reporter
+  const reporterMention = targetUser
+    ? `<@${targetUser.id}>`
+    : (issue.reporterId ? `<@${issue.reporterId}>` : issue.reporterName || 'the reporter');
+
+  // Create a thread in the current channel for the conversation
+  const threadName = `${(issue.category || 'issue').replace(/_/g, ' ')}: ${(issue.summary || issueId).slice(0, 80)}`;
+  const thread = await interaction.channel.threads.create({
+    name: threadName,
+    autoArchiveDuration: 1440,
+    reason: `Revived issue ${issueId} for additional context`,
+  });
+
+  // Link the thread to the issue so thread.js auto-handles future messages
+  await firestore.updateIssueThreadId(issueId, thread.id);
+
+  // Send the intro embed so Pokedex starts the conversation
+  const color = PRIORITY_COLORS[issue.priority] ?? 0x808080;
+  const introEmbed = new EmbedBuilder()
+    .setColor(color)
+    .setTitle('Issue Revived — Need More Context')
+    .setDescription(
+      `This issue was previously deleted but has been reopened so we can gather more information.\n\n` +
+      `**Summary:** ${issue.summary || 'N/A'}\n` +
+      `**Priority:** ${issue.priority || 'unclassified'}\n` +
+      `**Category:** ${(issue.category || 'other').replace(/_/g, ' ')}`
+    )
+    .addFields(
+      { name: 'Original Report', value: (issue.text || 'No description').slice(0, 1024) },
+      { name: 'What to do', value: 'Please share any additional details, steps to reproduce, screenshots, or context that can help us investigate. Just type in this thread and I\'ll track everything automatically.' },
+    )
+    .setFooter({ text: `Issue ID: ${issueId}` })
+    .setTimestamp();
+
+  await thread.send({ content: `${reporterMention}`, embeds: [introEmbed] });
+
+  await interaction.editReply(`Revived issue \`${issueId}\` — thread created: ${thread.toString()}`);
 }
 
 async function handleView(interaction) {
