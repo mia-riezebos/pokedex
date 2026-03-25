@@ -6,6 +6,7 @@ const triage = require('./services/triage');
 const { handleMention } = require('./triggers/mention');
 const { handleReaction } = require('./triggers/reaction');
 const { handleThreadMessage } = require('./triggers/thread');
+const { handleForumPost } = require('./triggers/forum');
 // pending poller replaced by instant webhook message detection
 const configCommand = require('./commands/config');
 const helpCommand = require('./commands/help');
@@ -134,6 +135,14 @@ client.on('messageCreate', async (message) => {
     await handleMention(message);
   } catch (err) {
     console.error('Error handling mention:', err);
+  }
+});
+
+client.on('threadCreate', async (thread) => {
+  try {
+    await handleForumPost(thread);
+  } catch (err) {
+    console.error('Error handling forum post:', err);
   }
 });
 
@@ -275,6 +284,55 @@ async function handleButtonInteraction(interaction) {
       return;
     }
 
+    // Handle gather context — send Pokedex to the forum thread to ask more questions
+    if (action === 'gather') {
+      try {
+        const issue = await firestore.getIssueById(issueId);
+        if (!issue?.threadId) {
+          await interaction.reply({ content: 'This issue has no linked thread.', ephemeral: true });
+          return;
+        }
+
+        const thread = await interaction.guild.channels.fetch(issue.threadId);
+        if (!thread) {
+          await interaction.reply({ content: 'Could not find the linked thread.', ephemeral: true });
+          return;
+        }
+
+        // Unarchive if needed
+        if (thread.archived) {
+          await thread.setArchived(false);
+        }
+
+        // Scrape conversation history
+        const allMessages = [];
+        let lastId;
+        while (true) {
+          const batch = await thread.messages.fetch({ limit: 100, ...(lastId && { before: lastId }) });
+          if (batch.size === 0) break;
+          allMessages.push(...batch.values());
+          lastId = batch.last().id;
+          if (batch.size < 100) break;
+        }
+        allMessages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+
+        const { evaluateContext, buildConversationHistory } = require('./services/contextEvaluator');
+        const history = buildConversationHistory(allMessages);
+        const evaluation = await evaluateContext(issue, history, 'A developer needs more information on this issue.');
+
+        if (evaluation.shouldReply && evaluation.reply) {
+          await thread.send(evaluation.reply);
+          await interaction.reply({ content: 'Sent follow-up in the forum post.', ephemeral: true });
+        } else {
+          await interaction.reply({ content: 'Context evaluator decided no follow-up is needed right now.', ephemeral: true });
+        }
+      } catch (err) {
+        console.error('Failed to gather context:', err);
+        await interaction.reply({ content: 'Failed to send follow-up.', ephemeral: true });
+      }
+      return;
+    }
+
     const actionInfo = ACTION_LABELS[action];
     if (!actionInfo) return;
 
@@ -293,19 +351,22 @@ async function handleButtonInteraction(interaction) {
 
     // Disable buttons after action and highlight the one clicked
     // ActionRowBuilder, ButtonBuilder already imported at top
-    const updatedRow = new ActionRowBuilder();
-    for (const component of message.components[0].components) {
-      const btn = ButtonBuilder.from(component);
-      if (component.customId === customId) {
-        btn.setDisabled(false);
-        btn.setStyle(2);
-      } else {
-        btn.setDisabled(true);
+    const updatedRows = message.components.map(row => {
+      const updatedRow = new ActionRowBuilder();
+      for (const component of row.components) {
+        const btn = ButtonBuilder.from(component);
+        if (component.customId === customId) {
+          btn.setDisabled(false);
+          btn.setStyle(2);
+        } else {
+          btn.setDisabled(true);
+        }
+        updatedRow.addComponents(btn);
       }
-      updatedRow.addComponents(btn);
-    }
+      return updatedRow;
+    });
 
-    await interaction.update({ embeds: [embed], components: [updatedRow] });
+    await interaction.update({ embeds: [embed], components: updatedRows });
     return;
   }
 
