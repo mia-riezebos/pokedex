@@ -233,6 +233,19 @@ async function addIssueNote(issueId, note) {
   return storedNote;
 }
 
+async function updateIssueFields(issueId, fields) {
+  await db.collection('issues').doc(issueId).update(fields);
+}
+
+async function getForumIssues(limit = 500) {
+  const snapshot = await db.collection('issues')
+    .where('source', '==', 'forum')
+    .orderBy('createdAt', 'desc')
+    .limit(limit)
+    .get();
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
 module.exports = {
   init,
   isDuplicate,
@@ -256,4 +269,6 @@ module.exports = {
   searchIssues,
   assignIssue,
   addIssueNote,
+  updateIssueFields,
+  getForumIssues,
 };
