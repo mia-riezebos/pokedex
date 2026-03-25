@@ -1,4 +1,5 @@
 const { SlashCommandBuilder, EmbedBuilder, ChannelType, PermissionFlagsBits } = require('discord.js');
+const admin = require('firebase-admin');
 const firestore = require('../services/firestore');
 const { classifyIssue } = require('../services/openrouter');
 const { findDuplicate } = require('../services/duplicates');
@@ -16,9 +17,30 @@ const PRIORITY_COLORS = {
 const commandData = new SlashCommandBuilder()
   .setName('feedback-triage')
   .setDescription('Triage a feedback forum post into an issue — finds duplicates, tracks reporters, and adds context')
-  .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages);
+  .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+  .addSubcommand(sub =>
+    sub.setName('run')
+      .setDescription('Triage this forum post — AI classifies, detects duplicates, creates or merges issues'))
+  .addSubcommand(sub =>
+    sub.setName('merge')
+      .setDescription('Manually merge this forum post into an existing issue (when AI misses the duplicate)')
+      .addStringOption(opt =>
+        opt.setName('target')
+          .setDescription('Issue ID to merge this post into')
+          .setRequired(true)
+          .setAutocomplete(true)));
 
 async function execute(interaction) {
+  const subcommand = interaction.options.getSubcommand();
+
+  if (subcommand === 'merge') {
+    return executeMerge(interaction);
+  }
+
+  return executeTriage(interaction);
+}
+
+async function executeTriage(interaction) {
   const channel = interaction.channel;
 
   // Must be used inside a forum thread
@@ -73,6 +95,142 @@ async function execute(interaction) {
 
   // 5. No duplicate — create new issue
   return handleNewIssue(interaction, channel, starterMessage, classification, reporters, messages, forumTags, fullText);
+}
+
+/**
+ * Manual merge — merge this forum post into an existing issue when AI didn't catch the duplicate.
+ */
+async function executeMerge(interaction) {
+  const channel = interaction.channel;
+
+  // Must be used inside a forum thread
+  if (!channel.isThread() || !channel.parent || channel.parent.type !== ChannelType.GuildForum) {
+    return interaction.reply({
+      content: 'This command must be used inside a **forum post** (e.g. #feedback).',
+      ephemeral: true,
+    });
+  }
+
+  await interaction.deferReply();
+
+  const targetId = interaction.options.getString('target').trim();
+  const db = admin.firestore();
+
+  // Validate target issue exists
+  const targetDoc = await db.collection('issues').doc(targetId).get();
+  if (!targetDoc.exists) {
+    return interaction.editReply(`Issue \`${targetId}\` not found.`);
+  }
+  const targetData = targetDoc.data();
+
+  if (targetData.status === 'closed' || targetData.status === 'merged') {
+    return interaction.editReply(`Issue \`${targetId}\` is **${targetData.status}** — pick an open issue to merge into.`);
+  }
+
+  // Scrape this forum thread
+  const { messages, starterMessage, reporters } = await scrapeThread(channel);
+  if (!starterMessage) {
+    return interaction.editReply('Could not fetch the starter message for this forum post.');
+  }
+
+  const threadTitle = channel.name;
+  const fullText = buildFullText(threadTitle, starterMessage, messages);
+
+  // Check if this thread already has a linked issue
+  const existingLinked = await firestore.getIssueByThreadId(channel.id);
+
+  // Add all reporters from this thread to the target issue
+  let reporterCount = (targetData.reporterIds || []).length;
+  for (const r of reporters) {
+    const result = await firestore.addReporter(targetId, r.id, r.name);
+    if (result) reporterCount = (result.reporterIds || []).length;
+  }
+
+  // Append this thread's conversation as context
+  const humanMessages = messages.filter(m => !m.author.bot && m.content?.trim());
+  const contextSummary = humanMessages.map(m => `${m.author.username}: ${m.content.trim()}`).join('\n');
+  const starterContent = starterMessage.content?.trim() || '';
+
+  // Add the full post content as context
+  const mergeContextText = `[Manual merge from feedback post "${threadTitle}" — ${reporters.length} reporter${reporters.length !== 1 ? 's' : ''}]: ${starterContent}${contextSummary ? '\n' + contextSummary : ''}`;
+  await firestore.appendThreadContext(targetId, mergeContextText.slice(0, 2000));
+
+  // Collect attachments from this thread and merge them
+  const attachments = [];
+  for (const msg of [starterMessage, ...messages]) {
+    for (const att of msg.attachments.values()) {
+      attachments.push({
+        url: att.url,
+        name: att.name,
+        contentType: att.contentType,
+        size: att.size,
+        isImage: att.contentType?.startsWith('image/') || false,
+      });
+    }
+  }
+
+  const updateData = {
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    mergeHistory: admin.firestore.FieldValue.arrayUnion({
+      mergedAt: new Date().toISOString(),
+      mergedBy: interaction.user.username,
+      mergedByUserId: interaction.user.id,
+      sourceThreadId: channel.id,
+      sourceThreadName: threadTitle,
+      reporterCount: reporters.length,
+      reason: 'Manual merge via /feedback-triage merge',
+    }),
+  };
+
+  // Merge attachments if any
+  if (attachments.length > 0) {
+    const existingAttachments = targetData.attachments || [];
+    updateData.attachments = [...existingAttachments, ...attachments];
+  }
+
+  await db.collection('issues').doc(targetId).update(updateData);
+
+  // Link this thread to the target issue for auto-tracking
+  await firestore.updateIssueThreadId(targetId, channel.id);
+
+  // If this thread had its own issue, mark it as merged
+  if (existingLinked) {
+    await db.collection('issues').doc(existingLinked.id).update({
+      status: 'merged',
+      mergedInto: targetId,
+      closedBy: interaction.user.id,
+      closedAt: admin.firestore.FieldValue.serverTimestamp(),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  }
+
+  // Refresh the triage embed on the target issue
+  const updatedIssue = await firestore.getIssueById(targetId);
+  await refreshTriageEmbed(interaction.guild, updatedIssue, targetId, reporterCount);
+
+  const embed = new EmbedBuilder()
+    .setColor(0x5865f2)
+    .setTitle('🔀 Feedback Merged Into Issue')
+    .setDescription(
+      `This forum post has been merged into issue \`${targetId}\`.\n\n` +
+      `Future messages in this thread will automatically update the target issue.`
+    )
+    .addFields(
+      { name: 'Target Issue', value: `\`${targetId}\`\n${(targetData.summary || 'No summary').slice(0, 200)}` },
+      { name: 'This Post', value: threadTitle, inline: true },
+      { name: 'Reporters Added', value: `${reporters.length}`, inline: true },
+      { name: 'Total Reporters', value: `**${reporterCount}**`, inline: true },
+      { name: 'Attachments Added', value: `${attachments.length}`, inline: true },
+      { name: 'Merged By', value: interaction.user.username, inline: true },
+    );
+
+  if (existingLinked) {
+    embed.addFields({ name: 'Previous Issue', value: `\`${existingLinked.id}\` was marked as merged` });
+  }
+
+  embed.setFooter({ text: `Target Issue ID: ${targetId}` }).setTimestamp();
+
+  return interaction.editReply({ embeds: [embed] });
 }
 
 /**
@@ -353,4 +511,34 @@ async function refreshTriageEmbed(guild, issue, issueId, reporterCount) {
   }
 }
 
-module.exports = { data: commandData, execute };
+async function autocomplete(interaction) {
+  const focused = interaction.options.getFocused().toLowerCase();
+  try {
+    const db = admin.firestore();
+    const snapshot = await db.collection('issues')
+      .where('status', 'in', ['open', 'acknowledged', 'escalated'])
+      .orderBy('createdAt', 'desc')
+      .limit(50)
+      .get();
+
+    const filtered = snapshot.docs
+      .filter(doc => {
+        const d = doc.data();
+        return doc.id.toLowerCase().includes(focused) || (d.summary || '').toLowerCase().includes(focused);
+      })
+      .slice(0, 25)
+      .map(doc => {
+        const d = doc.data();
+        const reporters = (d.reporterIds || []).length;
+        return {
+          name: `${doc.id.slice(0, 8)}… | ${d.priority || '?'} | ${reporters} reporter${reporters !== 1 ? 's' : ''} | ${(d.summary || 'Untitled').slice(0, 50)}`,
+          value: doc.id,
+        };
+      });
+    await interaction.respond(filtered);
+  } catch {
+    await interaction.respond([]);
+  }
+}
+
+module.exports = { data: commandData, execute, autocomplete };
