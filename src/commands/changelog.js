@@ -2,6 +2,17 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.4.0',
+    date: '2026-03-25',
+    changes: [
+      'Added **Vercel dashboard recipes page** — real-time recipe browsing at `/recipes` on the web dashboard',
+      'Recipe cards with source badges, refer codes, tags, share counts, and clickable links',
+      'Search and filter by source, tag, or refer code with interactive filter chips',
+      'Recipes nav item added to sidebar and overview quick links',
+      'Vercel dashboard: added moderation page, AutoMod config page, activity feed, and user search',
+    ],
+  },
+  {
     version: '2.3.0',
     date: '2026-03-25',
     changes: [
