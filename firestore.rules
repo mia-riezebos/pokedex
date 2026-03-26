@@ -22,5 +22,10 @@ service cloud.firestore {
       allow read: if resource.data.status == 'approved';
       allow write: if false;
     }
+    // Public read for published feedback — no auth required
+    match /feedback/{feedbackId} {
+      allow read: if resource.data.status == 'published';
+      allow write: if false;
+    }
   }
 }

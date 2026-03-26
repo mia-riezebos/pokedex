@@ -407,6 +407,33 @@ async function updateRecipeStatus(recipeId, status, reviewerId, reviewerName) {
   });
 }
 
+// --- Feedback (public website) ---
+
+async function saveFeedback(feedbackData) {
+  const existing = await db.collection('feedback')
+    .where('messageId', '==', feedbackData.messageId)
+    .limit(1)
+    .get();
+  if (!existing.empty) {
+    return { id: existing.docs[0].id, duplicate: true };
+  }
+  const ref = await db.collection('feedback').add({
+    ...feedbackData,
+    status: 'published',
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return { id: ref.id, duplicate: false };
+}
+
+async function getPublishedFeedback(limit = 200) {
+  const snapshot = await db.collection('feedback')
+    .where('status', '==', 'published')
+    .orderBy('createdAt', 'desc')
+    .limit(Math.min(limit, 500))
+    .get();
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
 module.exports = {
   init,
   isDuplicate,
@@ -441,4 +468,6 @@ module.exports = {
   getRecipeById,
   getRecipeByUrl,
   updateRecipeStatus,
+  saveFeedback,
+  getPublishedFeedback,
 };
