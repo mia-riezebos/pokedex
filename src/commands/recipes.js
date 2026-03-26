@@ -8,10 +8,10 @@ const URL_REGEX = /https?:\/\/[^\s<>"')\]]+/gi;
 const commandData = new SlashCommandBuilder()
   .setName('recipes')
   .setDescription('Community recipe collection from #show-and-tell')
+  .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
   .addSubcommand(sub =>
     sub.setName('scrape')
       .setDescription('Scrape #show-and-tell for recipe links — sends each for approval before publishing')
-      .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
       .addChannelOption(opt =>
         opt.setName('channel')
           .setDescription('Channel to scrape (defaults to #show-and-tell)')
