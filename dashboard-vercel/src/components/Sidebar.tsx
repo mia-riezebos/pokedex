@@ -25,6 +25,7 @@ const navItems: NavItem[] = [
   { href: "/moderation", label: "Moderation", icon: "\uD83D\uDEE1\uFE0F", requiredTier: "moderator" },
   { href: "/automod", label: "AutoMod", icon: "\u2699\uFE0F", requiredTier: "moderator" },
   { href: "/issues", label: "Issues", icon: "\uD83D\uDC1B", requiredTier: "moderator" },
+  { href: "/recipes", label: "Recipes", icon: "\uD83C\uDF73", requiredTier: "viewer" },
   { href: "/stats", label: "Stats", icon: "\uD83D\uDCC8", requiredTier: "viewer" },
   { href: "/logs", label: "Logs", icon: "\uD83D\uDD0D", requiredTier: "moderator" },
   { href: "/settings", label: "Settings", icon: "\u26A1", requiredTier: "admin" },

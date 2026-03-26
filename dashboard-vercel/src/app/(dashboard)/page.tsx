@@ -41,6 +41,12 @@ const quickLinks = [
     icon: "\u2699\ufe0f",
     description: "Configure automated moderation",
   },
+  {
+    href: "/recipes",
+    label: "Recipes",
+    icon: "\ud83c\udf73",
+    description: "Community-shared recipes from #show-and-tell",
+  },
 ];
 
 export default function OverviewPage() {
