@@ -275,7 +275,13 @@ async function handleBlocklist(interaction, sub) {
   await interaction.deferReply({ ephemeral: true });
 
   if (sub === 'add') {
-    const word = interaction.options.getString('word');
+    const word = interaction.options.getString('word').trim();
+    if (!word || word.length === 0) {
+      return interaction.editReply('Word/phrase cannot be empty or whitespace-only.');
+    }
+    if (word.length > 128) {
+      return interaction.editReply('Word/phrase is too long (max 128 characters).');
+    }
     await automod.addBlocklistWord(word);
     await interaction.editReply(`✅ Added \`${word}\` to the blocklist.`);
   } else if (sub === 'remove') {
@@ -300,15 +306,18 @@ async function handleLinks(interaction, sub) {
   await interaction.deferReply({ ephemeral: true });
 
   if (sub === 'allow') {
-    const domain = interaction.options.getString('domain');
+    const domain = normalizeDomain(interaction.options.getString('domain'));
+    if (!domain) return interaction.editReply('Invalid domain. Provide a hostname like `example.com`, not a full URL.');
     await automod.addLinkEntry('allow', domain);
     await interaction.editReply(`✅ Added \`${domain}\` to the link allowlist.`);
   } else if (sub === 'block') {
-    const domain = interaction.options.getString('domain');
+    const domain = normalizeDomain(interaction.options.getString('domain'));
+    if (!domain) return interaction.editReply('Invalid domain. Provide a hostname like `example.com`, not a full URL.');
     await automod.addLinkEntry('block', domain);
     await interaction.editReply(`✅ Added \`${domain}\` to the link blocklist.`);
   } else if (sub === 'remove') {
-    const domain = interaction.options.getString('domain');
+    const domain = normalizeDomain(interaction.options.getString('domain'));
+    if (!domain) return interaction.editReply('Invalid domain. Provide a hostname like `example.com`, not a full URL.');
     await automod.removeLinkEntry('allow', domain);
     await automod.removeLinkEntry('block', domain);
     await interaction.editReply(`✅ Removed \`${domain}\` from allow/blocklists.`);
@@ -355,6 +364,25 @@ async function handleExempt(interaction, sub) {
       );
     await interaction.editReply({ embeds: [embed] });
   }
+}
+
+function normalizeDomain(input) {
+  let raw = (input || '').trim().toLowerCase();
+  // If it looks like a URL, extract the hostname
+  try {
+    if (raw.includes('://')) {
+      raw = new URL(raw).hostname;
+    } else if (raw.includes('/')) {
+      raw = new URL('https://' + raw).hostname;
+    }
+  } catch {
+    // not a valid URL, treat as hostname
+  }
+  // Strip www. prefix
+  raw = raw.replace(/^www\./, '');
+  // Basic domain validation: at least one dot, no spaces, reasonable length
+  if (!raw || raw.length > 253 || !/^[a-z0-9.-]+\.[a-z]{2,}$/.test(raw)) return null;
+  return raw;
 }
 
 module.exports = { data: commandData, execute };
