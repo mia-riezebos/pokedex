@@ -5,10 +5,17 @@ import { resolvePermissionTier } from "@/lib/permissions";
 
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
+  const state = request.nextUrl.searchParams.get("state");
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
 
   if (!code) {
     return NextResponse.redirect(`${appUrl}/login?error=no_code`);
+  }
+
+  // Validate OAuth state parameter to prevent CSRF
+  const storedState = request.cookies.get("oauth_state")?.value;
+  if (!state || !storedState || state !== storedState) {
+    return NextResponse.redirect(`${appUrl}/login?error=invalid_state`);
   }
 
   try {
@@ -30,7 +37,10 @@ export async function GET(request: NextRequest) {
     session.tier = tier;
     await session.save();
 
-    return NextResponse.redirect(appUrl);
+    const response = NextResponse.redirect(appUrl);
+    // Clear the oauth_state cookie
+    response.cookies.delete("oauth_state");
+    return response;
   } catch (error) {
     console.error("Auth callback error:", error);
     return NextResponse.redirect(`${appUrl}/login?error=auth_failed`);
