@@ -1,7 +1,3 @@
 {
-  "rewrites": [
-    { "source": "/api/issues", "destination": "/api/issues" },
-    { "source": "/api/stats", "destination": "/api/stats" },
-    { "source": "/(.*)", "destination": "/public/index.html" }
-  ]
+  "framework": "nextjs"
 }
