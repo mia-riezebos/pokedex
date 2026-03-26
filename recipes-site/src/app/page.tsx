@@ -10,6 +10,7 @@ import {
   getDocs,
 } from "firebase/firestore";
 import RecipeCard from "@/components/RecipeCard";
+import Link from "next/link";
 
 const APP_VERSION = "1.0.1";
 const CACHE_KEY = "pokedex_recipes_cache";
@@ -172,6 +173,12 @@ export default function RecipesPage() {
         <p className="text-gray-400 mt-2 text-sm sm:text-base">
           Shared by the community in #show-and-tell
         </p>
+        <Link
+          href="/feedback"
+          className="inline-block mt-3 text-xs text-gold/60 hover:text-gold transition-colors"
+        >
+          View Community Feedback &rarr;
+        </Link>
       </header>
 
       {/* Stats */}

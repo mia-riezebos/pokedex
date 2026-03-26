@@ -2,11 +2,11 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Community Recipes — Pokedex",
-  description: "Browse community-shared recipes from #show-and-tell. Powered by Pokedex.",
+  title: "Community Hub — Pokedex",
+  description: "Browse community-shared recipes and feedback. Powered by Pokedex.",
   openGraph: {
-    title: "Community Recipes — Pokedex",
-    description: "Browse community-shared recipes from #show-and-tell",
+    title: "Community Hub — Pokedex",
+    description: "Browse community-shared recipes and feedback",
     type: "website",
   },
 };

@@ -105,6 +105,21 @@ async function handleForumPost(thread) {
     initialProcessing: false,
   });
 
+  // Publish feedback to website automatically
+  await firestore.saveFeedback({
+    messageId: starterMessage.id,
+    threadId: thread.id,
+    threadName: thread.name,
+    authorId: thread.ownerId,
+    authorName: reporterName,
+    content: text,
+    summary: classification.summary,
+    category: classification.category,
+    priority: classification.priority,
+    forumTags,
+    attachments: attachments.filter(a => a.isImage).map(a => ({ url: a.url, name: a.name })),
+  });
+
   // Post triage embed
   const savedIssue = await firestore.getIssueById(issueId);
   const triageMessageId = await postIssueEmbed(guild, savedIssue, issueId);
