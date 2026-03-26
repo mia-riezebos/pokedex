@@ -302,6 +302,21 @@
       border: 1px solid rgba(99,102,241,0.15);
     }
 
+    .recipe-card .refer-code-line {
+      margin-bottom: 0.5rem;
+    }
+
+    .recipe-card .refer-code code {
+      font-family: 'Fira Code', monospace;
+      font-size: 0.78rem;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      background: rgba(240,200,64,0.08);
+      color: var(--gold-soft);
+      border: 1px solid rgba(240,200,64,0.12);
+      user-select: all;
+    }
+
     .recipe-card .link-icon {
       position: absolute;
       top: 1rem;
@@ -524,6 +539,7 @@
           (r.title || '').toLowerCase().includes(query) ||
           (r.description || '').toLowerCase().includes(query) ||
           (r.source || '').toLowerCase().includes(query) ||
+          (r.referCode || '').toLowerCase().includes(query) ||
           (r.tags || []).some(t => t.includes(query))
         );
       }
@@ -556,6 +572,7 @@
       const source = r.source ? `<span class="source-badge">${escapeHtml(r.source)}</span>` : '';
       const shares = r.shareCount > 1 ? `<span class="shares"><strong>${r.shareCount}</strong> shares</span>` : '';
       const author = (r.sharedBy && r.sharedBy[0]) ? `<span class="author">by ${escapeHtml(r.sharedBy[0].name)}</span>` : '';
+      const code = r.referCode ? `<span class="refer-code"><code>${escapeHtml(r.referCode)}</code></span>` : '';
       const tags = (r.tags || []).slice(0, 4).map(t => `<span class="tag">${escapeHtml(t)}</span>`).join('');
       const tagsHtml = tags ? `<div class="tags">${tags}</div>` : '';
 
@@ -563,6 +580,7 @@
         <a href="${escapeHtml(r.url)}" target="_blank" rel="noopener noreferrer" class="recipe-card glass">
           <span class="link-icon">&nearr;</span>
           <div class="title">${title}</div>
+          ${code ? `<div class="refer-code-line">${code}</div>` : ''}
           ${desc ? `<div class="description">${desc}</div>` : ''}
           <div class="meta">
             ${source}${shares}${author}

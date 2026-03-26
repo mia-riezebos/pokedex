@@ -146,6 +146,7 @@ async function executeScrape(interaction) {
             url,
             title: extractTitleFromMessage(msg.content, url),
             description: cleanDescription(msg.content, url),
+            referCode: getRecipeCode(url),
             sharedBy: [{ id: msg.author.id, name: msg.author.username, sharedAt: msg.createdAt.toISOString() }],
             channelId: channel.id,
             channelName: channel.name,
@@ -245,6 +246,7 @@ async function executeAdd(interaction) {
     url,
     title: title || extractTitleFromUrl(url),
     description: null,
+    referCode: getRecipeCode(url),
     sharedBy: [{ id: interaction.user.id, name: interaction.user.username, sharedAt: new Date().toISOString() }],
     channelId: interaction.channel?.id || null,
     channelName: interaction.channel?.name || null,
@@ -318,6 +320,7 @@ async function scrapeThreadForRecipes(thread, forumChannel) {
         url,
         title: thread.name || extractTitleFromMessage(msg.content, url),
         description: cleanDescription(msg.content, url),
+        referCode: getRecipeCode(url),
         sharedBy: [{ id: msg.author.id, name: msg.author.username, sharedAt: msg.createdAt.toISOString() }],
         channelId: forumChannel.id,
         channelName: forumChannel.name,
@@ -353,8 +356,17 @@ function extractTitleFromMessage(text, url) {
 function extractTitleFromUrl(url) {
   try {
     const u = new URL(url);
+    const hostname = u.hostname.toLowerCase();
+    const pathname = u.pathname;
+
+    // Poke.com refer links — use the code as the title
+    if (hostname.includes('poke.com') && pathname.startsWith('/refer/')) {
+      const code = pathname.split('/refer/')[1];
+      return code ? `Recipe ${code}` : 'Poke Recipe';
+    }
+
     // Try to get a readable name from the path
-    const parts = u.pathname.split('/').filter(Boolean);
+    const parts = pathname.split('/').filter(Boolean);
     if (parts.length > 0) {
       const last = parts[parts.length - 1];
       return decodeURIComponent(last)
@@ -375,10 +387,53 @@ function cleanDescription(text, url) {
   return cleaned.length > 10 ? cleaned.slice(0, 300) : null;
 }
 
+function isRecipeLink(url) {
+  try {
+    const u = new URL(url);
+    const hostname = u.hostname.toLowerCase();
+    const pathname = u.pathname.toLowerCase();
+    // Primary: poke.com/refer/ links
+    if (hostname.includes('poke.com') && pathname.startsWith('/refer/')) return true;
+    // Other known recipe/team sources
+    if (hostname.includes('pokepast')) return true;
+    if (hostname.includes('smogon')) return true;
+    if (hostname.includes('pikalytics')) return true;
+    if (hostname.includes('limitlessv')) return true;
+    if (hostname.includes('victoryroad')) return true;
+    if (hostname.includes('paste.pokemon-online')) return true;
+    // Generic paste/share sites are likely recipes in #show-and-tell context
+    if (hostname.includes('pastebin')) return true;
+    if (hostname.includes('pokemonshowdown')) return true;
+    // YouTube (guides/showcases)
+    if (hostname.includes('youtube') || hostname.includes('youtu.be')) return true;
+    // Any link shared in #show-and-tell is probably a recipe
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function getRecipeCode(url) {
+  // Extract the recipe/refer code from poke.com links
+  try {
+    const u = new URL(url);
+    if (u.hostname.toLowerCase().includes('poke.com') && u.pathname.startsWith('/refer/')) {
+      return u.pathname.split('/refer/')[1] || null;
+    }
+  } catch {}
+  return null;
+}
+
 function inferSource(url) {
   try {
-    const hostname = new URL(url).hostname.toLowerCase();
+    const u = new URL(url);
+    const hostname = u.hostname.toLowerCase();
+    const pathname = u.pathname.toLowerCase();
+    // Primary recipe source
+    if (hostname.includes('poke.com') && pathname.startsWith('/refer/')) return 'Poke';
+    if (hostname.includes('poke.com')) return 'Poke';
     if (hostname.includes('pokepast')) return 'Pokepaste';
+    if (hostname.includes('pokemonshowdown')) return 'Showdown';
     if (hostname.includes('pastebin')) return 'Pastebin';
     if (hostname.includes('paste.pokemon-online')) return 'PO Paste';
     if (hostname.includes('github')) return 'GitHub';
