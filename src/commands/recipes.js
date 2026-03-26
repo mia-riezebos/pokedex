@@ -22,6 +22,10 @@ const commandData = new SlashCommandBuilder()
           .setDescription('Max messages/threads to scan (default: 100)')
           .setMinValue(1)
           .setMaxValue(500)
+          .setRequired(false))
+      .addBooleanOption(opt =>
+        opt.setName('auto-approve')
+          .setDescription('Skip approval — publish all scraped recipes directly to the website')
           .setRequired(false)))
   .addSubcommand(sub =>
     sub.setName('list')
@@ -43,7 +47,10 @@ const commandData = new SlashCommandBuilder()
           .setRequired(false)))
   .addSubcommand(sub =>
     sub.setName('pending')
-      .setDescription('Show recipes waiting for approval'));
+      .setDescription('Show recipes waiting for approval'))
+  .addSubcommand(sub =>
+    sub.setName('approve-all')
+      .setDescription('Bulk-approve all pending recipes'));
 
 async function execute(interaction) {
   const sub = interaction.options.getSubcommand();
@@ -51,6 +58,7 @@ async function execute(interaction) {
   if (sub === 'list') return executeList(interaction);
   if (sub === 'add') return executeAdd(interaction);
   if (sub === 'pending') return executePending(interaction);
+  if (sub === 'approve-all') return executeApproveAll(interaction);
   return interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
 }
 
@@ -69,19 +77,29 @@ async function executeScrape(interaction) {
     });
   }
 
-  // Find the approval channel
-  const approvalChannel = findApprovalChannel(interaction.guild);
-  if (!approvalChannel) {
-    return interaction.reply({
-      content: 'Could not find a recipe approval channel. Set one with `/config set recipe_approval_channel <channel-name>` or create a #recipe-approval channel.',
-      ephemeral: true,
-    });
+  const autoApprove = interaction.options.getBoolean('auto-approve') ?? false;
+
+  // Find the approval channel (only needed if not auto-approving)
+  let approvalChannel = null;
+  if (!autoApprove) {
+    approvalChannel = findApprovalChannel(interaction.guild);
+    if (!approvalChannel) {
+      return interaction.reply({
+        content: 'Could not find a recipe approval channel. Set one with `/config set recipe_approval_channel <channel-name>` or create a #recipe-approval channel.\n\nOr use `auto-approve: true` to skip approval.',
+        ephemeral: true,
+      });
+    }
   }
 
   await interaction.deferReply();
 
+  // Pre-fetch all existing recipe URLs for fast duplicate detection
+  const allExisting = await firestore.getAllRecipes(1000);
+  const existingUrls = new Set(allExisting.map(r => normalizeUrl(r.url)));
+  const existingCodes = new Set(allExisting.map(r => r.referCode).filter(Boolean));
+
   const maxMessages = interaction.options.getInteger('limit') || 100;
-  const stats = { found: 0, pending: 0, duplicate: 0, noLinks: 0, errored: 0 };
+  const stats = { found: 0, new: 0, duplicate: 0, noLinks: 0, errored: 0 };
 
   if (channel.type === ChannelType.GuildForum) {
     // Forum channel — scrape each thread
@@ -119,20 +137,29 @@ async function executeScrape(interaction) {
         stats.found += result.links.length;
 
         for (const recipe of result.links) {
-          // Check if this URL already exists in any status
-          const existing = await firestore.getRecipeByUrl(recipe.url);
-          if (existing) {
+          // Duplicate detection: check URL and refer code
+          if (isDuplicateRecipe(recipe.url, recipe.referCode, existingUrls, existingCodes)) {
             stats.duplicate++;
             continue;
           }
 
-          // Save as pending
-          recipe.status = 'pending';
+          // Mark as approved or pending
+          recipe.status = autoApprove ? 'approved' : 'pending';
+          if (autoApprove) {
+            recipe.reviewedBy = interaction.user.username;
+            recipe.reviewedById = interaction.user.id;
+          }
           const saved = await firestore.saveRecipe(recipe);
-          stats.pending++;
+          stats.new++;
 
-          // Post approval embed
-          await postApprovalEmbed(approvalChannel, recipe, saved.id);
+          // Track for future duplicate checks within this scrape
+          existingUrls.add(normalizeUrl(recipe.url));
+          if (recipe.referCode) existingCodes.add(recipe.referCode);
+
+          // Post approval embed if not auto-approving
+          if (!autoApprove && approvalChannel) {
+            await postApprovalEmbed(approvalChannel, recipe, saved.id);
+          }
         }
 
         if (result.links.length === 0) stats.noLinks++;
@@ -165,9 +192,10 @@ async function executeScrape(interaction) {
         stats.found += links.length;
 
         for (const url of links) {
-          // Check if already exists
-          const existing = await firestore.getRecipeByUrl(url);
-          if (existing) {
+          const referCode = getPokeCode(url);
+
+          // Duplicate detection
+          if (isDuplicateRecipe(url, referCode, existingUrls, existingCodes)) {
             stats.duplicate++;
             continue;
           }
@@ -176,7 +204,7 @@ async function executeScrape(interaction) {
             url,
             title: extractTitleFromMessage(msg.content, url),
             description: cleanDescription(msg.content, url),
-            referCode: getPokeCode(url),
+            referCode,
             sharedBy: [{ id: msg.author.id, name: msg.author.username, sharedAt: msg.createdAt.toISOString() }],
             channelId: channel.id,
             channelName: channel.name,
@@ -184,13 +212,23 @@ async function executeScrape(interaction) {
             messageId: msg.id,
             source: inferSource(url),
             tags: extractTags(msg.content),
-            status: 'pending',
+            status: autoApprove ? 'approved' : 'pending',
           };
 
-          const saved = await firestore.saveRecipe(recipe);
-          stats.pending++;
+          if (autoApprove) {
+            recipe.reviewedBy = interaction.user.username;
+            recipe.reviewedById = interaction.user.id;
+          }
 
-          await postApprovalEmbed(approvalChannel, recipe, saved.id);
+          const saved = await firestore.saveRecipe(recipe);
+          stats.new++;
+
+          existingUrls.add(normalizeUrl(url));
+          if (referCode) existingCodes.add(referCode);
+
+          if (!autoApprove && approvalChannel) {
+            await postApprovalEmbed(approvalChannel, recipe, saved.id);
+          }
         }
 
         if (links.length === 0) stats.noLinks++;
@@ -205,17 +243,19 @@ async function executeScrape(interaction) {
   }
 
   // Final summary
+  const statusLabel = autoApprove ? 'Auto-Approved' : 'Sent for Approval';
+  const statusDesc = autoApprove
+    ? `All new recipes are **live on the website** now.`
+    : `All new recipes have been sent to ${approvalChannel} for review.`;
+
   const embed = new EmbedBuilder()
     .setTitle('Recipe Scrape Complete')
     .setColor(stats.errored > 0 ? 0xffa500 : 0x2ecc71)
-    .setDescription(
-      `Scraped **#${channel.name}** for recipe links.\n\n` +
-      `All new recipes have been sent to ${approvalChannel} for review.`
-    )
+    .setDescription(`Scraped **#${channel.name}** for recipe links.\n\n${statusDesc}`)
     .addFields(
       { name: 'Links Found', value: `${stats.found}`, inline: true },
-      { name: 'Sent for Approval', value: `${stats.pending}`, inline: true },
-      { name: 'Already Exists', value: `${stats.duplicate}`, inline: true },
+      { name: statusLabel, value: `${stats.new}`, inline: true },
+      { name: 'Duplicates Skipped', value: `${stats.duplicate}`, inline: true },
       { name: 'No Links', value: `${stats.noLinks}`, inline: true },
       { name: 'Errors', value: `${stats.errored}`, inline: true },
     )
@@ -342,6 +382,39 @@ async function executePending(interaction) {
     .setColor(0xffa500)
     .setDescription(lines.join('\n'))
     .setFooter({ text: `${recipes.length} pending` })
+    .setTimestamp();
+
+  return interaction.editReply({ embeds: [embed] });
+}
+
+// --- APPROVE ALL ---
+
+async function executeApproveAll(interaction) {
+  await interaction.deferReply();
+
+  const pending = await firestore.getPendingRecipes(500);
+  if (pending.length === 0) {
+    return interaction.editReply('No pending recipes to approve.');
+  }
+
+  let approved = 0;
+  for (const recipe of pending) {
+    try {
+      await firestore.updateRecipeStatus(recipe.id, 'approved', interaction.user.id, interaction.user.username);
+      approved++;
+    } catch (err) {
+      console.error(`Failed to approve recipe ${recipe.id}:`, err.message);
+    }
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle('All Recipes Approved')
+    .setColor(0x2ecc71)
+    .setDescription(`**${approved}** recipe${approved !== 1 ? 's' : ''} approved and now live on the website.`)
+    .addFields(
+      { name: 'Approved By', value: interaction.user.username, inline: true },
+      { name: 'Total Approved', value: `${approved}`, inline: true },
+    )
     .setTimestamp();
 
   return interaction.editReply({ embeds: [embed] });
@@ -700,6 +773,40 @@ function buildProgressBar(pct) {
   const filled = Math.round(pct / 5);
   const empty = 20 - filled;
   return '`' + '\u2588'.repeat(filled) + '\u2591'.repeat(empty) + '`';
+}
+
+/**
+ * Normalize a URL for duplicate comparison.
+ * Strips trailing slashes, tracking params, fragments, and lowercases.
+ */
+function normalizeUrl(url) {
+  try {
+    const u = new URL(url);
+    // Remove common tracking params
+    const stripParams = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'ref', 'fbclid', 'gclid'];
+    for (const p of stripParams) u.searchParams.delete(p);
+    // Normalize
+    let normalized = `${u.protocol}//${u.hostname}${u.pathname}`.toLowerCase();
+    // Strip trailing slash
+    normalized = normalized.replace(/\/+$/, '');
+    // Keep meaningful query params
+    const qs = u.searchParams.toString();
+    if (qs) normalized += `?${qs}`;
+    return normalized;
+  } catch {
+    return url.toLowerCase().replace(/\/+$/, '');
+  }
+}
+
+/**
+ * Check if a recipe is a duplicate by normalized URL or refer code.
+ */
+function isDuplicateRecipe(url, referCode, existingUrls, existingCodes) {
+  // Check normalized URL
+  if (existingUrls.has(normalizeUrl(url))) return true;
+  // Check refer code (catches /r/X vs /refer/X for same recipe)
+  if (referCode && existingCodes.has(referCode)) return true;
+  return false;
 }
 
 module.exports = { data: commandData, execute, handleRecipeButton };

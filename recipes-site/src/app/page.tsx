@@ -1,15 +1,19 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { db } from "@/lib/firebase";
 import {
   collection,
   query,
   where,
   orderBy,
-  onSnapshot,
+  getDocs,
 } from "firebase/firestore";
 import RecipeCard from "@/components/RecipeCard";
+
+const APP_VERSION = "1.0.1";
+const CACHE_KEY = "pokedex_recipes_cache";
+const CACHE_TTL = 60_000; // 1 minute
 
 interface Sharer {
   name: string;
@@ -29,39 +33,78 @@ interface Recipe {
   status?: string;
 }
 
+interface CacheData {
+  recipes: Recipe[];
+  timestamp: number;
+  version: string;
+}
+
+function loadCache(): CacheData | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const data: CacheData = JSON.parse(raw);
+    if (data.version !== APP_VERSION) return null;
+    if (Date.now() - data.timestamp > CACHE_TTL) return null;
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function saveCache(recipes: Recipe[]) {
+  try {
+    const data: CacheData = { recipes, timestamp: Date.now(), version: APP_VERSION };
+    localStorage.setItem(CACHE_KEY, JSON.stringify(data));
+  } catch {}
+}
+
 export default function RecipesPage() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [activeTag, setActiveTag] = useState<string | null>(null);
   const [activeSource, setActiveSource] = useState<string | null>(null);
+  const [lastFetched, setLastFetched] = useState<Date | null>(null);
 
-  // Real-time Firestore listener
-  useEffect(() => {
-    const q = query(
-      collection(db, "recipes"),
-      where("status", "==", "approved"),
-      orderBy("shareCount", "desc")
-    );
-
-    const unsubscribe = onSnapshot(
-      q,
-      (snapshot) => {
-        const docs = snapshot.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-        })) as Recipe[];
-        setRecipes(docs);
+  const fetchRecipes = useCallback(async (useCache = true) => {
+    // Try cache first for instant load
+    if (useCache) {
+      const cached = loadCache();
+      if (cached) {
+        setRecipes(cached.recipes);
         setLoading(false);
-      },
-      (err) => {
-        console.error("Firestore error:", err);
-        setLoading(false);
+        setLastFetched(new Date(cached.timestamp));
+        // Still fetch fresh data in background
+        fetchRecipes(false);
+        return;
       }
-    );
+    }
 
-    return () => unsubscribe();
+    try {
+      const q = query(
+        collection(db, "recipes"),
+        where("status", "==", "approved"),
+        orderBy("shareCount", "desc")
+      );
+      const snapshot = await getDocs(q);
+      const docs = snapshot.docs.map((d) => ({
+        id: d.id,
+        ...d.data(),
+      })) as Recipe[];
+      setRecipes(docs);
+      saveCache(docs);
+      setLastFetched(new Date());
+    } catch (err) {
+      console.error("Firestore error:", err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchRecipes(true);
+  }, [fetchRecipes]);
 
   // Stats
   const stats = useMemo(() => {
@@ -235,10 +278,22 @@ export default function RecipesPage() {
         </p>
       )}
 
-      <footer className="text-center mt-12 pb-8">
+      <footer className="text-center mt-12 pb-8 space-y-2">
         <p className="text-xs text-gray-700">
           Powered by <span className="text-gold/60">Pokedex</span> — recipes shared by the community
         </p>
+        <div className="flex items-center justify-center gap-3 text-[10px] text-gray-700">
+          <span>v{APP_VERSION}</span>
+          {lastFetched && (
+            <span>Updated {lastFetched.toLocaleTimeString()}</span>
+          )}
+          <button
+            onClick={() => { setLoading(true); fetchRecipes(false); }}
+            className="text-gold/40 hover:text-gold transition-colors"
+          >
+            Refresh
+          </button>
+        </div>
       </footer>
     </div>
   );
