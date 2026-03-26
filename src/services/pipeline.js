@@ -3,7 +3,7 @@ const { classifyIssue } = require('./openrouter');
 const firestore = require('./firestore');
 const triage = require('./triage');
 const { getConfig } = require('../config/config');
-const { findDuplicate } = require('./duplicates');
+const { findDuplicate, findDuplicateAI } = require('./duplicates');
 
 const PRIORITY_COLORS = {
   critical: 0xff0000,
@@ -21,10 +21,13 @@ async function processIssue(message, text) {
   // Classify with AI
   const classification = await classifyIssue(text);
 
-  // --- Semantic duplicate detection ---
+  // --- Semantic duplicate detection (Jaccard fast → AI accurate) ---
   try {
     const openIssues = await firestore.getOpenIssues(100);
-    const match = findDuplicate(classification.summary, text, openIssues);
+    let match = findDuplicate(classification.summary, text, openIssues);
+    if (!match) {
+      match = await findDuplicateAI(classification.summary, classification.category, openIssues);
+    }
 
     if (match) {
       // Found a potential duplicate — notify the reporter and link it

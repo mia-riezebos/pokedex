@@ -2,7 +2,7 @@ const { SlashCommandBuilder, EmbedBuilder, ChannelType, PermissionFlagsBits } = 
 const admin = require('firebase-admin');
 const firestore = require('../services/firestore');
 const { classifyIssue } = require('../services/openrouter');
-const { findDuplicate } = require('../services/duplicates');
+const { findDuplicate, findDuplicateAI, findDuplicateClustersAI } = require('../services/duplicates');
 const { postIssueEmbed, buildIssueEmbed } = require('../services/triage');
 const { getConfig } = require('../config/config');
 
@@ -46,7 +46,10 @@ const commandData = new SlashCommandBuilder()
           .setDescription('Max posts to process (default: 50, max: 200)')
           .setMinValue(1)
           .setMaxValue(200)
-          .setRequired(false)));
+          .setRequired(false)))
+  .addSubcommand(sub =>
+    sub.setName('reorganize')
+      .setDescription('AI-scan all open issues for duplicates and merge them automatically'));
 
 async function execute(interaction) {
   const subcommand = interaction.options.getSubcommand();
@@ -57,6 +60,10 @@ async function execute(interaction) {
 
   if (subcommand === 'scrape') {
     return executeScrape(interaction);
+  }
+
+  if (subcommand === 'reorganize') {
+    return executeReorganize(interaction);
   }
 
   return executeTriage(interaction);
@@ -102,11 +109,14 @@ async function executeTriage(interaction) {
   // 3. AI classify the feedback
   const classification = await classifyIssue(fullText);
 
-  // 4. Check for similar existing issues
+  // 4. Check for similar existing issues (Jaccard fast → AI accurate)
   let duplicateMatch = null;
   try {
     const openIssues = await firestore.getOpenIssues(100);
     duplicateMatch = findDuplicate(classification.summary, fullText, openIssues);
+    if (!duplicateMatch) {
+      duplicateMatch = await findDuplicateAI(classification.summary, classification.category, openIssues);
+    }
   } catch (err) {
     console.error('Duplicate detection failed during feedback-triage:', err.message);
   }
@@ -461,11 +471,14 @@ async function processOneThread(guild, thread, forumChannel) {
   // AI classify
   const classification = await classifyIssue(fullText);
 
-  // Duplicate check
+  // Duplicate check (Jaccard fast → AI accurate)
   let duplicateMatch = null;
   try {
     const openIssues = await firestore.getOpenIssues(100);
     duplicateMatch = findDuplicate(classification.summary, fullText, openIssues);
+    if (!duplicateMatch) {
+      duplicateMatch = await findDuplicateAI(classification.summary, classification.category, openIssues);
+    }
   } catch (err) {
     console.error('Duplicate detection failed during scrape:', err.message);
   }
@@ -558,6 +571,153 @@ async function processOneThread(guild, thread, forumChannel) {
   }
 
   return { outcome: 'created', issueId, summary: classification.summary };
+}
+
+/**
+ * Reorganize — AI-scan all open issues for duplicate clusters and merge them.
+ */
+async function executeReorganize(interaction) {
+  await interaction.deferReply();
+
+  // Fetch all open issues
+  const openIssues = await firestore.getOpenIssues(100);
+  if (openIssues.length < 2) {
+    return interaction.editReply('Not enough open issues to check for duplicates.');
+  }
+
+  await interaction.editReply({
+    embeds: [new EmbedBuilder()
+      .setTitle('Reorganizing Issues...')
+      .setColor(0x5865f2)
+      .setDescription(`Scanning **${openIssues.length}** open issues for duplicates using AI...`)
+      .setTimestamp()],
+  });
+
+  // AI-powered batch duplicate detection
+  const clusters = await findDuplicateClustersAI(openIssues);
+
+  if (clusters.length === 0) {
+    return interaction.editReply({
+      embeds: [new EmbedBuilder()
+        .setTitle('No Duplicates Found')
+        .setColor(0x2ecc71)
+        .setDescription(`Scanned **${openIssues.length}** open issues — no duplicates detected.`)
+        .setTimestamp()],
+    });
+  }
+
+  // Merge each cluster
+  let totalMerged = 0;
+  const mergeResults = [];
+
+  for (const cluster of clusters) {
+    const canonical = cluster.canonical;
+    let reporterCount = (canonical.reporterIds || []).length;
+
+    for (const dupe of cluster.duplicates) {
+      // Add reporters from duplicate to canonical
+      const dupeReporters = dupe.reporterIds || [];
+      for (const r of dupeReporters) {
+        const result = await firestore.addReporter(canonical.id, r.id, r.name);
+        if (result) reporterCount = (result.reporterIds || []).length;
+      }
+      // If no reporterIds array, add the single reporter
+      if (dupeReporters.length === 0 && dupe.reporterId) {
+        const result = await firestore.addReporter(canonical.id, dupe.reporterId, dupe.reporterName || 'unknown');
+        if (result) reporterCount = (result.reporterIds || []).length;
+      }
+
+      // Append the duplicate's text as context
+      const contextText = `[Merged from duplicate issue ${dupe.id}]: ${(dupe.text || '').slice(0, 1500)}`;
+      await firestore.appendThreadContext(canonical.id, contextText);
+
+      // Merge thread context from duplicate
+      const dupeContext = dupe.threadContext || [];
+      for (const ctx of dupeContext) {
+        await firestore.appendThreadContext(canonical.id, ctx.text);
+      }
+
+      // Merge attachments
+      if (dupe.attachments && dupe.attachments.length > 0) {
+        const canonicalDoc = await firestore.getIssueById(canonical.id);
+        const existingAttachments = canonicalDoc.attachments || [];
+        await firestore.updateIssueFields(canonical.id, {
+          attachments: [...existingAttachments, ...dupe.attachments],
+        });
+      }
+
+      // If duplicate has a threadId, link it to the canonical issue
+      if (dupe.threadId) {
+        await firestore.updateIssueThreadId(canonical.id, dupe.threadId);
+      }
+
+      // Record merge history
+      await firestore.updateIssueFields(canonical.id, {
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        mergeHistory: admin.firestore.FieldValue.arrayUnion({
+          mergedAt: new Date().toISOString(),
+          mergedBy: interaction.user.username,
+          mergedByUserId: interaction.user.id,
+          sourceIssueId: dupe.id,
+          sourceSummary: (dupe.summary || '').slice(0, 100),
+          reason: `Reorganize: ${cluster.reason}`,
+        }),
+      });
+
+      // Mark duplicate as merged
+      await firestore.updateIssueFields(dupe.id, {
+        status: 'merged',
+        mergedInto: canonical.id,
+        closedBy: interaction.user.id,
+        closedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+
+      totalMerged++;
+    }
+
+    // Refresh triage embed on canonical
+    const updatedCanonical = await firestore.getIssueById(canonical.id);
+    await refreshTriageEmbed(interaction.guild, updatedCanonical, canonical.id, reporterCount);
+
+    mergeResults.push({
+      canonical: canonical.summary || canonical.id,
+      canonicalId: canonical.id,
+      merged: cluster.duplicates.map(d => d.summary || d.id),
+      mergedIds: cluster.duplicates.map(d => d.id),
+      reason: cluster.reason,
+      reporterCount,
+    });
+  }
+
+  // Build summary embed
+  const embed = new EmbedBuilder()
+    .setTitle('Reorganization Complete')
+    .setColor(0x2ecc71)
+    .setDescription(
+      `Scanned **${openIssues.length}** open issues.\n` +
+      `Found **${clusters.length}** duplicate group${clusters.length !== 1 ? 's' : ''} — merged **${totalMerged}** issue${totalMerged !== 1 ? 's' : ''}.`
+    )
+    .setTimestamp();
+
+  for (const result of mergeResults.slice(0, 10)) {
+    const mergedList = result.mergedIds.map((id, i) =>
+      `\`${id.slice(0, 8)}…\` ${(result.merged[i] || '').slice(0, 50)}`
+    ).join('\n');
+
+    embed.addFields({
+      name: `\`${result.canonicalId.slice(0, 8)}…\` ${result.canonical.slice(0, 50)} (${result.reporterCount} reporters)`,
+      value: `**Merged in:**\n${mergedList}\n*${result.reason}*`.slice(0, 1024),
+    });
+  }
+
+  if (mergeResults.length > 10) {
+    embed.addFields({ name: '...', value: `_and ${mergeResults.length - 10} more groups_` });
+  }
+
+  embed.setFooter({ text: `Reorganized by ${interaction.user.username}` });
+
+  return interaction.editReply({ embeds: [embed] });
 }
 
 function buildProgressBar(pct) {
