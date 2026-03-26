@@ -317,11 +317,10 @@ async function executeScrape(interaction) {
   threads.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
 
   // --- Filter out already-scraped threads ---
-  // Pre-fetch all issues that have a threadId to know which posts are already linked
-  const openIssues = await firestore.getOpenIssues(500);
-  const allIssues = await firestore.getAllIssues(500);
+  // Page through all issues with threadIds to know which posts are already linked
+  const allIssuesWithThread = await firestore.getAllIssuesWithThreadId();
   const scrapedThreadIds = new Set(
-    allIssues.filter(i => i.threadId).map(i => i.threadId)
+    allIssuesWithThread.map(i => i.threadId)
   );
 
   const newThreads = threads.filter(t => !scrapedThreadIds.has(t.id));
@@ -385,7 +384,6 @@ async function executeScrape(interaction) {
   }
 
   // --- Final summary ---
-  const totalInForum = stats.total + stats.alreadyScraped;
   const summaryEmbed = new EmbedBuilder()
     .setTitle('Feedback Scrape Complete')
     .setColor(stats.errored > 0 ? 0xffa500 : 0x2ecc71)

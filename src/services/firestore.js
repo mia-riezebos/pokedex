@@ -262,6 +262,27 @@ async function getForumIssues(limit = 500) {
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
+async function getAllIssuesWithThreadId() {
+  const results = [];
+  let lastDoc = null;
+  const batchSize = 500;
+  while (true) {
+    let query = db.collection('issues')
+      .where('threadId', '!=', null)
+      .orderBy('threadId')
+      .limit(batchSize);
+    if (lastDoc) {
+      query = query.startAfter(lastDoc);
+    }
+    const snapshot = await query.get();
+    if (snapshot.empty) break;
+    snapshot.docs.forEach(doc => results.push({ id: doc.id, ...doc.data() }));
+    lastDoc = snapshot.docs[snapshot.docs.length - 1];
+    if (snapshot.size < batchSize) break;
+  }
+  return results;
+}
+
 // --- Recipes ---
 
 async function saveRecipe(recipeData) {
@@ -387,6 +408,7 @@ module.exports = {
   updateIssueFields,
   addReporter,
   getForumIssues,
+  getAllIssuesWithThreadId,
   saveRecipe,
   getAllRecipes,
   getApprovedRecipes,

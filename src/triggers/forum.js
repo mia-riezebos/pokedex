@@ -112,15 +112,17 @@ async function handleForumPost(thread) {
     await firestore.updateIssueTriageMessageId(issueId, triageMessageId);
   }
 
-  // Re-fetch issue so it has triageMessageId for the evaluator
-  const issueWithTriage = await firestore.getIssueById(issueId);
+  // Run context evaluator for first follow-up (wrapped so failures don't break triage)
+  try {
+    const issueWithTriage = await firestore.getIssueById(issueId);
+    const history = buildConversationHistory([starterMessage]);
+    const evaluation = await evaluateContext(issueWithTriage, history);
 
-  // Run context evaluator for first follow-up
-  const history = buildConversationHistory([starterMessage]);
-  const evaluation = await evaluateContext(issueWithTriage, history);
-
-  if (evaluation.shouldReply && evaluation.reply) {
-    await thread.send(evaluation.reply);
+    if (evaluation.shouldReply && evaluation.reply) {
+      await thread.send(evaluation.reply);
+    }
+  } catch (err) {
+    console.error('Context evaluator failed for issue', issueId, ':', err.message);
   }
 }
 
