@@ -262,6 +262,53 @@ async function getForumIssues(limit = 500) {
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
+// --- Recipes ---
+
+async function saveRecipe(recipeData) {
+  const db = admin.firestore();
+  // Deduplicate by URL
+  const existing = await db.collection('recipes')
+    .where('url', '==', recipeData.url)
+    .limit(1)
+    .get();
+  if (!existing.empty) {
+    // Update existing recipe with new sharer
+    const doc = existing.docs[0];
+    await doc.ref.update({
+      sharedBy: admin.firestore.FieldValue.arrayUnion(...(recipeData.sharedBy || [])),
+      shareCount: admin.firestore.FieldValue.increment(1),
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    return { id: doc.id, updated: true };
+  }
+  const ref = await db.collection('recipes').add({
+    ...recipeData,
+    shareCount: 1,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return { id: ref.id, updated: false };
+}
+
+async function getAllRecipes(limit = 200) {
+  const db = admin.firestore();
+  const snapshot = await db.collection('recipes')
+    .orderBy('shareCount', 'desc')
+    .limit(Math.min(limit, 500))
+    .get();
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+async function getRecipeByUrl(url) {
+  const db = admin.firestore();
+  const snapshot = await db.collection('recipes')
+    .where('url', '==', url)
+    .limit(1)
+    .get();
+  if (snapshot.empty) return null;
+  return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+}
+
 module.exports = {
   init,
   isDuplicate,
@@ -288,4 +335,7 @@ module.exports = {
   updateIssueFields,
   addReporter,
   getForumIssues,
+  saveRecipe,
+  getAllRecipes,
+  getRecipeByUrl,
 };

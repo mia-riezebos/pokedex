@@ -5,6 +5,11 @@ const CHANGELOG = [
     version: '2.3.0',
     date: '2026-03-25',
     changes: [
+      'Added `/recipes scrape` — scrapes #show-and-tell for recipe links, extracts metadata and tags, deduplicates by URL, and stores them for the community recipe page',
+      'Added `/recipes list` — browse the latest community recipes right in Discord',
+      'Added `/recipes add` — manually add a recipe link with a title and tags',
+      'Added **community recipe page** at `/recipes` — a searchable, filterable web page with all shared recipes, source badges, tag chips, and share counts',
+      'Recipe API endpoint (`GET /api/recipes`) — public, no auth required, supports search, tag, and source filters',
       'Added `/feedback-triage scrape` — bulk-scrape every post in a feedback forum, classify with AI, deduplicate, and create/merge issues automatically with a live progress bar',
       'Added `/feedback-triage run` — run inside any #feedback forum post to smart-triage it into an issue',
       'Added `/feedback-triage merge <issue>` — manually merge a forum post into an existing issue when AI misses the duplicate',
