@@ -93,13 +93,16 @@ async function executeScrape(interaction) {
 
   await interaction.deferReply();
 
-  // Pre-fetch all existing recipe URLs for fast duplicate detection
+  // Pre-fetch all existing recipe data for fast duplicate & skip detection
   const allExisting = await firestore.getAllRecipes(1000);
   const existingUrls = new Set(allExisting.map(r => normalizeUrl(r.url)));
   const existingCodes = new Set(allExisting.map(r => r.referCode).filter(Boolean));
+  // Track which threads and messages have already been scraped
+  const scrapedThreadIds = new Set(allExisting.map(r => r.threadId).filter(Boolean));
+  const scrapedMessageIds = new Set(allExisting.map(r => r.messageId).filter(Boolean));
 
   const maxMessages = interaction.options.getInteger('limit') || 100;
-  const stats = { found: 0, new: 0, duplicate: 0, noLinks: 0, errored: 0 };
+  const stats = { found: 0, new: 0, duplicate: 0, skipped: 0, noLinks: 0, errored: 0 };
 
   if (channel.type === ChannelType.GuildForum) {
     // Forum channel — scrape each thread
@@ -120,12 +123,22 @@ async function executeScrape(interaction) {
     }
 
     threads.sort((a, b) => b.createdTimestamp - a.createdTimestamp);
-    const toScan = threads.slice(0, maxMessages);
+
+    // Filter out already-scraped threads
+    const newThreads = threads.filter(t => !scrapedThreadIds.has(t.id));
+    const skippedCount = threads.length - newThreads.length;
+    stats.skipped += skippedCount;
+
+    const toScan = newThreads.slice(0, maxMessages);
 
     const progressEmbed = (processed) => new EmbedBuilder()
       .setTitle('Scraping Recipes...')
       .setColor(0xf0c840)
-      .setDescription(`Processing **${channel.name}** — ${processed}/${toScan.length} posts\n${buildProgressBar(Math.round((processed / toScan.length) * 100))}`)
+      .setDescription(
+        `Processing **${channel.name}** — ${processed}/${toScan.length} new posts\n` +
+        `${buildProgressBar(Math.round((processed / Math.max(toScan.length, 1)) * 100))}` +
+        (skippedCount > 0 ? `\n_${skippedCount} already-scraped post${skippedCount !== 1 ? 's' : ''} skipped_` : '')
+      )
       .setTimestamp();
 
     await interaction.editReply({ embeds: [progressEmbed(0)] });
@@ -177,16 +190,25 @@ async function executeScrape(interaction) {
     // Text channel — scrape messages directly
     const allMessages = await fetchChannelMessages(channel, maxMessages);
 
+    // Filter out already-scraped messages
+    const newMessages = allMessages.filter(m => !scrapedMessageIds.has(m.id));
+    const msgSkipped = allMessages.length - newMessages.length;
+    stats.skipped += msgSkipped;
+
     const progressEmbed = (processed) => new EmbedBuilder()
       .setTitle('Scraping Recipes...')
       .setColor(0xf0c840)
-      .setDescription(`Processing **#${channel.name}** — ${processed}/${allMessages.length} messages\n${buildProgressBar(Math.round((processed / allMessages.length) * 100))}`)
+      .setDescription(
+        `Processing **#${channel.name}** — ${processed}/${newMessages.length} new messages\n` +
+        `${buildProgressBar(Math.round((processed / Math.max(newMessages.length, 1)) * 100))}` +
+        (msgSkipped > 0 ? `\n_${msgSkipped} already-scraped message${msgSkipped !== 1 ? 's' : ''} skipped_` : '')
+      )
       .setTimestamp();
 
     await interaction.editReply({ embeds: [progressEmbed(0)] });
 
-    for (let i = 0; i < allMessages.length; i++) {
-      const msg = allMessages[i];
+    for (let i = 0; i < newMessages.length; i++) {
+      const msg = newMessages[i];
       try {
         const links = extractLinks(msg.content);
         stats.found += links.length;
@@ -236,7 +258,7 @@ async function executeScrape(interaction) {
         stats.errored++;
       }
 
-      if ((i + 1) % 10 === 0 || i === allMessages.length - 1) {
+      if ((i + 1) % 10 === 0 || i === newMessages.length - 1) {
         try { await interaction.editReply({ embeds: [progressEmbed(i + 1)] }); } catch {}
       }
     }
@@ -255,7 +277,8 @@ async function executeScrape(interaction) {
     .addFields(
       { name: 'Links Found', value: `${stats.found}`, inline: true },
       { name: statusLabel, value: `${stats.new}`, inline: true },
-      { name: 'Duplicates Skipped', value: `${stats.duplicate}`, inline: true },
+      { name: 'Duplicates', value: `${stats.duplicate}`, inline: true },
+      { name: 'Already Scraped', value: `${stats.skipped}`, inline: true },
       { name: 'No Links', value: `${stats.noLinks}`, inline: true },
       { name: 'Errors', value: `${stats.errored}`, inline: true },
     )
