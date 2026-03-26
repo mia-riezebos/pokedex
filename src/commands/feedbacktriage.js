@@ -28,13 +28,35 @@ const commandData = new SlashCommandBuilder()
         opt.setName('target')
           .setDescription('Issue ID to merge this post into')
           .setRequired(true)
-          .setAutocomplete(true)));
+          .setAutocomplete(true)))
+  .addSubcommand(sub =>
+    sub.setName('scrape')
+      .setDescription('Bulk-scrape all feedback forum posts — triage, deduplicate, and create issues automatically')
+      .addChannelOption(opt =>
+        opt.setName('forum')
+          .setDescription('The feedback forum channel (defaults to #feedback)')
+          .addChannelTypes(ChannelType.GuildForum)
+          .setRequired(false))
+      .addBooleanOption(opt =>
+        opt.setName('include-archived')
+          .setDescription('Also process archived/closed posts (default: false)')
+          .setRequired(false))
+      .addIntegerOption(opt =>
+        opt.setName('limit')
+          .setDescription('Max posts to process (default: 50, max: 200)')
+          .setMinValue(1)
+          .setMaxValue(200)
+          .setRequired(false)));
 
 async function execute(interaction) {
   const subcommand = interaction.options.getSubcommand();
 
   if (subcommand === 'merge') {
     return executeMerge(interaction);
+  }
+
+  if (subcommand === 'scrape') {
+    return executeScrape(interaction);
   }
 
   return executeTriage(interaction);
@@ -231,6 +253,317 @@ async function executeMerge(interaction) {
   embed.setFooter({ text: `Target Issue ID: ${targetId}` }).setTimestamp();
 
   return interaction.editReply({ embeds: [embed] });
+}
+
+/**
+ * Bulk-scrape all posts in a feedback forum — triage each, deduplicate, create/merge issues.
+ */
+async function executeScrape(interaction) {
+  const forumChannel = interaction.options.getChannel('forum')
+    || interaction.guild.channels.cache.find(ch => ch.type === ChannelType.GuildForum && ch.name.toLowerCase().includes('feedback'));
+
+  if (!forumChannel || forumChannel.type !== ChannelType.GuildForum) {
+    return interaction.reply({
+      content: 'Could not find a feedback forum channel. Use the `forum` option to specify one.',
+      ephemeral: true,
+    });
+  }
+
+  const includeArchived = interaction.options.getBoolean('include-archived') ?? false;
+  const maxPosts = interaction.options.getInteger('limit') || 50;
+
+  await interaction.deferReply();
+
+  // --- Fetch all threads from the forum ---
+  const threads = [];
+
+  // Active threads
+  try {
+    const active = await forumChannel.threads.fetchActive();
+    threads.push(...active.threads.values());
+  } catch (err) {
+    console.error('Failed to fetch active threads:', err.message);
+  }
+
+  // Archived threads (if requested)
+  if (includeArchived) {
+    try {
+      let hasMore = true;
+      let beforeTimestamp;
+      while (hasMore && threads.length < maxPosts + 50) {
+        const archived = await forumChannel.threads.fetchArchived({
+          limit: 100,
+          ...(beforeTimestamp && { before: beforeTimestamp }),
+        });
+        threads.push(...archived.threads.values());
+        hasMore = archived.hasMore;
+        if (archived.threads.size > 0) {
+          const oldest = [...archived.threads.values()].pop();
+          beforeTimestamp = oldest.archiveTimestamp;
+        } else {
+          hasMore = false;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch archived threads:', err.message);
+    }
+  }
+
+  if (threads.length === 0) {
+    return interaction.editReply(`No posts found in ${forumChannel}.`);
+  }
+
+  // Sort by creation date (oldest first) so duplicate detection builds up naturally
+  threads.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+
+  // Cap to limit
+  const toProcess = threads.slice(0, maxPosts);
+
+  // --- Progress embed ---
+  const stats = { created: 0, merged: 0, updated: 0, skipped: 0, errored: 0, total: toProcess.length };
+  const results = []; // { thread, outcome, issueId, summary }
+
+  const progressEmbed = () => {
+    const processed = stats.created + stats.merged + stats.updated + stats.skipped + stats.errored;
+    const pct = Math.round((processed / stats.total) * 100);
+    const bar = buildProgressBar(pct);
+
+    return new EmbedBuilder()
+      .setTitle('Scraping Feedback Forum...')
+      .setColor(0x5865f2)
+      .setDescription(`Processing **${forumChannel.name}** — ${processed}/${stats.total} posts\n${bar} ${pct}%`)
+      .addFields(
+        { name: 'New Issues', value: `${stats.created}`, inline: true },
+        { name: 'Merged', value: `${stats.merged}`, inline: true },
+        { name: 'Updated', value: `${stats.updated}`, inline: true },
+        { name: 'Skipped', value: `${stats.skipped}`, inline: true },
+        { name: 'Errors', value: `${stats.errored}`, inline: true },
+      )
+      .setTimestamp();
+  };
+
+  await interaction.editReply({ embeds: [progressEmbed()] });
+
+  // Update progress every 5 posts
+  let lastUpdate = 0;
+  const maybeUpdateProgress = async () => {
+    const processed = stats.created + stats.merged + stats.updated + stats.skipped + stats.errored;
+    if (processed - lastUpdate >= 5 || processed === stats.total) {
+      lastUpdate = processed;
+      try {
+        await interaction.editReply({ embeds: [progressEmbed()] });
+      } catch { /* interaction may have expired */ }
+    }
+  };
+
+  // --- Process each thread ---
+  for (const thread of toProcess) {
+    try {
+      const result = await processOneThread(interaction.guild, thread, forumChannel);
+      results.push({ thread, ...result });
+      stats[result.outcome]++;
+    } catch (err) {
+      console.error(`Scrape error on thread ${thread.id} (${thread.name}):`, err.message);
+      results.push({ thread, outcome: 'errored', summary: err.message });
+      stats.errored++;
+    }
+    await maybeUpdateProgress();
+  }
+
+  // --- Final summary ---
+  const summaryEmbed = new EmbedBuilder()
+    .setTitle('Feedback Scrape Complete')
+    .setColor(stats.errored > 0 ? 0xffa500 : 0x2ecc71)
+    .setDescription(`Processed **${stats.total}** posts from **#${forumChannel.name}**`)
+    .addFields(
+      { name: 'New Issues Created', value: `${stats.created}`, inline: true },
+      { name: 'Merged into Existing', value: `${stats.merged}`, inline: true },
+      { name: 'Context Updated', value: `${stats.updated}`, inline: true },
+      { name: 'Skipped (empty)', value: `${stats.skipped}`, inline: true },
+      { name: 'Errors', value: `${stats.errored}`, inline: true },
+    )
+    .setTimestamp();
+
+  // Add breakdown of created/merged issues (up to 15)
+  const noteworthy = results.filter(r => r.outcome === 'created' || r.outcome === 'merged');
+  if (noteworthy.length > 0) {
+    const lines = noteworthy.slice(0, 15).map(r => {
+      const icon = r.outcome === 'created' ? '🆕' : '🔀';
+      const id = r.issueId ? ` \`${r.issueId}\`` : '';
+      return `${icon} **${r.thread.name.slice(0, 40)}**${id} — ${(r.summary || 'No summary').slice(0, 80)}`;
+    });
+    if (noteworthy.length > 15) lines.push(`_...and ${noteworthy.length - 15} more_`);
+    summaryEmbed.addFields({ name: 'Issue Breakdown', value: lines.join('\n').slice(0, 1024) });
+  }
+
+  // Show errored threads if any
+  const errored = results.filter(r => r.outcome === 'errored');
+  if (errored.length > 0) {
+    const lines = errored.slice(0, 10).map(r =>
+      `**${r.thread.name.slice(0, 30)}** — ${(r.summary || 'Unknown error').slice(0, 60)}`
+    );
+    summaryEmbed.addFields({ name: 'Errors', value: lines.join('\n').slice(0, 1024) });
+  }
+
+  await interaction.editReply({ embeds: [summaryEmbed] });
+}
+
+/**
+ * Process a single forum thread — classify, deduplicate, create or merge.
+ * Returns { outcome: 'created'|'merged'|'updated'|'skipped', issueId?, summary? }
+ */
+async function processOneThread(guild, thread, forumChannel) {
+  // Scrape messages
+  const { messages, starterMessage, reporters } = await scrapeThread(thread);
+
+  if (!starterMessage || (!starterMessage.content?.trim() && messages.length === 0)) {
+    return { outcome: 'skipped', summary: 'Empty thread' };
+  }
+
+  const threadTitle = thread.name;
+  const fullText = buildFullText(threadTitle, starterMessage, messages);
+
+  // Skip very short content (likely noise)
+  if (fullText.length < 20) {
+    return { outcome: 'skipped', summary: 'Too short' };
+  }
+
+  // Resolve forum tags
+  const availableTags = forumChannel.availableTags || [];
+  const forumTags = (thread.appliedTags || []).map(tagId => {
+    const tag = availableTags.find(t => t.id === tagId);
+    return tag?.name || 'unknown';
+  });
+
+  // Check if already linked to an issue
+  const existingLinked = await firestore.getIssueByThreadId(thread.id);
+  if (existingLinked) {
+    // Update context and reporters on the existing issue
+    let reporterCount = (existingLinked.reporterIds || []).length;
+    for (const r of reporters) {
+      const result = await firestore.addReporter(existingLinked.id, r.id, r.name);
+      if (result) reporterCount = (result.reporterIds || []).length;
+    }
+
+    const existingContextCount = (existingLinked.threadContext || []).length;
+    const humanMessages = messages.filter(m => !m.author.bot && m.content?.trim());
+    const newMessages = humanMessages.slice(existingContextCount);
+    for (const msg of newMessages) {
+      await firestore.appendThreadContext(existingLinked.id, `${msg.author.username}: ${msg.content.trim()}`);
+    }
+
+    const updatedIssue = await firestore.getIssueById(existingLinked.id);
+    await refreshTriageEmbed(guild, updatedIssue, existingLinked.id, reporterCount);
+
+    return { outcome: 'updated', issueId: existingLinked.id, summary: existingLinked.summary };
+  }
+
+  // AI classify
+  const classification = await classifyIssue(fullText);
+
+  // Duplicate check
+  let duplicateMatch = null;
+  try {
+    const openIssues = await firestore.getOpenIssues(100);
+    duplicateMatch = findDuplicate(classification.summary, fullText, openIssues);
+  } catch (err) {
+    console.error('Duplicate detection failed during scrape:', err.message);
+  }
+
+  if (duplicateMatch) {
+    // Merge into existing issue
+    const existing = duplicateMatch.issue;
+
+    let reporterCount = (existing.reporterIds || []).length;
+    for (const r of reporters) {
+      const result = await firestore.addReporter(existing.id, r.id, r.name);
+      if (result) reporterCount = (result.reporterIds || []).length;
+    }
+
+    const humanMessages = messages.filter(m => !m.author.bot && m.content?.trim());
+    const contextSummary = humanMessages.map(m => `${m.author.username}: ${m.content.trim()}`).join('\n');
+    if (contextSummary) {
+      await firestore.appendThreadContext(
+        existing.id,
+        `[Scraped from "${threadTitle}" — ${reporters.length} reporter${reporters.length !== 1 ? 's' : ''}]: ${contextSummary.slice(0, 1500)}`
+      );
+    }
+
+    await firestore.updateIssueThreadId(existing.id, thread.id);
+
+    const updatedIssue = await firestore.getIssueById(existing.id);
+    await refreshTriageEmbed(guild, updatedIssue, existing.id, reporterCount);
+
+    return {
+      outcome: 'merged',
+      issueId: existing.id,
+      summary: `${Math.round(duplicateMatch.score * 100)}% match → ${(existing.summary || 'Untitled').slice(0, 60)}`,
+    };
+  }
+
+  // New issue
+  const attachments = [];
+  for (const msg of [starterMessage, ...messages]) {
+    for (const att of msg.attachments.values()) {
+      attachments.push({
+        url: att.url,
+        name: att.name,
+        contentType: att.contentType,
+        size: att.size,
+        isImage: att.contentType?.startsWith('image/') || false,
+      });
+    }
+  }
+
+  const reporterList = reporters.map(r => ({
+    id: r.id,
+    name: r.name,
+    addedAt: new Date().toISOString(),
+  }));
+
+  const issueData = {
+    source: 'feedback-scrape',
+    threadId: thread.id,
+    channelId: thread.parentId,
+    guildId: guild.id,
+    messageId: starterMessage.id,
+    reporterId: thread.ownerId,
+    reporterName: reporters[0]?.name || 'unknown',
+    reporterIds: reporterList,
+    text: fullText,
+    forumTags,
+    priority: classification.priority,
+    category: classification.category,
+    summary: classification.summary,
+    reasoning: classification.reasoning,
+    attachments: attachments.length > 0 ? attachments : null,
+  };
+
+  if (classification.raw) issueData.rawAiResponse = classification.raw;
+
+  const humanMessages = messages.filter(m => !m.author.bot && m.content?.trim());
+  if (humanMessages.length > 0) {
+    issueData.threadContext = humanMessages.map(m => ({
+      text: `${m.author.username}: ${m.content.trim()}`,
+      addedAt: m.createdAt.toISOString(),
+    }));
+  }
+
+  const issueId = await firestore.saveIssue(issueData);
+
+  const savedIssue = await firestore.getIssueById(issueId);
+  const triageMessageId = await postIssueEmbed(guild, savedIssue, issueId);
+  if (triageMessageId) {
+    await firestore.updateIssueTriageMessageId(issueId, triageMessageId);
+  }
+
+  return { outcome: 'created', issueId, summary: classification.summary };
+}
+
+function buildProgressBar(pct) {
+  const filled = Math.round(pct / 5);
+  const empty = 20 - filled;
+  return '`' + '█'.repeat(filled) + '░'.repeat(empty) + '`';
 }
 
 /**

@@ -5,6 +5,7 @@ const CHANGELOG = [
     version: '2.3.0',
     date: '2026-03-25',
     changes: [
+      'Added `/feedback-triage scrape` — bulk-scrape every post in a feedback forum, classify with AI, deduplicate, and create/merge issues automatically with a live progress bar',
       'Added `/feedback-triage run` — run inside any #feedback forum post to smart-triage it into an issue',
       'Added `/feedback-triage merge <issue>` — manually merge a forum post into an existing issue when AI misses the duplicate',
       'Merge transfers reporters, context, and attachments to the target issue and links the thread for auto-tracking',
