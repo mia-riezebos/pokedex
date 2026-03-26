@@ -233,7 +233,7 @@ client.on('interactionCreate', async (interaction) => {
 
   // --- Autocomplete interactions ---
   if (interaction.isAutocomplete()) {
-    const commands = { issue: issueCommand, merge: mergeCommand, warn: warnCommand, suggest: suggestCommand, giveaway: giveawayCommand, 'feedback-triage': feedbackTriageCommand };
+    const commands = { issue: issueCommand, merge: mergeCommand, warn: warnCommand, suggest: suggestCommand, giveaway: giveawayCommand, 'feedback-triage': feedbackTriageCommand, recipes: recipesCommand };
     const command = commands[interaction.commandName];
     if (command?.autocomplete) {
       try {
