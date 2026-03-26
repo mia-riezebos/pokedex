@@ -316,22 +316,36 @@ async function executeScrape(interaction) {
   // Sort by creation date (oldest first) so duplicate detection builds up naturally
   threads.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
 
+  // --- Filter out already-scraped threads ---
+  // Pre-fetch all issues that have a threadId to know which posts are already linked
+  const openIssues = await firestore.getOpenIssues(500);
+  const allIssues = await firestore.getAllIssues(500);
+  const scrapedThreadIds = new Set(
+    allIssues.filter(i => i.threadId).map(i => i.threadId)
+  );
+
+  const newThreads = threads.filter(t => !scrapedThreadIds.has(t.id));
+  const alreadyScrapedCount = threads.length - newThreads.length;
+
   // Cap to limit
-  const toProcess = threads.slice(0, maxPosts);
+  const toProcess = newThreads.slice(0, maxPosts);
 
   // --- Progress embed ---
-  const stats = { created: 0, merged: 0, updated: 0, skipped: 0, errored: 0, total: toProcess.length };
+  const stats = { created: 0, merged: 0, updated: 0, skipped: 0, alreadyScraped: alreadyScrapedCount, errored: 0, total: toProcess.length };
   const results = []; // { thread, outcome, issueId, summary }
 
   const progressEmbed = () => {
     const processed = stats.created + stats.merged + stats.updated + stats.skipped + stats.errored;
-    const pct = Math.round((processed / stats.total) * 100);
+    const pct = stats.total > 0 ? Math.round((processed / stats.total) * 100) : 100;
     const bar = buildProgressBar(pct);
 
     return new EmbedBuilder()
       .setTitle('Scraping Feedback Forum...')
       .setColor(0x5865f2)
-      .setDescription(`Processing **${forumChannel.name}** — ${processed}/${stats.total} posts\n${bar} ${pct}%`)
+      .setDescription(
+        `Processing **${forumChannel.name}** — ${processed}/${stats.total} new posts\n${bar} ${pct}%` +
+        (stats.alreadyScraped > 0 ? `\n_${stats.alreadyScraped} already-scraped post${stats.alreadyScraped !== 1 ? 's' : ''} skipped_` : '')
+      )
       .addFields(
         { name: 'New Issues', value: `${stats.created}`, inline: true },
         { name: 'Merged', value: `${stats.merged}`, inline: true },
@@ -371,14 +385,18 @@ async function executeScrape(interaction) {
   }
 
   // --- Final summary ---
+  const totalInForum = stats.total + stats.alreadyScraped;
   const summaryEmbed = new EmbedBuilder()
     .setTitle('Feedback Scrape Complete')
     .setColor(stats.errored > 0 ? 0xffa500 : 0x2ecc71)
-    .setDescription(`Processed **${stats.total}** posts from **#${forumChannel.name}**`)
+    .setDescription(
+      `Processed **${stats.total}** new posts from **#${forumChannel.name}**` +
+      (stats.alreadyScraped > 0 ? ` (${stats.alreadyScraped} already scraped)` : '')
+    )
     .addFields(
       { name: 'New Issues Created', value: `${stats.created}`, inline: true },
       { name: 'Merged into Existing', value: `${stats.merged}`, inline: true },
-      { name: 'Context Updated', value: `${stats.updated}`, inline: true },
+      { name: 'Already Scraped', value: `${stats.alreadyScraped}`, inline: true },
       { name: 'Skipped (empty)', value: `${stats.skipped}`, inline: true },
       { name: 'Errors', value: `${stats.errored}`, inline: true },
     )
