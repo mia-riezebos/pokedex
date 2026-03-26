@@ -265,29 +265,43 @@ async function getForumIssues(limit = 500) {
 // --- Recipes ---
 
 async function saveRecipe(recipeData) {
+  const crypto = require('crypto');
   const db = admin.firestore();
-  // Deduplicate by URL
-  const existing = await db.collection('recipes')
-    .where('url', '==', recipeData.url)
-    .limit(1)
-    .get();
-  if (!existing.empty) {
-    // Update existing recipe with new sharer
-    const doc = existing.docs[0];
-    await doc.ref.update({
-      sharedBy: admin.firestore.FieldValue.arrayUnion(...(recipeData.sharedBy || [])),
-      shareCount: admin.firestore.FieldValue.increment(1),
+  // Use a deterministic doc ID based on normalized URL to prevent race conditions
+  const normalizedUrl = recipeData.url.trim().toLowerCase().replace(/\/+$/, '');
+  const docId = crypto.createHash('sha256').update(normalizedUrl).digest('hex').slice(0, 20);
+  const docRef = db.collection('recipes').doc(docId);
+
+  try {
+    // Try to create — fails atomically if doc already exists
+    await docRef.create({
+      ...recipeData,
+      shareCount: 1,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
-    return { id: doc.id, updated: true };
+    return { id: docId, updated: false };
+  } catch (err) {
+    if (err.code === 6) { // ALREADY_EXISTS
+      // Update existing recipe with new sharer using a transaction
+      // to only increment shareCount when a new sharer is actually added
+      await db.runTransaction(async (txn) => {
+        const doc = await txn.get(docRef);
+        if (!doc.exists) return;
+        const data = doc.data();
+        const existingSharerIds = (data.sharedBy || []).map(s => s.id);
+        const newSharers = (recipeData.sharedBy || []).filter(s => !existingSharerIds.includes(s.id));
+        const updates = { updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+        if (newSharers.length > 0) {
+          updates.sharedBy = admin.firestore.FieldValue.arrayUnion(...newSharers);
+          updates.shareCount = admin.firestore.FieldValue.increment(newSharers.length);
+        }
+        txn.update(docRef, updates);
+      });
+      return { id: docId, updated: true };
+    }
+    throw err;
   }
-  const ref = await db.collection('recipes').add({
-    ...recipeData,
-    shareCount: 1,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
-  return { id: ref.id, updated: false };
 }
 
 async function getAllRecipes(limit = 200) {

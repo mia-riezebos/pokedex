@@ -66,6 +66,40 @@ function rateLimit(req, res, next) {
 // Serve static frontend
 app.use(express.static(path.join(__dirname, 'public')));
 
+// API: Get all recipes (public — no auth required, rate limited)
+app.get('/api/recipes', rateLimit, async (req, res) => {
+  try {
+    const { tag, source, limit: limitParam, search } = req.query;
+    const safeLimit = Math.min(Math.max(parseInt(limitParam) || 200, 1), 500);
+    let recipes = await firestore.getApprovedRecipes(safeLimit);
+
+    // Note: In-memory filtering is limited to the top N recipes by shareCount.
+    // If the collection exceeds safeLimit, filtered results may be incomplete.
+    if (tag) recipes = recipes.filter(r => (r.tags || []).includes(tag.toLowerCase()));
+    if (source) recipes = recipes.filter(r => (r.source || '').toLowerCase() === source.toLowerCase());
+    if (search) {
+      const q = search.toLowerCase();
+      recipes = recipes.filter(r =>
+        (r.title || '').toLowerCase().includes(q) ||
+        (r.description || '').toLowerCase().includes(q) ||
+        (r.tags || []).some(t => t.includes(q))
+      );
+    }
+
+    // Convert Firestore timestamps
+    recipes = recipes.map(r => ({
+      ...r,
+      createdAt: r.createdAt?.toDate?.()?.toISOString() || null,
+      updatedAt: r.updatedAt?.toDate?.()?.toISOString() || null,
+    }));
+
+    res.json({ recipes, total: recipes.length });
+  } catch (err) {
+    console.error('Recipes API error:', err);
+    res.status(500).json({ error: 'Failed to fetch recipes' });
+  }
+});
+
 // Apply auth and rate limiting to all API routes
 app.use('/api', rateLimit, apiAuth);
 
@@ -124,38 +158,6 @@ app.get('/api/issues/:id', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: 'Failed to fetch issue' });
-  }
-});
-
-// API: Get all recipes (public — no auth required)
-app.get('/api/recipes', rateLimit, async (req, res) => {
-  try {
-    const { tag, source, limit: limitParam, search } = req.query;
-    const safeLimit = Math.min(Math.max(parseInt(limitParam) || 200, 1), 500);
-    let recipes = await firestore.getApprovedRecipes(safeLimit);
-
-    if (tag) recipes = recipes.filter(r => (r.tags || []).includes(tag.toLowerCase()));
-    if (source) recipes = recipes.filter(r => (r.source || '').toLowerCase() === source.toLowerCase());
-    if (search) {
-      const q = search.toLowerCase();
-      recipes = recipes.filter(r =>
-        (r.title || '').toLowerCase().includes(q) ||
-        (r.description || '').toLowerCase().includes(q) ||
-        (r.tags || []).some(t => t.includes(q))
-      );
-    }
-
-    // Convert Firestore timestamps
-    recipes = recipes.map(r => ({
-      ...r,
-      createdAt: r.createdAt?.toDate?.()?.toISOString() || null,
-      updatedAt: r.updatedAt?.toDate?.()?.toISOString() || null,
-    }));
-
-    res.json({ recipes, total: recipes.length });
-  } catch (err) {
-    console.error('Recipes API error:', err);
-    res.status(500).json({ error: 'Failed to fetch recipes' });
   }
 });
 
