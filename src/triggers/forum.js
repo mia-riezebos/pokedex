@@ -1,9 +1,11 @@
-const { ChannelType } = require('discord.js');
+const { ChannelType, EmbedBuilder } = require('discord.js');
+const admin = require('firebase-admin');
 const { getConfig } = require('../config/config');
 const { classifyIssue } = require('../services/openrouter');
 const firestore = require('../services/firestore');
-const { postIssueEmbed } = require('../services/triage');
+const { postIssueEmbed, buildIssueEmbed } = require('../services/triage');
 const { evaluateContext, buildConversationHistory } = require('../services/contextEvaluator');
+const { findDuplicate, findDuplicateAI } = require('../services/duplicates');
 
 const STARTER_MSG_RETRIES = 3;
 const STARTER_MSG_DELAY_MS = 2000;
@@ -84,6 +86,88 @@ async function handleForumPost(thread) {
 
   const classificationInput = `${thread.name}\n\n${text}`;
   const classification = await classifyIssue(classificationInput);
+
+  // --- Duplicate detection: check if this matches an existing open issue ---
+  try {
+    const openIssues = await firestore.getOpenIssues(100);
+    // Exclude the placeholder we just created
+    const otherIssues = openIssues.filter(i => i.id !== issueId);
+
+    // Try Jaccard first (fast), then AI (accurate)
+    let duplicateMatch = findDuplicate(classification.summary, text, otherIssues);
+    if (!duplicateMatch) {
+      duplicateMatch = await findDuplicateAI(classification.summary, classification.category, otherIssues);
+    }
+
+    if (duplicateMatch) {
+      const existing = duplicateMatch.issue;
+      const similarity = Math.round(duplicateMatch.score * 100);
+
+      // Merge into existing issue: add reporter, append context
+      await firestore.addReporter(existing.id, thread.ownerId, reporterName);
+      await firestore.appendThreadContext(
+        existing.id,
+        `[New feedback post "${thread.name}" by ${reporterName}]: ${text.slice(0, 1500)}`
+      );
+      await firestore.updateIssueThreadId(existing.id, thread.id);
+
+      // Delete the placeholder issue we created
+      const db = admin.firestore();
+      await db.collection('issues').doc(issueId).delete();
+
+      // Refresh the triage embed on the existing issue
+      const updatedIssue = await firestore.getIssueById(existing.id);
+      const reporterCount = (updatedIssue.reporterIds || []).length;
+      const triageChannelName = getConfig('triage_channel') || 'eng-triage';
+      if (updatedIssue.triageMessageId) {
+        const triageChannel = guild.channels.cache.find(
+          ch => ch.name === triageChannelName && ch.isTextBased()
+        );
+        if (triageChannel) {
+          try {
+            const triageMsg = await triageChannel.messages.fetch(updatedIssue.triageMessageId);
+            const embed = buildIssueEmbed(updatedIssue, existing.id);
+            embed.addFields({
+              name: 'Affected Users',
+              value: `**${reporterCount}** unique reporter${reporterCount !== 1 ? 's' : ''}`,
+              inline: true,
+            });
+            embed.setTimestamp();
+            await triageMsg.edit({ embeds: [embed] });
+          } catch { /* triage message may be deleted */ }
+        }
+      }
+
+      // Notify in the thread that this was merged
+      const mergeEmbed = new EmbedBuilder()
+        .setColor(0xffa500)
+        .setTitle('Linked to Existing Issue')
+        .setDescription(
+          `This feedback matches an existing issue. I've added your report as additional context.\n\n` +
+          `Future messages here will automatically update the issue.`
+        )
+        .addFields(
+          { name: 'Existing Issue', value: existing.summary || 'No summary', inline: false },
+          { name: 'Match', value: `${similarity}%`, inline: true },
+          { name: 'Priority', value: existing.priority || 'unclassified', inline: true },
+          { name: 'Reporters', value: `**${reporterCount}**`, inline: true },
+        )
+        .setFooter({ text: `Issue ID: ${existing.id}` })
+        .setTimestamp();
+
+      await thread.send({ embeds: [mergeEmbed] });
+
+      // Still ask for context on the existing issue
+      const history = buildConversationHistory([starterMessage]);
+      const evaluation = await evaluateContext(updatedIssue, history);
+      if (evaluation.shouldReply && evaluation.reply) {
+        await thread.send(evaluation.reply);
+      }
+      return;
+    }
+  } catch (err) {
+    console.error('Forum duplicate detection failed, proceeding with new issue:', err.message);
+  }
 
   // Collect attachments from starter message
   const attachments = [...starterMessage.attachments.values()].map(a => ({
