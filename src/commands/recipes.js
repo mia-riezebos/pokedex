@@ -1,6 +1,6 @@
-const { SlashCommandBuilder, EmbedBuilder, ChannelType, PermissionFlagsBits } = require('discord.js');
+const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionFlagsBits } = require('discord.js');
 const firestore = require('../services/firestore');
-const { classifyRecipe } = require('../services/openrouter');
+const { getConfig } = require('../config/config');
 
 // URL regex — matches http/https links
 const URL_REGEX = /https?:\/\/[^\s<>"')\]]+/gi;
@@ -10,7 +10,7 @@ const commandData = new SlashCommandBuilder()
   .setDescription('Community recipe collection from #show-and-tell')
   .addSubcommand(sub =>
     sub.setName('scrape')
-      .setDescription('Scrape #show-and-tell for recipe links and add them to the community recipe page')
+      .setDescription('Scrape #show-and-tell for recipe links — sends each for approval before publishing')
       .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
       .addChannelOption(opt =>
         opt.setName('channel')
@@ -25,10 +25,10 @@ const commandData = new SlashCommandBuilder()
           .setRequired(false)))
   .addSubcommand(sub =>
     sub.setName('list')
-      .setDescription('Show the latest community recipes'))
+      .setDescription('Show the latest approved community recipes'))
   .addSubcommand(sub =>
     sub.setName('add')
-      .setDescription('Manually add a recipe link')
+      .setDescription('Submit a recipe link for approval')
       .addStringOption(opt =>
         opt.setName('url')
           .setDescription('The recipe URL')
@@ -40,13 +40,17 @@ const commandData = new SlashCommandBuilder()
       .addStringOption(opt =>
         opt.setName('tags')
           .setDescription('Comma-separated tags (e.g. "competitive, rain team, ou")')
-          .setRequired(false)));
+          .setRequired(false)))
+  .addSubcommand(sub =>
+    sub.setName('pending')
+      .setDescription('Show recipes waiting for approval'));
 
 async function execute(interaction) {
   const sub = interaction.options.getSubcommand();
   if (sub === 'scrape') return executeScrape(interaction);
   if (sub === 'list') return executeList(interaction);
   if (sub === 'add') return executeAdd(interaction);
+  if (sub === 'pending') return executePending(interaction);
   return interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
 }
 
@@ -65,11 +69,19 @@ async function executeScrape(interaction) {
     });
   }
 
+  // Find the approval channel
+  const approvalChannel = findApprovalChannel(interaction.guild);
+  if (!approvalChannel) {
+    return interaction.reply({
+      content: 'Could not find a recipe approval channel. Set one with `/config set recipe_approval_channel <channel-name>` or create a #recipe-approval channel.',
+      ephemeral: true,
+    });
+  }
+
   await interaction.deferReply();
 
   const maxMessages = interaction.options.getInteger('limit') || 100;
-  const stats = { found: 0, new: 0, updated: 0, noLinks: 0, errored: 0 };
-  const recipes = [];
+  const stats = { found: 0, pending: 0, duplicate: 0, noLinks: 0, errored: 0 };
 
   if (channel.type === ChannelType.GuildForum) {
     // Forum channel — scrape each thread
@@ -92,7 +104,6 @@ async function executeScrape(interaction) {
     threads.sort((a, b) => b.createdTimestamp - a.createdTimestamp);
     const toScan = threads.slice(0, maxMessages);
 
-    // Progress
     const progressEmbed = (processed) => new EmbedBuilder()
       .setTitle('Scraping Recipes...')
       .setColor(0xf0c840)
@@ -106,12 +117,24 @@ async function executeScrape(interaction) {
       try {
         const result = await scrapeThreadForRecipes(thread, channel);
         stats.found += result.links.length;
+
         for (const recipe of result.links) {
+          // Check if this URL already exists in any status
+          const existing = await firestore.getRecipeByUrl(recipe.url);
+          if (existing) {
+            stats.duplicate++;
+            continue;
+          }
+
+          // Save as pending
+          recipe.status = 'pending';
           const saved = await firestore.saveRecipe(recipe);
-          if (saved.updated) stats.updated++;
-          else stats.new++;
-          recipes.push({ ...recipe, id: saved.id });
+          stats.pending++;
+
+          // Post approval embed
+          await postApprovalEmbed(approvalChannel, recipe, saved.id);
         }
+
         if (result.links.length === 0) stats.noLinks++;
       } catch (err) {
         console.error(`Recipe scrape error (${thread.name}):`, err.message);
@@ -142,11 +165,18 @@ async function executeScrape(interaction) {
         stats.found += links.length;
 
         for (const url of links) {
+          // Check if already exists
+          const existing = await firestore.getRecipeByUrl(url);
+          if (existing) {
+            stats.duplicate++;
+            continue;
+          }
+
           const recipe = {
             url,
             title: extractTitleFromMessage(msg.content, url),
             description: cleanDescription(msg.content, url),
-            referCode: getRecipeCode(url),
+            referCode: getPokeCode(url),
             sharedBy: [{ id: msg.author.id, name: msg.author.username, sharedAt: msg.createdAt.toISOString() }],
             channelId: channel.id,
             channelName: channel.name,
@@ -154,11 +184,13 @@ async function executeScrape(interaction) {
             messageId: msg.id,
             source: inferSource(url),
             tags: extractTags(msg.content),
+            status: 'pending',
           };
+
           const saved = await firestore.saveRecipe(recipe);
-          if (saved.updated) stats.updated++;
-          else stats.new++;
-          recipes.push({ ...recipe, id: saved.id });
+          stats.pending++;
+
+          await postApprovalEmbed(approvalChannel, recipe, saved.id);
         }
 
         if (links.length === 0) stats.noLinks++;
@@ -173,30 +205,21 @@ async function executeScrape(interaction) {
   }
 
   // Final summary
-  const dashboardUrl = process.env.DASHBOARD_URL || 'http://localhost:3000';
   const embed = new EmbedBuilder()
     .setTitle('Recipe Scrape Complete')
     .setColor(stats.errored > 0 ? 0xffa500 : 0x2ecc71)
-    .setDescription(`Scraped **#${channel.name}** for recipe links`)
+    .setDescription(
+      `Scraped **#${channel.name}** for recipe links.\n\n` +
+      `All new recipes have been sent to ${approvalChannel} for review.`
+    )
     .addFields(
       { name: 'Links Found', value: `${stats.found}`, inline: true },
-      { name: 'New Recipes', value: `${stats.new}`, inline: true },
-      { name: 'Updated', value: `${stats.updated}`, inline: true },
+      { name: 'Sent for Approval', value: `${stats.pending}`, inline: true },
+      { name: 'Already Exists', value: `${stats.duplicate}`, inline: true },
       { name: 'No Links', value: `${stats.noLinks}`, inline: true },
       { name: 'Errors', value: `${stats.errored}`, inline: true },
-      { name: 'Recipe Page', value: `[View all recipes](${dashboardUrl}/recipes)` },
     )
     .setTimestamp();
-
-  // Show latest added (up to 10)
-  const latest = recipes.slice(0, 10);
-  if (latest.length > 0) {
-    const lines = latest.map(r => {
-      const src = r.source ? ` \`${r.source}\`` : '';
-      return `• [${(r.title || 'Untitled').slice(0, 50)}](${r.url})${src} — by ${r.sharedBy?.[0]?.name || 'unknown'}`;
-    });
-    embed.addFields({ name: 'Latest Recipes', value: lines.join('\n').slice(0, 1024) });
-  }
 
   return interaction.editReply({ embeds: [embed] });
 }
@@ -206,9 +229,9 @@ async function executeScrape(interaction) {
 async function executeList(interaction) {
   await interaction.deferReply({ ephemeral: true });
 
-  const recipes = await firestore.getAllRecipes(25);
+  const recipes = await firestore.getApprovedRecipes(25);
   if (recipes.length === 0) {
-    return interaction.editReply('No recipes found yet! Use `/recipes scrape` to import from #show-and-tell.');
+    return interaction.editReply('No approved recipes yet! Use `/recipes scrape` to import from #show-and-tell, then approve them.');
   }
 
   const dashboardUrl = process.env.DASHBOARD_URL || 'http://localhost:3000';
@@ -223,7 +246,7 @@ async function executeList(interaction) {
     .setColor(0xf0c840)
     .setDescription(lines.join('\n'))
     .addFields({ name: 'Full Collection', value: `[View all recipes on the web](${dashboardUrl}/recipes)` })
-    .setFooter({ text: `${recipes.length} total recipes` })
+    .setFooter({ text: `${recipes.length} approved recipes` })
     .setTimestamp();
 
   return interaction.editReply({ embeds: [embed] });
@@ -240,13 +263,31 @@ async function executeAdd(interaction) {
     return interaction.reply({ content: 'That doesn\'t look like a valid URL.', ephemeral: true });
   }
 
+  // Check if already exists
+  const existing = await firestore.getRecipeByUrl(url);
+  if (existing) {
+    const status = existing.status || 'approved';
+    return interaction.reply({
+      content: `This recipe already exists (status: **${status}**).`,
+      ephemeral: true,
+    });
+  }
+
+  const approvalChannel = findApprovalChannel(interaction.guild);
+  if (!approvalChannel) {
+    return interaction.reply({
+      content: 'Could not find a recipe approval channel. Set one with `/config set recipe_approval_channel <channel-name>`.',
+      ephemeral: true,
+    });
+  }
+
   await interaction.deferReply();
 
   const recipe = {
     url,
-    title: title || extractTitleFromUrl(url),
+    title: title || await fetchPageTitle(url) || extractTitleFromUrl(url),
     description: null,
-    referCode: getRecipeCode(url),
+    referCode: getPokeCode(url),
     sharedBy: [{ id: interaction.user.id, name: interaction.user.username, sharedAt: new Date().toISOString() }],
     channelId: interaction.channel?.id || null,
     channelName: interaction.channel?.name || null,
@@ -254,17 +295,22 @@ async function executeAdd(interaction) {
     messageId: null,
     source: inferSource(url),
     tags: tagsRaw ? tagsRaw.split(',').map(t => t.trim().toLowerCase()).filter(Boolean) : [],
+    status: 'pending',
   };
 
   const saved = await firestore.saveRecipe(recipe);
+  await postApprovalEmbed(approvalChannel, recipe, saved.id);
 
   const embed = new EmbedBuilder()
-    .setTitle(saved.updated ? 'Recipe Updated' : 'Recipe Added')
-    .setColor(saved.updated ? 0xffa500 : 0x2ecc71)
-    .setDescription(`[${recipe.title || url}](${url})`)
+    .setTitle('Recipe Submitted for Approval')
+    .setColor(0xf0c840)
+    .setDescription(
+      `[${recipe.title || url}](${url})\n\n` +
+      `Your recipe has been sent to ${approvalChannel} for review. It will appear on the recipe page once approved.`
+    )
     .addFields(
       { name: 'Source', value: recipe.source || 'Unknown', inline: true },
-      { name: 'Added By', value: interaction.user.username, inline: true },
+      { name: 'Submitted By', value: interaction.user.username, inline: true },
     )
     .setTimestamp();
 
@@ -275,7 +321,147 @@ async function executeAdd(interaction) {
   return interaction.editReply({ embeds: [embed] });
 }
 
+// --- PENDING ---
+
+async function executePending(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+
+  const recipes = await firestore.getPendingRecipes(25);
+  if (recipes.length === 0) {
+    return interaction.editReply('No recipes pending approval.');
+  }
+
+  const lines = recipes.map((r, i) => {
+    const src = r.source ? ` \`${r.source}\`` : '';
+    const by = r.sharedBy?.[0]?.name || 'unknown';
+    return `**${i + 1}.** [${(r.title || 'Untitled').slice(0, 50)}](${r.url})${src} — by ${by}`;
+  });
+
+  const embed = new EmbedBuilder()
+    .setTitle('Pending Recipe Approvals')
+    .setColor(0xffa500)
+    .setDescription(lines.join('\n'))
+    .setFooter({ text: `${recipes.length} pending` })
+    .setTimestamp();
+
+  return interaction.editReply({ embeds: [embed] });
+}
+
+// --- Approval embed with buttons ---
+
+async function postApprovalEmbed(channel, recipe, recipeId) {
+  const code = recipe.referCode ? `\nCode: \`${recipe.referCode}\`` : '';
+  const tags = (recipe.tags || []).length > 0
+    ? `\nTags: ${recipe.tags.map(t => `\`${t}\``).join(' ')}`
+    : '';
+  const sharer = recipe.sharedBy?.[0]?.name || 'unknown';
+
+  const embed = new EmbedBuilder()
+    .setTitle('New Recipe — Awaiting Approval')
+    .setColor(0xf0c840)
+    .setDescription(
+      `**[${(recipe.title || 'Untitled Recipe').slice(0, 100)}](${recipe.url})**\n` +
+      `Source: **${recipe.source || 'Unknown'}**${code}${tags}\n` +
+      `Shared by: **${sharer}**`
+    )
+    .addFields(
+      { name: 'URL', value: recipe.url.slice(0, 200) },
+    )
+    .setFooter({ text: `Recipe ID: ${recipeId}` })
+    .setTimestamp();
+
+  if (recipe.description) {
+    embed.addFields({ name: 'Description', value: recipe.description.slice(0, 200) });
+  }
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`recipe_approve_${recipeId}`)
+      .setLabel('Approve')
+      .setStyle(ButtonStyle.Success)
+      .setEmoji('✅'),
+    new ButtonBuilder()
+      .setCustomId(`recipe_decline_${recipeId}`)
+      .setLabel('Decline')
+      .setStyle(ButtonStyle.Danger)
+      .setEmoji('❌'),
+  );
+
+  try {
+    await channel.send({ embeds: [embed], components: [row] });
+  } catch (err) {
+    console.error('Failed to post recipe approval embed:', err.message);
+  }
+}
+
+/**
+ * Handle recipe approval/decline button clicks.
+ * Called from index.js button handler.
+ */
+async function handleRecipeButton(interaction) {
+  const { customId } = interaction;
+  const isApprove = customId.startsWith('recipe_approve_');
+  const recipeId = customId.replace('recipe_approve_', '').replace('recipe_decline_', '');
+
+  const recipe = await firestore.getRecipeById(recipeId);
+  if (!recipe) {
+    return interaction.reply({ content: 'Recipe not found.', ephemeral: true });
+  }
+
+  if (recipe.status !== 'pending') {
+    return interaction.reply({ content: `This recipe has already been **${recipe.status}**.`, ephemeral: true });
+  }
+
+  const newStatus = isApprove ? 'approved' : 'declined';
+  await firestore.updateRecipeStatus(recipeId, newStatus, interaction.user.id, interaction.user.username);
+
+  // Update the embed
+  const embed = EmbedBuilder.from(interaction.message.embeds[0]);
+
+  if (isApprove) {
+    embed.setTitle('✅ Recipe Approved');
+    embed.setColor(0x2ecc71);
+    embed.addFields({
+      name: 'Approved By',
+      value: `${interaction.user.username} — <t:${Math.floor(Date.now() / 1000)}:R>`,
+    });
+  } else {
+    embed.setTitle('❌ Recipe Declined');
+    embed.setColor(0xf43f5e);
+    embed.addFields({
+      name: 'Declined By',
+      value: `${interaction.user.username} — <t:${Math.floor(Date.now() / 1000)}:R>`,
+    });
+  }
+
+  // Disable buttons
+  const disabledRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`recipe_approve_${recipeId}`)
+      .setLabel('Approve')
+      .setStyle(ButtonStyle.Success)
+      .setEmoji('✅')
+      .setDisabled(true),
+    new ButtonBuilder()
+      .setCustomId(`recipe_decline_${recipeId}`)
+      .setLabel('Decline')
+      .setStyle(ButtonStyle.Danger)
+      .setEmoji('❌')
+      .setDisabled(true),
+  );
+
+  await interaction.update({ embeds: [embed], components: [disabledRow] });
+}
+
 // --- Helpers ---
+
+function findApprovalChannel(guild) {
+  const configName = getConfig('recipe_approval_channel') || 'recipe-approval';
+  return guild.channels.cache.find(ch =>
+    ch.isTextBased() && !ch.isThread() &&
+    (ch.name === configName || ch.name.toLowerCase().includes(configName.toLowerCase()))
+  );
+}
 
 async function scrapeThreadForRecipes(thread, forumChannel) {
   const links = [];
@@ -292,7 +478,6 @@ async function scrapeThreadForRecipes(thread, forumChannel) {
 
   allMessages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
 
-  // Also check thread title + starter message
   let starterMessage = null;
   try { starterMessage = await thread.fetchStarterMessage(); } catch {}
   if (starterMessage) allMessages.unshift(starterMessage);
@@ -316,11 +501,18 @@ async function scrapeThreadForRecipes(thread, forumChannel) {
     if (msg.author.bot) continue;
     const urls = extractLinks(msg.content);
     for (const url of urls) {
+      // Try to scrape page title for poke.com links
+      let title = thread.name || extractTitleFromMessage(msg.content, url);
+      if (isPokeLink(url) && title === extractTitleFromUrl(url)) {
+        const fetched = await fetchPageTitle(url);
+        if (fetched) title = fetched;
+      }
+
       links.push({
         url,
-        title: thread.name || extractTitleFromMessage(msg.content, url),
+        title,
         description: cleanDescription(msg.content, url),
-        referCode: getRecipeCode(url),
+        referCode: getPokeCode(url),
         sharedBy: [{ id: msg.author.id, name: msg.author.username, sharedAt: msg.createdAt.toISOString() }],
         channelId: forumChannel.id,
         channelName: forumChannel.name,
@@ -339,16 +531,13 @@ async function scrapeThreadForRecipes(thread, forumChannel) {
 function extractLinks(text) {
   if (!text) return [];
   const matches = text.match(URL_REGEX) || [];
-  // Clean trailing punctuation
   return [...new Set(matches.map(u => u.replace(/[.,;:!?)]+$/, '')))];
 }
 
 function extractTitleFromMessage(text, url) {
   if (!text) return extractTitleFromUrl(url);
-  // Use the first line (or text before the URL) as a title
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const firstLine = lines[0] || '';
-  // Remove the URL from the title
   const cleaned = firstLine.replace(URL_REGEX, '').replace(/[<>[\]()]/g, '').trim();
   return cleaned.length > 5 ? cleaned.slice(0, 120) : extractTitleFromUrl(url);
 }
@@ -359,13 +548,14 @@ function extractTitleFromUrl(url) {
     const hostname = u.hostname.toLowerCase();
     const pathname = u.pathname;
 
-    // Poke.com refer links — use the code as the title
-    if (hostname.includes('poke.com') && pathname.startsWith('/refer/')) {
-      const code = pathname.split('/refer/')[1];
-      return code ? `Recipe ${code}` : 'Poke Recipe';
+    // Poke.com links — extract the code from the path
+    if (hostname.includes('poke.com')) {
+      const parts = pathname.split('/').filter(Boolean);
+      const code = parts[parts.length - 1];
+      if (code) return `Poke Recipe ${code}`;
+      return 'Poke Recipe';
     }
 
-    // Try to get a readable name from the path
     const parts = pathname.split('/').filter(Boolean);
     if (parts.length > 0) {
       const last = parts[parts.length - 1];
@@ -380,57 +570,71 @@ function extractTitleFromUrl(url) {
   }
 }
 
+/**
+ * Fetch the <title> tag from a URL for better recipe names.
+ */
+async function fetchPageTitle(url) {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Pokedex-Bot/1.0' },
+      redirect: 'follow',
+    });
+    clearTimeout(timeout);
+
+    if (!res.ok) return null;
+
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('text/html')) return null;
+
+    const html = await res.text();
+    const match = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+    if (match && match[1]) {
+      const title = match[1].trim()
+        .replace(/\s+/g, ' ')
+        .replace(/\|.*$/, '')  // Remove "| Site Name" suffixes
+        .replace(/-\s*$/, '')
+        .trim();
+      return title.length > 3 ? title.slice(0, 150) : null;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function cleanDescription(text, url) {
   if (!text) return null;
-  // Remove the URL and keep the rest as description
   const cleaned = text.replace(URL_REGEX, '').replace(/[<>[\]()]/g, '').trim();
   return cleaned.length > 10 ? cleaned.slice(0, 300) : null;
 }
 
-function isRecipeLink(url) {
+function isPokeLink(url) {
   try {
-    const u = new URL(url);
-    const hostname = u.hostname.toLowerCase();
-    const pathname = u.pathname.toLowerCase();
-    // Primary: poke.com/refer/ links
-    if (hostname.includes('poke.com') && pathname.startsWith('/refer/')) return true;
-    // Other known recipe/team sources
-    if (hostname.includes('pokepast')) return true;
-    if (hostname.includes('smogon')) return true;
-    if (hostname.includes('pikalytics')) return true;
-    if (hostname.includes('limitlessv')) return true;
-    if (hostname.includes('victoryroad')) return true;
-    if (hostname.includes('paste.pokemon-online')) return true;
-    // Generic paste/share sites are likely recipes in #show-and-tell context
-    if (hostname.includes('pastebin')) return true;
-    if (hostname.includes('pokemonshowdown')) return true;
-    // YouTube (guides/showcases)
-    if (hostname.includes('youtube') || hostname.includes('youtu.be')) return true;
-    // Any link shared in #show-and-tell is probably a recipe
-    return true;
+    return new URL(url).hostname.toLowerCase().includes('poke.com');
   } catch {
     return false;
   }
 }
 
-function getRecipeCode(url) {
-  // Extract the recipe/refer code from poke.com links
+function getPokeCode(url) {
   try {
     const u = new URL(url);
-    if (u.hostname.toLowerCase().includes('poke.com') && u.pathname.startsWith('/refer/')) {
-      return u.pathname.split('/refer/')[1] || null;
-    }
-  } catch {}
-  return null;
+    if (!u.hostname.toLowerCase().includes('poke.com')) return null;
+    // Extract the last path segment as the code (works for /r/, /refer/, /recipe/, etc.)
+    const parts = u.pathname.split('/').filter(Boolean);
+    return parts.length > 0 ? parts[parts.length - 1] : null;
+  } catch {
+    return null;
+  }
 }
 
 function inferSource(url) {
   try {
-    const u = new URL(url);
-    const hostname = u.hostname.toLowerCase();
-    const pathname = u.pathname.toLowerCase();
-    // Primary recipe source
-    if (hostname.includes('poke.com') && pathname.startsWith('/refer/')) return 'Poke';
+    const hostname = new URL(url).hostname.toLowerCase();
     if (hostname.includes('poke.com')) return 'Poke';
     if (hostname.includes('pokepast')) return 'Pokepaste';
     if (hostname.includes('pokemonshowdown')) return 'Showdown';
@@ -458,7 +662,6 @@ function extractTags(text) {
   const tags = [];
   const lower = text.toLowerCase();
 
-  // Common competitive Pokemon tags
   const tagKeywords = {
     'ou': 'ou', 'uu': 'uu', 'uber': 'ubers', 'ubers': 'ubers', 'ru': 'ru', 'nu': 'nu', 'pu': 'pu',
     'vgc': 'vgc', 'doubles': 'doubles', 'singles': 'singles', 'monotype': 'monotype',
@@ -499,4 +702,4 @@ function buildProgressBar(pct) {
   return '`' + '\u2588'.repeat(filled) + '\u2591'.repeat(empty) + '`';
 }
 
-module.exports = { data: commandData, execute };
+module.exports = { data: commandData, execute, handleRecipeButton };

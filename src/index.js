@@ -471,6 +471,24 @@ async function handleButtonInteraction(interaction) {
     return;
   }
 
+  // --- Recipe approval buttons ---
+  if (customId.startsWith('recipe_')) {
+    if (!canModerate(interaction.member)) {
+      await interaction.reply({ content: 'You need **Manage Messages** permission to approve or decline recipes.', ephemeral: true }).catch(() => {});
+      return;
+    }
+
+    try {
+      await recipesCommand.handleRecipeButton(interaction);
+    } catch (err) {
+      console.error('Failed to process recipe decision:', err);
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: 'Failed to process recipe.', ephemeral: true }).catch(() => {});
+      }
+    }
+    return;
+  }
+
   // --- MCP pending approval buttons ---
   if (customId.startsWith('mcp_')) {
     const isApprove = customId.startsWith('mcp_approve_');

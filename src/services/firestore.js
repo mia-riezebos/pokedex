@@ -299,6 +299,33 @@ async function getAllRecipes(limit = 200) {
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
+async function getApprovedRecipes(limit = 200) {
+  const db = admin.firestore();
+  const snapshot = await db.collection('recipes')
+    .where('status', '==', 'approved')
+    .orderBy('shareCount', 'desc')
+    .limit(Math.min(limit, 500))
+    .get();
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+async function getPendingRecipes(limit = 50) {
+  const db = admin.firestore();
+  const snapshot = await db.collection('recipes')
+    .where('status', '==', 'pending')
+    .orderBy('createdAt', 'desc')
+    .limit(Math.min(limit, 200))
+    .get();
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+async function getRecipeById(recipeId) {
+  const db = admin.firestore();
+  const doc = await db.collection('recipes').doc(recipeId).get();
+  if (!doc.exists) return null;
+  return { id: doc.id, ...doc.data() };
+}
+
 async function getRecipeByUrl(url) {
   const db = admin.firestore();
   const snapshot = await db.collection('recipes')
@@ -307,6 +334,17 @@ async function getRecipeByUrl(url) {
     .get();
   if (snapshot.empty) return null;
   return { id: snapshot.docs[0].id, ...snapshot.docs[0].data() };
+}
+
+async function updateRecipeStatus(recipeId, status, reviewerId, reviewerName) {
+  const db = admin.firestore();
+  await db.collection('recipes').doc(recipeId).update({
+    status,
+    reviewedBy: reviewerName,
+    reviewedById: reviewerId,
+    reviewedAt: admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
 }
 
 module.exports = {
@@ -337,5 +375,9 @@ module.exports = {
   getForumIssues,
   saveRecipe,
   getAllRecipes,
+  getApprovedRecipes,
+  getPendingRecipes,
+  getRecipeById,
   getRecipeByUrl,
+  updateRecipeStatus,
 };

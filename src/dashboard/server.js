@@ -132,7 +132,7 @@ app.get('/api/recipes', rateLimit, async (req, res) => {
   try {
     const { tag, source, limit: limitParam, search } = req.query;
     const safeLimit = Math.min(Math.max(parseInt(limitParam) || 200, 1), 500);
-    let recipes = await firestore.getAllRecipes(safeLimit);
+    let recipes = await firestore.getApprovedRecipes(safeLimit);
 
     if (tag) recipes = recipes.filter(r => (r.tags || []).includes(tag.toLowerCase()));
     if (source) recipes = recipes.filter(r => (r.source || '').toLowerCase() === source.toLowerCase());
