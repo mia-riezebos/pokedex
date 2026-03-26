@@ -4,13 +4,13 @@ import { requireTier } from "@/lib/permissions";
 import { adminDb } from "@/lib/firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
 
-export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
   if (!session.userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { id } = await params;
+  const { id } = params;
   const doc = await adminDb.collection("issues").doc(id).get();
   if (!doc.exists) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -35,13 +35,19 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   });
 }
 
-export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
   if (!session.userId || !requireTier(session.tier, "moderator")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { id } = await params;
+  const { id } = params;
+  const docRef = adminDb.collection("issues").doc(id);
+  const doc = await docRef.get();
+  if (!doc.exists) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   const updates = await req.json();
 
   const allowed = ["status", "priority", "assigneeId", "assigneeName"];
@@ -52,14 +58,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   filtered.updatedAt = FieldValue.serverTimestamp();
 
   if (updates.status === "closed") {
-    filtered.closedBy = session.username;
+    filtered.closedBy = session.userId;
     filtered.closedAt = FieldValue.serverTimestamp();
   }
   if (updates.assigneeId) {
-    filtered.assignedBy = session.username;
+    filtered.assignedBy = session.userId;
     filtered.assignedAt = FieldValue.serverTimestamp();
   }
 
-  await adminDb.collection("issues").doc(id).update(filtered);
+  await docRef.update(filtered);
   return NextResponse.json({ ok: true });
 }

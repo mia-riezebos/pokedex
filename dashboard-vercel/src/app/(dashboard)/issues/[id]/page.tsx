@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import ProtectedRoute from "@/components/ProtectedRoute";
 
-const statusOptions = ["open", "acknowledged", "in-progress", "closed", "wontfix"];
+const statusOptions = ["open", "acknowledged", "escalated", "fixed", "merged", "closed", "wontfix", "deleted"];
 const priorityOptions = ["critical", "high", "medium", "low"];
 
 export default function IssueDetailPage() {

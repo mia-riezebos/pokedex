@@ -55,7 +55,9 @@ export default function IssuesPage() {
             <option value="">All Status</option>
             <option value="open">Open</option>
             <option value="acknowledged">Acknowledged</option>
-            <option value="in-progress">In Progress</option>
+            <option value="escalated">Escalated</option>
+            <option value="fixed">Fixed</option>
+            <option value="merged">Merged</option>
             <option value="closed">Closed</option>
             <option value="wontfix">Won&apos;t Fix</option>
           </select>
