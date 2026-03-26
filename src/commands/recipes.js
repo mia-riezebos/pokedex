@@ -50,7 +50,22 @@ const commandData = new SlashCommandBuilder()
       .setDescription('Show recipes waiting for approval'))
   .addSubcommand(sub =>
     sub.setName('approve-all')
-      .setDescription('Bulk-approve all pending recipes'));
+      .setDescription('Bulk-approve all pending recipes'))
+  .addSubcommand(sub =>
+    sub.setName('grab')
+      .setDescription('Scrape this thread for recipe links and send to the website')
+      .addBooleanOption(opt =>
+        opt.setName('auto-approve')
+          .setDescription('Publish directly without approval (default: false)')
+          .setRequired(false)))
+  .addSubcommand(sub =>
+    sub.setName('approve')
+      .setDescription('Approve a specific pending recipe by ID')
+      .addStringOption(opt =>
+        opt.setName('id')
+          .setDescription('Recipe ID to approve')
+          .setRequired(true)
+          .setAutocomplete(true)));
 
 async function execute(interaction) {
   const sub = interaction.options.getSubcommand();
@@ -59,6 +74,8 @@ async function execute(interaction) {
   if (sub === 'add') return executeAdd(interaction);
   if (sub === 'pending') return executePending(interaction);
   if (sub === 'approve-all') return executeApproveAll(interaction);
+  if (sub === 'grab') return executeGrab(interaction);
+  if (sub === 'approve') return executeApprove(interaction);
   return interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
 }
 
@@ -441,6 +458,208 @@ async function executeApproveAll(interaction) {
     .setTimestamp();
 
   return interaction.editReply({ embeds: [embed] });
+}
+
+// --- GRAB (single thread) ---
+
+async function executeGrab(interaction) {
+  const channel = interaction.channel;
+
+  // Must be inside a thread
+  if (!channel.isThread()) {
+    return interaction.reply({
+      content: 'This command must be used inside a **thread** or **forum post**.',
+      ephemeral: true,
+    });
+  }
+
+  const autoApprove = interaction.options.getBoolean('auto-approve') ?? false;
+
+  await interaction.deferReply();
+
+  // Pre-fetch existing for duplicate detection
+  const allExisting = await firestore.getAllRecipes(1000);
+  const existingUrls = new Set(allExisting.map(r => normalizeUrl(r.url)));
+  const existingCodes = new Set(allExisting.map(r => r.referCode).filter(Boolean));
+
+  // Scrape messages from this thread
+  let allMessages = [];
+  let lastId;
+  while (true) {
+    const batch = await channel.messages.fetch({ limit: 100, ...(lastId && { before: lastId }) });
+    if (batch.size === 0) break;
+    allMessages.push(...batch.values());
+    lastId = batch.last().id;
+    if (batch.size < 100) break;
+  }
+  allMessages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+
+  // Also get starter message
+  let starterMessage = null;
+  try { starterMessage = await channel.fetchStarterMessage(); } catch {}
+  if (starterMessage) allMessages.unshift(starterMessage);
+
+  // Deduplicate by message ID
+  const seen = new Set();
+  allMessages = allMessages.filter(m => {
+    if (seen.has(m.id)) return false;
+    seen.add(m.id);
+    return true;
+  });
+
+  // Extract all links from non-bot messages
+  const recipes = [];
+  const stats = { found: 0, new: 0, duplicate: 0 };
+
+  for (const msg of allMessages) {
+    if (msg.author.bot) continue;
+    const urls = extractLinks(msg.content);
+    stats.found += urls.length;
+
+    for (const url of urls) {
+      const referCode = getPokeCode(url);
+
+      if (isDuplicateRecipe(url, referCode, existingUrls, existingCodes)) {
+        stats.duplicate++;
+        continue;
+      }
+
+      // Try to get a good title
+      let title = channel.name || extractTitleFromMessage(msg.content, url);
+      if (isPokeLink(url) && title === extractTitleFromUrl(url)) {
+        const fetched = await fetchPageTitle(url);
+        if (fetched) title = fetched;
+      }
+
+      const recipe = {
+        url,
+        title,
+        description: cleanDescription(msg.content, url),
+        referCode,
+        sharedBy: [{ id: msg.author.id, name: msg.author.username, sharedAt: msg.createdAt.toISOString() }],
+        channelId: channel.parentId || channel.id,
+        channelName: channel.parent?.name || channel.name,
+        guildId: interaction.guild.id,
+        threadId: channel.id,
+        messageId: msg.id,
+        source: inferSource(url),
+        tags: extractTags(msg.content),
+        status: autoApprove ? 'approved' : 'pending',
+      };
+
+      if (autoApprove) {
+        recipe.reviewedBy = interaction.user.username;
+        recipe.reviewedById = interaction.user.id;
+      }
+
+      const saved = await firestore.saveRecipe(recipe);
+      stats.new++;
+      recipes.push({ ...recipe, id: saved.id });
+
+      existingUrls.add(normalizeUrl(url));
+      if (referCode) existingCodes.add(referCode);
+
+      // Post approval embed if not auto-approving
+      if (!autoApprove) {
+        const approvalChannel = findApprovalChannel(interaction.guild);
+        if (approvalChannel) {
+          await postApprovalEmbed(approvalChannel, recipe, saved.id);
+        }
+      }
+    }
+  }
+
+  if (stats.found === 0) {
+    return interaction.editReply('No links found in this thread.');
+  }
+
+  const statusText = autoApprove ? 'live on the website' : 'sent for approval';
+  const dashboardUrl = process.env.DASHBOARD_URL || 'https://pokedex-recipes.vercel.app';
+
+  const embed = new EmbedBuilder()
+    .setTitle(autoApprove ? 'Recipes Published' : 'Recipes Submitted')
+    .setColor(autoApprove ? 0x2ecc71 : 0xf0c840)
+    .setDescription(`Found **${stats.found}** link${stats.found !== 1 ? 's' : ''} in this thread.`)
+    .addFields(
+      { name: autoApprove ? 'Published' : 'Pending Approval', value: `${stats.new}`, inline: true },
+      { name: 'Duplicates', value: `${stats.duplicate}`, inline: true },
+    )
+    .setTimestamp();
+
+  // Show what was found
+  if (recipes.length > 0) {
+    const lines = recipes.slice(0, 8).map(r => {
+      const src = r.source ? ` \`${r.source}\`` : '';
+      return `• [${(r.title || 'Untitled').slice(0, 50)}](${r.url})${src}`;
+    });
+    if (recipes.length > 8) lines.push(`_...and ${recipes.length - 8} more_`);
+    embed.addFields({ name: `Recipes (${statusText})`, value: lines.join('\n').slice(0, 1024) });
+  }
+
+  if (autoApprove) {
+    embed.addFields({ name: 'Recipe Page', value: `[View on website](${dashboardUrl})` });
+  }
+
+  return interaction.editReply({ embeds: [embed] });
+}
+
+// --- APPROVE (single recipe) ---
+
+async function executeApprove(interaction) {
+  const recipeId = interaction.options.getString('id').trim();
+
+  await interaction.deferReply();
+
+  const recipe = await firestore.getRecipeById(recipeId);
+  if (!recipe) {
+    return interaction.editReply(`Recipe \`${recipeId}\` not found.`);
+  }
+
+  if (recipe.status === 'approved') {
+    return interaction.editReply(`Recipe \`${recipeId}\` is already approved.`);
+  }
+
+  await firestore.updateRecipeStatus(recipeId, 'approved', interaction.user.id, interaction.user.username);
+
+  const embed = new EmbedBuilder()
+    .setTitle('Recipe Approved')
+    .setColor(0x2ecc71)
+    .setDescription(`[${(recipe.title || 'Untitled').slice(0, 80)}](${recipe.url})`)
+    .addFields(
+      { name: 'Source', value: recipe.source || 'Unknown', inline: true },
+      { name: 'Approved By', value: interaction.user.username, inline: true },
+    )
+    .setTimestamp();
+
+  if (recipe.referCode) {
+    embed.addFields({ name: 'Code', value: `\`${recipe.referCode}\``, inline: true });
+  }
+
+  return interaction.editReply({ embeds: [embed] });
+}
+
+// --- Autocomplete for recipe approve ---
+
+async function autocomplete(interaction) {
+  const focused = interaction.options.getFocused().toLowerCase();
+  try {
+    const pending = await firestore.getPendingRecipes(50);
+    const filtered = pending
+      .filter(r =>
+        r.id.toLowerCase().includes(focused) ||
+        (r.title || '').toLowerCase().includes(focused) ||
+        (r.url || '').toLowerCase().includes(focused) ||
+        (r.referCode || '').toLowerCase().includes(focused)
+      )
+      .slice(0, 25)
+      .map(r => ({
+        name: `${(r.title || 'Untitled').slice(0, 60)} | ${r.source || '?'} | ${r.id.slice(0, 8)}…`,
+        value: r.id,
+      }));
+    await interaction.respond(filtered);
+  } catch {
+    await interaction.respond([]);
+  }
 }
 
 // --- Approval embed with buttons ---
@@ -832,4 +1051,4 @@ function isDuplicateRecipe(url, referCode, existingUrls, existingCodes) {
   return false;
 }
 
-module.exports = { data: commandData, execute, handleRecipeButton };
+module.exports = { data: commandData, execute, handleRecipeButton, autocomplete };
