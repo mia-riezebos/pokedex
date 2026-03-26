@@ -35,6 +35,14 @@ let cachedConfig = null;
 let configLoadedAt = 0;
 const CONFIG_TTL = 30000; // 30s cache
 
+// TTL caches for per-message Firestore lookups
+let cachedExemptions = null;
+let exemptionsLoadedAt = 0;
+let cachedBlocklist = null;
+let blocklistLoadedAt = 0;
+let cachedLinkConfig = null;
+let linkConfigLoadedAt = 0;
+
 // --- Config ---
 
 async function getAutomodConfig() {
@@ -59,12 +67,17 @@ async function updateAutomodConfig(updates) {
 // --- Blocklist ---
 
 async function getBlocklist() {
+  if (cachedBlocklist && Date.now() - blocklistLoadedAt < CONFIG_TTL) {
+    return cachedBlocklist;
+  }
   try {
     const doc = await getDb().collection('automod').doc('blocklist').get();
-    return doc.exists ? (doc.data().words || []) : [];
+    cachedBlocklist = doc.exists ? (doc.data().words || []) : [];
   } catch {
-    return [];
+    cachedBlocklist = [];
   }
+  blocklistLoadedAt = Date.now();
+  return cachedBlocklist;
 }
 
 async function addBlocklistWord(word) {
@@ -72,6 +85,7 @@ async function addBlocklistWord(word) {
     { words: admin.firestore.FieldValue.arrayUnion(word.toLowerCase()) },
     { merge: true },
   );
+  cachedBlocklist = null; // bust cache
 }
 
 async function removeBlocklistWord(word) {
@@ -79,17 +93,23 @@ async function removeBlocklistWord(word) {
     { words: admin.firestore.FieldValue.arrayRemove(word.toLowerCase()) },
     { merge: true },
   );
+  cachedBlocklist = null; // bust cache
 }
 
 // --- Link allowlist/blocklist ---
 
 async function getLinkConfig() {
+  if (cachedLinkConfig && Date.now() - linkConfigLoadedAt < CONFIG_TTL) {
+    return cachedLinkConfig;
+  }
   try {
     const doc = await getDb().collection('automod').doc('links').get();
-    return doc.exists ? doc.data() : { allowed: [], blocked: [] };
+    cachedLinkConfig = doc.exists ? doc.data() : { allowed: [], blocked: [] };
   } catch {
-    return { allowed: [], blocked: [] };
+    cachedLinkConfig = { allowed: [], blocked: [] };
   }
+  linkConfigLoadedAt = Date.now();
+  return cachedLinkConfig;
 }
 
 async function addLinkEntry(type, domain) {
@@ -98,6 +118,7 @@ async function addLinkEntry(type, domain) {
     { [field]: admin.firestore.FieldValue.arrayUnion(domain.toLowerCase()) },
     { merge: true },
   );
+  cachedLinkConfig = null; // bust cache
 }
 
 async function removeLinkEntry(type, domain) {
@@ -106,17 +127,23 @@ async function removeLinkEntry(type, domain) {
     { [field]: admin.firestore.FieldValue.arrayRemove(domain.toLowerCase()) },
     { merge: true },
   );
+  cachedLinkConfig = null; // bust cache
 }
 
 // --- Exemptions ---
 
 async function getExemptions() {
+  if (cachedExemptions && Date.now() - exemptionsLoadedAt < CONFIG_TTL) {
+    return cachedExemptions;
+  }
   try {
     const doc = await getDb().collection('automod').doc('exemptions').get();
-    return doc.exists ? doc.data() : { roles: [], channels: [] };
+    cachedExemptions = doc.exists ? doc.data() : { roles: [], channels: [] };
   } catch {
-    return { roles: [], channels: [] };
+    cachedExemptions = { roles: [], channels: [] };
   }
+  exemptionsLoadedAt = Date.now();
+  return cachedExemptions;
 }
 
 async function addExemption(type, id) {
@@ -125,6 +152,7 @@ async function addExemption(type, id) {
     { [field]: admin.firestore.FieldValue.arrayUnion(id) },
     { merge: true },
   );
+  cachedExemptions = null; // bust cache
 }
 
 async function removeExemption(type, id) {
@@ -133,6 +161,7 @@ async function removeExemption(type, id) {
     { [field]: admin.firestore.FieldValue.arrayRemove(id) },
     { merge: true },
   );
+  cachedExemptions = null; // bust cache
 }
 
 // --- Offense tracking ---
@@ -198,7 +227,7 @@ function isDuplicateSpam(history, config) {
 }
 
 function isMentionSpam(message, config) {
-  const mentionCount = message.mentions.users.size + message.mentions.roles.size;
+  const mentionCount = message.mentions.users.size + message.mentions.roles.size + (message.mentions.everyone ? 1 : 0);
   return mentionCount >= config.maxMentionsPerMessage;
 }
 
@@ -229,14 +258,14 @@ function containsBlockedLink(content, linkConfig) {
       continue;
     }
 
-    // Check blocklist first
-    if (linkConfig.blocked.some(d => hostname.includes(d))) {
+    // Check blocklist first (exact domain or subdomain match)
+    if (linkConfig.blocked.some(d => hostname === d || hostname.endsWith('.' + d))) {
       return hostname;
     }
 
     // If allowlist has entries, only those are permitted
     if (linkConfig.allowed.length > 0) {
-      if (!linkConfig.allowed.some(d => hostname.includes(d))) {
+      if (!linkConfig.allowed.some(d => hostname === d || hostname.endsWith('.' + d))) {
         return hostname;
       }
     }

@@ -19,12 +19,18 @@ export default function LogsPage() {
   const filtered = actionFilter ? logs.filter((l: any) => l.action === actionFilter) : logs;
 
   const downloadCsv = () => {
+    const csvEscape = (val: string) => {
+      const s = String(val ?? "");
+      if (s.includes(",") || s.includes('"') || s.includes("\n") || s.includes("\r")) {
+        return `"${s.replace(/"/g, '""')}"`;
+      }
+      return s;
+    };
     const headers = ["Date", "Action", "Target", "Moderator", "Reason", "Source"];
     const rows = filtered.map((l: any) => [
       l.timestamp ? new Date(l.timestamp.seconds * 1000).toISOString() : "",
-      l.action, l.targetUser, l.moderator,
-      `"${(l.reason || "").replace(/"/g, '""')}"`, l.source,
-    ]);
+      l.action, l.targetUser, l.moderator, l.reason || "", l.source,
+    ].map(csvEscape));
     const csv = [headers.join(","), ...rows.map((r: string[]) => r.join(","))].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const a = document.createElement("a");

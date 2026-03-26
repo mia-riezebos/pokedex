@@ -68,6 +68,9 @@ function isValidScreenshotUrl(url: string): boolean {
     const m172 = hostname.match(/^172\.(\d+)\./);
     if (m172 && Number(m172[1]) >= 16 && Number(m172[1]) <= 31) return false;
     if (hostname.endsWith(".local") || hostname.endsWith(".internal")) return false;
+    // IPv6 localhost and ULA blocking
+    if (hostname === "[::1]" || hostname === "::1") return false;
+    if (/^\[?f[cd][0-9a-f]{2}:/i.test(hostname)) return false;
     const allowedDomains = ["cdn.discordapp.com", "media.discordapp.net", "i.imgur.com", "imgur.com", "raw.githubusercontent.com", "user-images.githubusercontent.com"];
     return allowedDomains.some(d => hostname === d || hostname.endsWith(`.${d}`));
   } catch {
@@ -514,8 +517,22 @@ export default {
       return Response.json({ status: "ok", server: "pokedex-mcp-server", version: "1.0.0", runtime: "cloudflare-workers" });
     }
 
+    // Compute CORS origin for reuse in both OPTIONS and POST responses
+    const origin = request.headers.get("Origin") || "";
+    const allowedOrigins = ["https://claude.ai", "https://console.anthropic.com"];
+    const allowOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+
+    // Helper to add CORS headers to any response
+    function withCors(response: Response): Response {
+      const res = new Response(response.body, response);
+      res.headers.set("Access-Control-Allow-Origin", allowOrigin);
+      res.headers.set("Vary", "Origin");
+      return res;
+    }
+
     // MCP endpoint — handle protocol directly (no Express shim needed)
     if (url.pathname === "/mcp" && request.method === "POST") {
+      const mcpResult = await (async (): Promise<Response> => {
       const body = await request.json() as { jsonrpc: string; id: unknown; method: string; params?: unknown };
       const clientIp = request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for") || "unknown";
 
@@ -587,7 +604,8 @@ export default {
               if (!isValidScreenshotUrl(args.screenshot_url as string)) {
                 return Response.json({ jsonrpc: "2.0", id: body.id, result: { content: [{ type: "text", text: JSON.stringify({ error: "Invalid screenshot URL. Only HTTPS URLs from trusted image hosts are accepted." }) }] } });
               }
-              data.attachments = [{ url: args.screenshot_url, name: "screenshot.png", isImage: true }];
+              const safeScreenshotUrl = (args.screenshot_url as string).trim().slice(0, 2048);
+              data.attachments = [{ url: safeScreenshotUrl, name: "screenshot.png", isImage: true }];
             }
             const issueId = await firestoreCreate(env, token, data);
             await postToDiscord(env, data, issueId);
@@ -689,25 +707,25 @@ export default {
           return Response.json({ jsonrpc: "2.0", id: body.id, error: { code: -32601, message: `Unknown tool: ${params.name}` } });
         } catch (err: unknown) {
           // Do not leak internal error details to the client
-          console.error("MCP tool error:", err instanceof Error ? err.message : String(err));
+          console.error("MCP tool error:", err);
           return Response.json({ jsonrpc: "2.0", id: body.id, error: { code: -32000, message: "An internal error occurred. Please try again later." } });
         }
       }
 
       return Response.json({ jsonrpc: "2.0", id: body.id, error: { code: -32601, message: `Method not found: ${body.method}` } });
+      })();
+      return withCors(mcpResult);
     }
 
     // CORS preflight — restrict to known origins instead of wildcard
     if (request.method === "OPTIONS") {
-      const origin = request.headers.get("Origin") || "";
-      const allowedOrigins = ["https://claude.ai", "https://console.anthropic.com"];
-      const allowOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
       return new Response(null, {
         headers: {
           "Access-Control-Allow-Origin": allowOrigin,
           "Access-Control-Allow-Methods": "POST, OPTIONS",
           "Access-Control-Allow-Headers": "Content-Type, Accept",
           "Access-Control-Max-Age": "86400",
+          "Vary": "Origin",
         },
       });
     }

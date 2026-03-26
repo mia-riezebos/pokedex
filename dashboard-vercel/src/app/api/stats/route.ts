@@ -15,13 +15,16 @@ export async function GET() {
       getGuildRoles(),
     ]);
 
+    // Use BigInt for Discord snowflake ID to avoid precision loss with large IDs
+    const createdTimestamp = Number((BigInt(guild.id) >> 22n) + 1420070400000n);
+
     return NextResponse.json({
       name: guild.name,
       memberCount: guild.approximate_member_count,
       onlineCount: guild.approximate_presence_count,
       channelCount: channels.length,
       roleCount: roles.length,
-      createdAt: new Date(Math.floor(Number(guild.id) / 4194304) + 1420070400000).toISOString(),
+      createdAt: new Date(createdTimestamp).toISOString(),
       icon: guild.icon ? `https://cdn.discordapp.com/icons/${guild.id}/${guild.icon}.png` : null,
     });
   } catch (error: any) {

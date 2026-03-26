@@ -2,8 +2,8 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 const firestore = require('../services/firestore');
 const { getConfig } = require('../config/config');
 
-// URL regex — matches http/https links
-const URL_REGEX = /https?:\/\/[^\s<>"')\]]+/gi;
+// URL regex — matches http/https links (no g flag to avoid stateful .test() failures)
+const URL_REGEX = /https?:\/\/[^\s<>"')\]]+/i;
 
 const commandData = new SlashCommandBuilder()
   .setName('recipes')
@@ -29,7 +29,7 @@ const commandData = new SlashCommandBuilder()
           .setRequired(false)))
   .addSubcommand(sub =>
     sub.setName('list')
-      .setDescription('Show the latest approved community recipes'))
+      .setDescription('Show the top community recipes'))
   .addSubcommand(sub =>
     sub.setName('add')
       .setDescription('Submit a recipe link for approval')
@@ -845,7 +845,8 @@ async function scrapeThreadForRecipes(thread, forumChannel) {
 
 function extractLinks(text) {
   if (!text) return [];
-  const matches = text.match(URL_REGEX) || [];
+  // Use a new regex with g flag for matchAll (URL_REGEX is g-free for .test() usage)
+  const matches = text.match(/https?:\/\/[^\s<>"')\]]+/gi) || [];
   return [...new Set(matches.map(u => u.replace(/[.,;:!?)]+$/, '')))];
 }
 
@@ -853,7 +854,7 @@ function extractTitleFromMessage(text, url) {
   if (!text) return extractTitleFromUrl(url);
   const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
   const firstLine = lines[0] || '';
-  const cleaned = firstLine.replace(URL_REGEX, '').replace(/[<>[\]()]/g, '').trim();
+  const cleaned = firstLine.replace(/https?:\/\/[^\s<>"')\]]+/gi, '').replace(/[<>[\]()]/g, '').trim();
   return cleaned.length > 5 ? cleaned.slice(0, 120) : extractTitleFromUrl(url);
 }
 
@@ -923,7 +924,7 @@ async function fetchPageTitle(url) {
 
 function cleanDescription(text, url) {
   if (!text) return null;
-  const cleaned = text.replace(URL_REGEX, '').replace(/[<>[\]()]/g, '').trim();
+  const cleaned = text.replace(/https?:\/\/[^\s<>"')\]]+/gi, '').replace(/[<>[\]()]/g, '').trim();
   return cleaned.length > 10 ? cleaned.slice(0, 300) : null;
 }
 

@@ -262,32 +262,92 @@ async function getForumIssues(limit = 500) {
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
+async function getAllIssuesWithThreadId() {
+  const results = [];
+  let lastDoc = null;
+  const batchSize = 500;
+  while (true) {
+    let query = db.collection('issues')
+      .where('threadId', '!=', null)
+      .select('threadId')
+      .orderBy('threadId')
+      .limit(batchSize);
+    if (lastDoc) {
+      query = query.startAfter(lastDoc);
+    }
+    const snapshot = await query.get();
+    if (snapshot.empty) break;
+    snapshot.docs.forEach(doc => results.push({ id: doc.id, threadId: doc.get('threadId') }));
+    lastDoc = snapshot.docs[snapshot.docs.length - 1];
+    if (snapshot.size < batchSize) break;
+  }
+  return results;
+}
+
 // --- Recipes ---
 
 async function saveRecipe(recipeData) {
+  const crypto = require('crypto');
   const db = admin.firestore();
-  // Deduplicate by URL
-  const existing = await db.collection('recipes')
+  // Use a deterministic doc ID based on normalized URL to prevent race conditions
+  const normalizedUrl = recipeData.url.trim().toLowerCase().replace(/\/+$/, '');
+  const docId = crypto.createHash('sha256').update(normalizedUrl).digest('hex');
+  const docRef = db.collection('recipes').doc(docId);
+
+  // Check for legacy doc with random ID (pre-deterministic-ID migration)
+  const legacyQuery = await db.collection('recipes')
     .where('url', '==', recipeData.url)
     .limit(1)
     .get();
-  if (!existing.empty) {
-    // Update existing recipe with new sharer
-    const doc = existing.docs[0];
-    await doc.ref.update({
-      sharedBy: admin.firestore.FieldValue.arrayUnion(...(recipeData.sharedBy || [])),
-      shareCount: admin.firestore.FieldValue.increment(1),
+
+  if (!legacyQuery.empty) {
+    const legacyDoc = legacyQuery.docs[0];
+    const existingSharers = legacyDoc.data().sharedBy || [];
+    const newSharers = (recipeData.sharedBy || []).filter(
+      s => !existingSharers.some(es => es.id === s.id)
+    );
+    if (newSharers.length > 0) {
+      await legacyDoc.ref.update({
+        sharedBy: admin.firestore.FieldValue.arrayUnion(...newSharers),
+        shareCount: admin.firestore.FieldValue.increment(newSharers.length),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+    return { id: legacyDoc.id, updated: true };
+  }
+
+  const initialShareCount = Math.max(1, (recipeData.sharedBy || []).length);
+
+  try {
+    // Try to create — fails atomically if doc already exists
+    await docRef.create({
+      ...recipeData,
+      shareCount: initialShareCount,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });
-    return { id: doc.id, updated: true };
+    return { id: docId, updated: false };
+  } catch (err) {
+    if (err.code === 6) { // ALREADY_EXISTS
+      // Update existing recipe with new sharer using a transaction
+      // to only increment shareCount when a new sharer is actually added
+      await db.runTransaction(async (txn) => {
+        const doc = await txn.get(docRef);
+        if (!doc.exists) return;
+        const data = doc.data();
+        const existingSharerIds = (data.sharedBy || []).map(s => s.id);
+        const newSharers = (recipeData.sharedBy || []).filter(s => !existingSharerIds.includes(s.id));
+        const updates = { updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+        if (newSharers.length > 0) {
+          updates.sharedBy = admin.firestore.FieldValue.arrayUnion(...newSharers);
+          updates.shareCount = admin.firestore.FieldValue.increment(newSharers.length);
+        }
+        txn.update(docRef, updates);
+      });
+      return { id: docId, updated: true };
+    }
+    throw err;
   }
-  const ref = await db.collection('recipes').add({
-    ...recipeData,
-    shareCount: 1,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
-  return { id: ref.id, updated: false };
 }
 
 async function getAllRecipes(limit = 200) {
@@ -400,6 +460,7 @@ module.exports = {
   updateIssueFields,
   addReporter,
   getForumIssues,
+  getAllIssuesWithThreadId,
   saveRecipe,
   getAllRecipes,
   getApprovedRecipes,

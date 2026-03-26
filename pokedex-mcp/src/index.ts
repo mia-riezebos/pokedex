@@ -59,6 +59,11 @@ function sanitizeString(input: string, maxLength: number): string {
   return input.slice(0, maxLength).trim();
 }
 
+// Firestore doc IDs cannot contain '/' or be empty
+function isValidDocId(id: string): boolean {
+  return id.length > 0 && id.length <= 128 && !/[/]/.test(id);
+}
+
 function isValidScreenshotUrl(url: string): boolean {
   try {
     const parsed = new URL(url);
@@ -71,6 +76,9 @@ function isValidScreenshotUrl(url: string): boolean {
     const m172 = hostname.match(/^172\.(\d+)\./);
     if (m172 && Number(m172[1]) >= 16 && Number(m172[1]) <= 31) return false;
     if (hostname.endsWith(".local") || hostname.endsWith(".internal")) return false;
+    // IPv6 localhost and ULA (Unique Local Address) blocking
+    if (hostname === "[::1]" || hostname === "::1") return false;
+    if (/^\[?f[cd][0-9a-f]{2}:/i.test(hostname)) return false;
     // Only allow common image hosting domains
     const allowedDomains = ["cdn.discordapp.com", "media.discordapp.net", "i.imgur.com", "imgur.com", "raw.githubusercontent.com", "user-images.githubusercontent.com"];
     return allowedDomains.some(d => hostname === d || hostname.endsWith(`.${d}`));
@@ -313,11 +321,12 @@ server.registerTool(
       if (!isValidScreenshotUrl(screenshot_url)) {
         return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Invalid screenshot URL. Only HTTPS URLs from trusted image hosts are accepted." }) }] };
       }
+      const safeScreenshotUrl = screenshot_url.trim().slice(0, 2048);
       issueData.attachments = [{
-        url: screenshot_url, name: "screenshot.png", isImage: true,
+        url: safeScreenshotUrl, name: "screenshot.png", isImage: true,
         contentType: "image/png", size: 0,
       }];
-      issueData.screenshotUrl = screenshot_url;
+      issueData.screenshotUrl = safeScreenshotUrl;
     }
 
     const docRef = await db.collection("issues").add(issueData);
@@ -415,6 +424,9 @@ server.registerTool(
 
     const db = getDb();
     const safeId = sanitizeString(issue_id, 128);
+    if (!isValidDocId(safeId)) {
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Invalid issue ID format", issue_id: safeId }) }] };
+    }
     const doc = await db.collection("issues").doc(safeId).get();
     if (!doc.exists) {
       return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Issue not found", issue_id: safeId }) }] };
@@ -517,6 +529,9 @@ server.registerTool(
 
     const db = getDb();
     const safeId = sanitizeString(issue_id, 128);
+    if (!isValidDocId(safeId)) {
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Invalid issue ID format", issue_id: safeId }) }] };
+    }
     const safeName = sanitizeString(reporter_name, MAX_NAME_LENGTH);
     const docRef = db.collection("issues").doc(safeId);
     const doc = await docRef.get();
@@ -677,6 +692,9 @@ server.registerTool(
 
     const db = getDb();
     const safeId = sanitizeString(issue_id, 128);
+    if (!isValidDocId(safeId)) {
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Invalid issue ID format", issue_id: safeId }) }] };
+    }
     const safeComment = sanitizeString(comment, MAX_COMMENT_LENGTH);
     const safeAuthor = sanitizeString(author, MAX_NAME_LENGTH);
     const docRef = db.collection("issues").doc(safeId);
@@ -738,6 +756,9 @@ server.registerTool(
 
     const db = getDb();
     const safeId = sanitizeString(issue_id, 128);
+    if (!isValidDocId(safeId)) {
+      return { content: [{ type: "text" as const, text: JSON.stringify({ error: "Invalid issue ID format", issue_id: safeId }) }] };
+    }
     const safeContext = sanitizeString(context, MAX_CONTEXT_LENGTH);
     const safeAuthor = sanitizeString(author, MAX_NAME_LENGTH);
     const docRef = db.collection("issues").doc(safeId);

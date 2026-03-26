@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import { useCollection, useDocument } from "@/hooks/useFirestore";
 
@@ -18,8 +18,11 @@ export default function SettingsPage() {
   const { data: configDocs } = useCollection("config");
   const { data: roleMapping } = useDocument("config", "dashboard_roles");
   const [saving, setSaving] = useState("");
+  const [error, setError] = useState("");
   const [adminRolesInput, setAdminRolesInput] = useState("");
   const [modRolesInput, setModRolesInput] = useState("");
+  const [localValues, setLocalValues] = useState<Record<string, string>>({});
+  const debounceTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   const configMap: Record<string, any> = {};
   configDocs.forEach((doc: any) => {
@@ -34,33 +37,70 @@ export default function SettingsPage() {
     }
   }, [roleMapping]);
 
-  const updateConfig = async (key: string, value: any) => {
+  useEffect(() => {
+    return () => {
+      Object.values(debounceTimers.current).forEach(clearTimeout);
+      debounceTimers.current = {};
+    };
+  }, []);
+
+  const updateConfig = useCallback(async (key: string, value: any) => {
     setSaving(key);
-    await fetch("/api/config", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ key, value }),
-    });
-    setSaving("");
-  };
+    setError("");
+    try {
+      const res = await fetch("/api/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key, value }),
+      });
+      if (!res.ok) {
+        setError(`Failed to save ${key}: ${res.statusText}`);
+      }
+    } catch (err) {
+      setError(`Failed to save ${key}`);
+    } finally {
+      setSaving("");
+    }
+  }, []);
+
+  const debouncedUpdateConfig = useCallback((key: string, value: string) => {
+    setLocalValues(prev => ({ ...prev, [key]: value }));
+    if (debounceTimers.current[key]) clearTimeout(debounceTimers.current[key]);
+    debounceTimers.current[key] = setTimeout(() => {
+      updateConfig(key, value);
+    }, 500);
+  }, [updateConfig]);
 
   const saveRoleMapping = async () => {
     setSaving("roles");
-    await fetch("/api/config", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        adminRoles: adminRolesInput.split(",").map((r) => r.trim()).filter(Boolean),
-        modRoles: modRolesInput.split(",").map((r) => r.trim()).filter(Boolean),
-      }),
-    });
-    setSaving("");
+    setError("");
+    try {
+      const res = await fetch("/api/config", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          adminRoles: adminRolesInput.split(",").map((r) => r.trim()).filter(Boolean),
+          modRoles: modRolesInput.split(",").map((r) => r.trim()).filter(Boolean),
+        }),
+      });
+      if (!res.ok) {
+        setError(`Failed to save role mapping: ${res.statusText}`);
+      }
+    } catch (err) {
+      setError("Failed to save role mapping");
+    } finally {
+      setSaving("");
+    }
   };
 
   return (
     <ProtectedRoute requiredTier="admin">
       <div className="max-w-2xl">
         <h1 className="text-xl font-bold mb-6">Settings</h1>
+
+        {error && (
+          <div className="bg-red-500/20 text-red-300 rounded-lg px-4 py-2 mb-4 text-sm">{error}</div>
+        )}
 
         <section className="bg-discord-secondary rounded-lg p-4 mb-4">
           <h2 className="text-sm font-semibold mb-3">Bot Configuration</h2>
@@ -79,7 +119,8 @@ export default function SettingsPage() {
                     {options?.map((o) => <option key={o} value={o}>{o}</option>)}
                   </select>
                 ) : (
-                  <input type="text" value={configMap[key] || ""} onChange={(e) => updateConfig(key, e.target.value)} disabled={saving === key}
+                  <input type="text" value={localValues[key] !== undefined ? localValues[key] : (configMap[key] || "")}
+                    onChange={(e) => debouncedUpdateConfig(key, e.target.value)} disabled={saving === key}
                     className="bg-discord-tertiary border border-discord-border rounded-md px-2 py-1 text-sm text-discord-text w-48 focus:outline-none focus:border-discord-accent" />
                 )}
               </div>

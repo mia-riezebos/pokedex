@@ -11,8 +11,12 @@ const statusDots: Record<string, string> = {
   open: "bg-green-500",
   acknowledged: "bg-blue-500",
   "in-progress": "bg-yellow-500",
+  escalated: "bg-orange-500",
+  fixed: "bg-emerald-500",
+  merged: "bg-purple-500",
   closed: "bg-gray-500",
   wontfix: "bg-red-500",
+  deleted: "bg-red-800",
 };
 
 export default function IssueCard({ issue }: { issue: any }) {
