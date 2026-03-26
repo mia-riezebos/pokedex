@@ -37,7 +37,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
-  if (!session.userId || !requireTier(session.tier ?? "viewer", "moderator")) {
+  if (!session.userId || !requireTier(session.tier, "moderator")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

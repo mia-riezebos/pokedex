@@ -34,9 +34,10 @@ export async function resolvePermissionTier(
 }
 
 export function requireTier(
-  userTier: PermissionTier,
+  userTier: PermissionTier | undefined,
   requiredTier: PermissionTier
 ): boolean {
+  if (!userTier) return false;
   const tierOrder: PermissionTier[] = ["viewer", "moderator", "admin"];
   return tierOrder.indexOf(userTier) >= tierOrder.indexOf(requiredTier);
 }
