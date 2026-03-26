@@ -269,6 +269,7 @@ async function getAllIssuesWithThreadId() {
   while (true) {
     let query = db.collection('issues')
       .where('threadId', '!=', null)
+      .select('threadId')
       .orderBy('threadId')
       .limit(batchSize);
     if (lastDoc) {
@@ -276,7 +277,7 @@ async function getAllIssuesWithThreadId() {
     }
     const snapshot = await query.get();
     if (snapshot.empty) break;
-    snapshot.docs.forEach(doc => results.push({ id: doc.id, ...doc.data() }));
+    snapshot.docs.forEach(doc => results.push({ id: doc.id, threadId: doc.get('threadId') }));
     lastDoc = snapshot.docs[snapshot.docs.length - 1];
     if (snapshot.size < batchSize) break;
   }
@@ -290,14 +291,38 @@ async function saveRecipe(recipeData) {
   const db = admin.firestore();
   // Use a deterministic doc ID based on normalized URL to prevent race conditions
   const normalizedUrl = recipeData.url.trim().toLowerCase().replace(/\/+$/, '');
-  const docId = crypto.createHash('sha256').update(normalizedUrl).digest('hex').slice(0, 20);
+  const docId = crypto.createHash('sha256').update(normalizedUrl).digest('hex');
   const docRef = db.collection('recipes').doc(docId);
+
+  // Check for legacy doc with random ID (pre-deterministic-ID migration)
+  const legacyQuery = await db.collection('recipes')
+    .where('url', '==', recipeData.url)
+    .limit(1)
+    .get();
+
+  if (!legacyQuery.empty) {
+    const legacyDoc = legacyQuery.docs[0];
+    const existingSharers = legacyDoc.data().sharedBy || [];
+    const newSharers = (recipeData.sharedBy || []).filter(
+      s => !existingSharers.some(es => es.id === s.id)
+    );
+    if (newSharers.length > 0) {
+      await legacyDoc.ref.update({
+        sharedBy: admin.firestore.FieldValue.arrayUnion(...newSharers),
+        shareCount: admin.firestore.FieldValue.increment(newSharers.length),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+    return { id: legacyDoc.id, updated: true };
+  }
+
+  const initialShareCount = Math.max(1, (recipeData.sharedBy || []).length);
 
   try {
     // Try to create — fails atomically if doc already exists
     await docRef.create({
       ...recipeData,
-      shareCount: 1,
+      shareCount: initialShareCount,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
     });

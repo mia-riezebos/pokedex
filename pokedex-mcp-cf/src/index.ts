@@ -522,8 +522,6 @@ export default {
     const allowedOrigins = ["https://claude.ai", "https://console.anthropic.com"];
     const allowOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
 
-    const corsHeaders = { "Access-Control-Allow-Origin": allowOrigin, "Vary": "Origin" };
-
     // Helper to add CORS headers to any response
     function withCors(response: Response): Response {
       const res = new Response(response.body, response);

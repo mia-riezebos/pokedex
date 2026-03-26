@@ -37,15 +37,25 @@ export default function SettingsPage() {
     }
   }, [roleMapping]);
 
+  useEffect(() => {
+    return () => {
+      Object.values(debounceTimers.current).forEach(clearTimeout);
+      debounceTimers.current = {};
+    };
+  }, []);
+
   const updateConfig = useCallback(async (key: string, value: any) => {
     setSaving(key);
     setError("");
     try {
-      await fetch("/api/config", {
+      const res = await fetch("/api/config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ key, value }),
       });
+      if (!res.ok) {
+        setError(`Failed to save ${key}: ${res.statusText}`);
+      }
     } catch (err) {
       setError(`Failed to save ${key}`);
     } finally {
@@ -65,7 +75,7 @@ export default function SettingsPage() {
     setSaving("roles");
     setError("");
     try {
-      await fetch("/api/config", {
+      const res = await fetch("/api/config", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -73,6 +83,9 @@ export default function SettingsPage() {
           modRoles: modRolesInput.split(",").map((r) => r.trim()).filter(Boolean),
         }),
       });
+      if (!res.ok) {
+        setError(`Failed to save role mapping: ${res.statusText}`);
+      }
     } catch (err) {
       setError("Failed to save role mapping");
     } finally {

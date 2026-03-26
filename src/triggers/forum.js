@@ -122,7 +122,8 @@ async function handleForumPost(thread) {
       await thread.send(evaluation.reply);
     }
   } catch (err) {
-    console.error('Context evaluator failed for issue', issueId, ':', err.message);
+    const errorDetail = err instanceof Error ? (err.stack || err.message) : String(err);
+    console.error('Context evaluator failed for issue', issueId, ':', errorDetail);
   }
 }
 

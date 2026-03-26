@@ -6,7 +6,7 @@ import { FieldValue } from "firebase-admin/firestore";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
-  if (!session.userId || !requireTier(session.tier, "moderator")) {
+  if (!session.userId || !requireTier(session.tier ?? "viewer", "moderator")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
@@ -19,7 +19,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   const noteEntry = {
     text: text.trim(),
     authorId: session.userId,
-    authorName: session.username,
+    authorName: session.username ?? "unknown",
     createdAt: new Date().toISOString(),
   };
 
