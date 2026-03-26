@@ -1,29 +1,50 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import ProtectedRoute from "@/components/ProtectedRoute";
 import IssueCard from "@/components/IssueCard";
-import { useCollection } from "@/hooks/useFirestore";
 
 export default function IssuesPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [priorityFilter, setPriorityFilter] = useState("");
+  const [issues, setIssues] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const { data: issues, loading } = useCollection("issues", {
-    orderBy: ["createdAt", "desc"] as [string, "asc" | "desc"],
-    limit: 100,
-  });
+  const fetchIssues = useCallback(async () => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (statusFilter) params.set("status", statusFilter);
+    if (priorityFilter) params.set("priority", priorityFilter);
 
-  const filtered = issues.filter((issue: any) => {
-    if (statusFilter && issue.status !== statusFilter) return false;
-    if (priorityFilter && issue.priority !== priorityFilter) return false;
-    return true;
-  });
+    try {
+      const res = await fetch(`/api/issues?${params}`);
+      if (res.ok) {
+        const data = await res.json();
+        setIssues(data.issues);
+      }
+    } catch (e) {
+      console.error("Failed to fetch issues:", e);
+    } finally {
+      setLoading(false);
+    }
+  }, [statusFilter, priorityFilter]);
+
+  useEffect(() => {
+    fetchIssues();
+  }, [fetchIssues]);
 
   return (
-    <ProtectedRoute requiredTier="moderator">
+    <ProtectedRoute requiredTier="viewer">
       <div>
-        <h1 className="text-xl font-bold mb-6">Issues</h1>
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-xl font-bold">Issues</h1>
+          <button
+            onClick={fetchIssues}
+            className="text-xs bg-discord-tertiary text-discord-muted hover:text-discord-text px-3 py-1.5 rounded-md transition-colors"
+          >
+            Refresh
+          </button>
+        </div>
 
         <div className="flex gap-2 mb-4 flex-wrap">
           <select
@@ -57,11 +78,11 @@ export default function IssuesPage() {
               <div key={i} className="animate-pulse h-16 bg-discord-secondary rounded-lg" />
             ))}
           </div>
-        ) : filtered.length === 0 ? (
+        ) : issues.length === 0 ? (
           <p className="text-discord-muted text-sm">No issues found</p>
         ) : (
           <div className="space-y-2">
-            {filtered.map((issue: any) => (
+            {issues.map((issue: any) => (
               <IssueCard key={issue.id} issue={issue} />
             ))}
           </div>
