@@ -273,10 +273,27 @@ function buildChangelogPage(page) {
     .setColor(0x5865f2);
 
   for (const entry of entries) {
-    const lines = entry.changes.map(c => `• ${c}`).join('\n');
-    embed.addFields({
-      name: `v${entry.version} — ${entry.date}`,
-      value: lines,
+    const FIELD_LIMIT = 1024;
+    const bullets = entry.changes.map(c => `• ${c}`);
+    const chunks = [];
+    let current = '';
+
+    for (const bullet of bullets) {
+      const candidate = current ? current + '\n' + bullet : bullet;
+      if (candidate.length > FIELD_LIMIT) {
+        if (current) chunks.push(current);
+        current = bullet;
+      } else {
+        current = candidate;
+      }
+    }
+    if (current) chunks.push(current);
+
+    chunks.forEach((chunk, i) => {
+      embed.addFields({
+        name: i === 0 ? `v${entry.version} — ${entry.date}` : '\u200b',
+        value: chunk,
+      });
     });
   }
 
