@@ -1,6 +1,6 @@
 {
   "name": "pokediscordcustomdiscordbot",
-  "version": "2.5.0",
+  "version": "2.5.1",
   "description": "",
   "main": "index.js",
   "directories": {
@@ -8,7 +8,8 @@
   },
   "scripts": {
     "start": "node src/index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [],
   "author": "",
@@ -20,5 +21,8 @@
     "express": "^5.2.1",
     "firebase-admin": "^13.7.0",
     "node-cron": "^4.2.1"
+  },
+  "devDependencies": {
+    "vitest": "^4.1.4"
   }
 }

@@ -2,12 +2,30 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
-    version: '2.5.0',
+    version: '2.5.1',
     date: '2026-04-14',
     changes: [
       'Added **`/pokedexbug`** — report bugs against Pokedex directly from Discord',
       'Accepts title, description, optional priority, category, and screenshot attachment',
       'Reports flow through the existing Firestore issues pipeline and land in the eng-triage channel alongside other issues',
+    ],
+  },
+  {
+    version: '2.5.0',
+    date: '2026-03-26',
+    changes: [
+      'Added **standalone public recipes site** — glassmorphism dark theme at `recipes-site/`, deployed separately on Vercel',
+      'Added `/recipes grab` — run inside any thread to scrape it for recipe links, with `auto-approve` option',
+      'Added `/recipes approve <id>` — approve a single pending recipe with autocomplete search',
+      'Added `/recipes scrape auto-approve:true` — skip the approval channel, publish scraped recipes directly',
+      'Added `/recipes approve-all` — bulk-approve every pending recipe in one click',
+      'Smarter recipe duplicate detection — URL normalization, refer code cross-checks, and in-run dedup',
+      '`/recipes scrape` and `/feedback-triage scrape` now **skip already-scraped posts** — re-runs are near-instant',
+      'Added **public feedback page** at `/feedback` — auto-syncs #feedback forum posts to the website with search and filters',
+      'Thread context acknowledgements now use ✅ reactions instead of sending embed messages',
+      'Fixed `/changelog` crash — entries exceeding Discord\'s 1024-char embed field limit now split across multiple fields',
+      'Fixed startup crash from `setDefaultMemberPermissions` on recipe subcommand',
+      'Security hardening across MCP servers, automod, recipes, dashboard OAuth, and feedback triage (PR #20)',
     ],
   },
   {
@@ -19,6 +37,10 @@ const CHANGELOG = [
       'Search and filter by source, tag, or refer code with interactive filter chips',
       'Recipes nav item added to sidebar and overview quick links',
       'Vercel dashboard: added moderation page, AutoMod config page, activity feed, and user search',
+      'Added `/rickandmorty` command — character lookup, episode details, random cards, quotes, and burps',
+      'AI-powered duplicate detection replaces Jaccard word-overlap for issue matching',
+      'Added `/feedback-triage reorganize` — batch-scan open issues for duplicate clusters and auto-merge',
+      'Forum trigger duplicate check — new #feedback posts are checked against existing issues before creating new ones',
     ],
   },
   {
@@ -282,10 +304,27 @@ function buildChangelogPage(page) {
     .setColor(0x5865f2);
 
   for (const entry of entries) {
-    const lines = entry.changes.map(c => `• ${c}`).join('\n');
-    embed.addFields({
-      name: `v${entry.version} — ${entry.date}`,
-      value: lines,
+    const FIELD_LIMIT = 1024;
+    const bullets = entry.changes.map(c => `• ${c}`);
+    const chunks = [];
+    let current = '';
+
+    for (const bullet of bullets) {
+      const candidate = current ? current + '\n' + bullet : bullet;
+      if (candidate.length > FIELD_LIMIT) {
+        if (current) chunks.push(current);
+        current = bullet;
+      } else {
+        current = candidate;
+      }
+    }
+    if (current) chunks.push(current);
+
+    chunks.forEach((chunk, i) => {
+      embed.addFields({
+        name: i === 0 ? `v${entry.version} — ${entry.date}` : '\u200b',
+        value: chunk,
+      });
     });
   }
 

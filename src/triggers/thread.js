@@ -1,17 +1,8 @@
-const { EmbedBuilder } = require('discord.js');
 const firestore = require('../services/firestore');
 const { classifyIssue } = require('../services/openrouter');
 const triage = require('../services/triage');
 const { getConfig } = require('../config/config');
 const { evaluateContext, processEvaluation, buildConversationHistory } = require('../services/contextEvaluator');
-
-const PRIORITY_COLORS = {
-  critical: 0xff0000,
-  high: 0xff8c00,
-  medium: 0xffd700,
-  low: 0x00cc00,
-  unclassified: 0x808080,
-};
 
 // Debounce map — wait a bit in case the user sends multiple messages quickly
 const pendingUpdates = new Map();
@@ -70,10 +61,8 @@ async function handleThreadMessage(message) {
         // Process triage updates, reclassification, and context complete badge
         await processEvaluation(message.guild, updatedIssue, updatedIssue.id, evaluation);
 
-        // Reply in the thread if evaluator says to
-        if (evaluation.shouldReply && evaluation.reply) {
-          await message.channel.send(evaluation.reply);
-        }
+        // React to acknowledge instead of sending a message
+        await message.react('✅').catch(() => {});
       } else {
         // Non-forum issues: existing behavior (reclassify + generic acknowledgement)
         // Build full context for reclassification
@@ -127,21 +116,8 @@ async function handleThreadMessage(message) {
           }
         }
 
-        // Acknowledge in the thread
-        const color = PRIORITY_COLORS[newClassification.priority] ?? 0x808080;
-        const updateEmbed = new EmbedBuilder()
-          .setColor(color)
-          .setDescription(`Got it — I've updated this issue with your new info.`)
-          .setFooter({ text: `Issue ID: ${updatedIssue.id}` });
-
-        if (priorityChanged || categoryChanged) {
-          const changes = [];
-          if (priorityChanged) changes.push(`Priority: ${updatedIssue.priority} → **${newClassification.priority}**`);
-          if (categoryChanged) changes.push(`Category: ${updatedIssue.category.replace(/_/g, ' ')} → **${newClassification.category.replace(/_/g, ' ')}**`);
-          updateEmbed.addFields({ name: 'Classification Updated', value: changes.join('\n') });
-        }
-
-        await message.channel.send({ embeds: [updateEmbed] });
+        // React to acknowledge instead of sending a message
+        await message.react('✅').catch(() => {});
       }
     } catch (err) {
       console.error('Error processing thread context update:', err);
