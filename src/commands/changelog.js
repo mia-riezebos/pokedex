@@ -2,6 +2,16 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.5.0',
+    date: '2026-04-14',
+    changes: [
+      'Added `/autoscrape recipes` — automatically scrape new #show-and-tell forum posts for recipe links without needing `/recipes scrape`',
+      'Configurable auto-approve: skip the approval workflow with `auto_approve:true` or keep manual review (default)',
+      'Added `/recipes delete` — original poster can delete their own recipe via slash command',
+      'OP delete button on recipe approval embeds — the person who shared a recipe can now delete it directly',
+    ],
+  },
+  {
     version: '2.4.0',
     date: '2026-03-25',
     changes: [

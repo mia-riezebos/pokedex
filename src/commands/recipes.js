@@ -8,7 +8,6 @@ const URL_REGEX = /https?:\/\/[^\s<>"')\]]+/i;
 const commandData = new SlashCommandBuilder()
   .setName('recipes')
   .setDescription('Community recipe collection from #show-and-tell')
-  .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
   .addSubcommand(sub =>
     sub.setName('scrape')
       .setDescription('Scrape #show-and-tell for recipe links — sends each for approval before publishing')
@@ -65,10 +64,25 @@ const commandData = new SlashCommandBuilder()
         opt.setName('id')
           .setDescription('Recipe ID to approve')
           .setRequired(true)
+          .setAutocomplete(true)))
+  .addSubcommand(sub =>
+    sub.setName('delete')
+      .setDescription('Delete a recipe you shared')
+      .addStringOption(opt =>
+        opt.setName('recipe')
+          .setDescription('Recipe to delete')
+          .setRequired(true)
           .setAutocomplete(true)));
 
 async function execute(interaction) {
   const sub = interaction.options.getSubcommand();
+
+  // Mod-only subcommands require ManageMessages
+  const modOnly = ['scrape', 'pending', 'approve-all', 'grab', 'approve'];
+  if (modOnly.includes(sub) && !interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
+    return interaction.reply({ content: 'You need **Manage Messages** permission to use this command.', ephemeral: true });
+  }
+
   if (sub === 'scrape') return executeScrape(interaction);
   if (sub === 'list') return executeList(interaction);
   if (sub === 'add') return executeAdd(interaction);
@@ -76,6 +90,7 @@ async function execute(interaction) {
   if (sub === 'approve-all') return executeApproveAll(interaction);
   if (sub === 'grab') return executeGrab(interaction);
   if (sub === 'approve') return executeApprove(interaction);
+  if (sub === 'delete') return executeDelete(interaction);
   return interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
 }
 
@@ -638,25 +653,86 @@ async function executeApprove(interaction) {
   return interaction.editReply({ embeds: [embed] });
 }
 
-// --- Autocomplete for recipe approve ---
+// --- DELETE (OP or mod) ---
+
+async function executeDelete(interaction) {
+  const recipeId = interaction.options.getString('recipe').trim();
+
+  await interaction.deferReply({ ephemeral: true });
+
+  const recipe = await firestore.getRecipeById(recipeId);
+  if (!recipe) {
+    return interaction.editReply('Recipe not found.');
+  }
+
+  // Permission check: OP or mod
+  const isOP = recipe.sharedBy?.some(s => s.id === interaction.user.id);
+  const isMod = interaction.member.permissions.has(PermissionFlagsBits.ManageMessages);
+
+  if (!isOP && !isMod) {
+    return interaction.editReply('You can only delete recipes you shared, or you need **Manage Messages** permission.');
+  }
+
+  await firestore.deleteRecipe(recipeId);
+
+  const embed = new EmbedBuilder()
+    .setTitle('Recipe Deleted')
+    .setColor(0xf43f5e)
+    .setDescription(`**${(recipe.title || 'Untitled').slice(0, 80)}** has been deleted.`)
+    .addFields(
+      { name: 'URL', value: recipe.url.slice(0, 200) },
+      { name: 'Deleted By', value: interaction.user.username, inline: true },
+    )
+    .setTimestamp();
+
+  return interaction.editReply({ embeds: [embed] });
+}
+
+// --- Autocomplete for recipe approve / delete ---
 
 async function autocomplete(interaction) {
+  const sub = interaction.options.getSubcommand();
   const focused = interaction.options.getFocused().toLowerCase();
+
   try {
-    const pending = await firestore.getPendingRecipes(50);
-    const filtered = pending
-      .filter(r =>
-        r.id.toLowerCase().includes(focused) ||
-        (r.title || '').toLowerCase().includes(focused) ||
-        (r.url || '').toLowerCase().includes(focused) ||
-        (r.referCode || '').toLowerCase().includes(focused)
-      )
-      .slice(0, 25)
-      .map(r => ({
-        name: `${(r.title || 'Untitled').slice(0, 60)} | ${r.source || '?'} | ${r.id.slice(0, 8)}…`,
-        value: r.id,
-      }));
-    await interaction.respond(filtered);
+    if (sub === 'approve') {
+      const pending = await firestore.getPendingRecipes(50);
+      const filtered = pending
+        .filter(r =>
+          r.id.toLowerCase().includes(focused) ||
+          (r.title || '').toLowerCase().includes(focused) ||
+          (r.url || '').toLowerCase().includes(focused) ||
+          (r.referCode || '').toLowerCase().includes(focused)
+        )
+        .slice(0, 25)
+        .map(r => ({
+          name: `${(r.title || 'Untitled').slice(0, 60)} | ${r.source || '?'} | ${r.id.slice(0, 8)}…`,
+          value: r.id,
+        }));
+      await interaction.respond(filtered);
+    } else if (sub === 'delete') {
+      const allRecipes = await firestore.getAllRecipes(200);
+      const isMod = interaction.member.permissions.has(PermissionFlagsBits.ManageMessages);
+
+      const visible = isMod
+        ? allRecipes
+        : allRecipes.filter(r => r.sharedBy?.some(s => s.id === interaction.user.id));
+
+      const filtered = visible
+        .filter(r =>
+          r.id.toLowerCase().includes(focused) ||
+          (r.title || '').toLowerCase().includes(focused) ||
+          (r.url || '').toLowerCase().includes(focused)
+        )
+        .slice(0, 25)
+        .map(r => ({
+          name: `${(r.title || 'Untitled').slice(0, 60)} | ${r.source || '?'} | ${r.status}`,
+          value: r.id,
+        }));
+      await interaction.respond(filtered);
+    } else {
+      await interaction.respond([]);
+    }
   } catch {
     await interaction.respond([]);
   }
@@ -700,6 +776,11 @@ async function postApprovalEmbed(channel, recipe, recipeId) {
       .setLabel('Decline')
       .setStyle(ButtonStyle.Danger)
       .setEmoji('❌'),
+    new ButtonBuilder()
+      .setCustomId(`recipe_delete_${recipeId}`)
+      .setLabel('Delete')
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji('🗑️'),
   );
 
   try {
@@ -716,7 +797,47 @@ async function postApprovalEmbed(channel, recipe, recipeId) {
 async function handleRecipeButton(interaction) {
   const { customId } = interaction;
   const isApprove = customId.startsWith('recipe_approve_');
-  const recipeId = customId.replace('recipe_approve_', '').replace('recipe_decline_', '');
+  const isDelete = customId.startsWith('recipe_delete_');
+  const recipeId = customId.replace('recipe_approve_', '').replace('recipe_decline_', '').replace('recipe_delete_', '');
+
+  if (isDelete) {
+    const recipe = await firestore.getRecipeById(recipeId);
+    if (!recipe) {
+      return interaction.reply({ content: 'Recipe not found.', ephemeral: true });
+    }
+    await firestore.deleteRecipe(recipeId);
+
+    const embed = EmbedBuilder.from(interaction.message.embeds[0]);
+    embed.setTitle('🗑️ Recipe Deleted');
+    embed.setColor(0x95a5a6);
+    embed.addFields({
+      name: 'Deleted By',
+      value: `${interaction.user.username} — <t:${Math.floor(Date.now() / 1000)}:R>`,
+    });
+
+    const disabledRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`recipe_approve_${recipeId}`)
+        .setLabel('Approve')
+        .setStyle(ButtonStyle.Success)
+        .setEmoji('✅')
+        .setDisabled(true),
+      new ButtonBuilder()
+        .setCustomId(`recipe_decline_${recipeId}`)
+        .setLabel('Decline')
+        .setStyle(ButtonStyle.Danger)
+        .setEmoji('❌')
+        .setDisabled(true),
+      new ButtonBuilder()
+        .setCustomId(`recipe_delete_${recipeId}`)
+        .setLabel('Delete')
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji('🗑️')
+        .setDisabled(true),
+    );
+
+    return interaction.update({ embeds: [embed], components: [disabledRow] });
+  }
 
   const recipe = await firestore.getRecipeById(recipeId);
   if (!recipe) {
@@ -762,6 +883,12 @@ async function handleRecipeButton(interaction) {
       .setLabel('Decline')
       .setStyle(ButtonStyle.Danger)
       .setEmoji('❌')
+      .setDisabled(true),
+    new ButtonBuilder()
+      .setCustomId(`recipe_delete_${recipeId}`)
+      .setLabel('Delete')
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji('🗑️')
       .setDisabled(true),
   );
 
@@ -1052,4 +1179,10 @@ function isDuplicateRecipe(url, referCode, existingUrls, existingCodes) {
   return false;
 }
 
-module.exports = { data: commandData, execute, handleRecipeButton, autocomplete };
+module.exports = {
+  data: commandData, execute, handleRecipeButton, autocomplete,
+  // Exported for autoscrape trigger
+  extractLinks, normalizeUrl, inferSource, extractTags, extractTitleFromMessage,
+  extractTitleFromUrl, fetchPageTitle, cleanDescription, getPokeCode, isPokeLink,
+  isDuplicateRecipe, findApprovalChannel, postApprovalEmbed,
+};
