@@ -7,6 +7,7 @@ const { handleMention } = require('./triggers/mention');
 const { handleReaction } = require('./triggers/reaction');
 const { handleThreadMessage } = require('./triggers/thread');
 const { handleForumPost } = require('./triggers/forum');
+const { handleAutoScrape } = require('./triggers/autoscrape');
 // pending poller replaced by instant webhook message detection
 const configCommand = require('./commands/config');
 const helpCommand = require('./commands/help');
@@ -43,6 +44,7 @@ const automodCommand = require('./commands/automod');
 const automod = require('./services/automod');
 const feedbackTriageCommand = require('./commands/feedbacktriage');
 const recipesCommand = require('./commands/recipes');
+const autoscrapeCommand = require('./commands/autoscrape');
 const {
   canModerate,
   processPendingDecision,
@@ -67,7 +69,7 @@ async function registerCommands() {
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   await rest.put(
     Routes.applicationGuildCommands(process.env.DISCORD_APP_ID, process.env.DISCORD_GUILD_ID),
-    { body: [configCommand.data.toJSON(), helpCommand.data.toJSON(), changelogCommand.data.toJSON(), feedbackCommand.data.toJSON(), issueCommand.data.toJSON(), pingCommand.data.toJSON(), lockCommand.data.toJSON(), unlockCommand.data.toJSON(), leaderboardCommand.data.toJSON(), pokedexCommand.data.toJSON(), pokedexbugCommand.data.toJSON(), typechartCommand.data.toJSON(), serverinfoCommand.data.toJSON(), afkCommand.data.toJSON(), levelCommand.data.toJSON(), warnCommand.data.toJSON(), timeoutCommand.data.toJSON(), kickCommand.data.toJSON(), banCommand.data.toJSON(), purgeCommand.data.toJSON(), slowmodeCommand.data.toJSON(), deletethreadCommand.data.toJSON(), mergeCommand.data.toJSON(), starboardCommand.data.toJSON(), pollCommand.data.toJSON(), welcomeCommand.data.toJSON(), reactionroleCommand.data.toJSON(), giveawayCommand.data.toJSON(), suggestCommand.data.toJSON(), creatorCommand.data.toJSON(), rickandmortyCommand.data.toJSON(), automodCommand.data.toJSON(), feedbackTriageCommand.data.toJSON(), recipesCommand.data.toJSON()] },
+    { body: [configCommand.data.toJSON(), helpCommand.data.toJSON(), changelogCommand.data.toJSON(), feedbackCommand.data.toJSON(), issueCommand.data.toJSON(), pingCommand.data.toJSON(), lockCommand.data.toJSON(), unlockCommand.data.toJSON(), leaderboardCommand.data.toJSON(), pokedexCommand.data.toJSON(), pokedexbugCommand.data.toJSON(), typechartCommand.data.toJSON(), serverinfoCommand.data.toJSON(), afkCommand.data.toJSON(), levelCommand.data.toJSON(), warnCommand.data.toJSON(), timeoutCommand.data.toJSON(), kickCommand.data.toJSON(), banCommand.data.toJSON(), purgeCommand.data.toJSON(), slowmodeCommand.data.toJSON(), deletethreadCommand.data.toJSON(), mergeCommand.data.toJSON(), starboardCommand.data.toJSON(), pollCommand.data.toJSON(), welcomeCommand.data.toJSON(), reactionroleCommand.data.toJSON(), giveawayCommand.data.toJSON(), suggestCommand.data.toJSON(), creatorCommand.data.toJSON(), rickandmortyCommand.data.toJSON(), automodCommand.data.toJSON(), feedbackTriageCommand.data.toJSON(), recipesCommand.data.toJSON(), autoscrapeCommand.data.toJSON()] },
   );
   console.log('Slash commands registered.');
 }
@@ -157,6 +159,12 @@ client.on('threadCreate', async (thread) => {
     await handleForumPost(thread);
   } catch (err) {
     console.error('Error handling forum post:', err);
+  }
+
+  try {
+    await handleAutoScrape(thread);
+  } catch (err) {
+    console.error('Error in recipe auto-scrape:', err);
   }
 });
 
@@ -248,7 +256,7 @@ client.on('interactionCreate', async (interaction) => {
   }
 
   if (!interaction.isChatInputCommand()) return;
-  const commands = { config: configCommand, help: helpCommand, changelog: changelogCommand, feedback: feedbackCommand, issue: issueCommand, ping: pingCommand, lock: lockCommand, unlock: unlockCommand, leaderboard: leaderboardCommand, pokedex: pokedexCommand, pokedexbug: pokedexbugCommand, typechart: typechartCommand, serverinfo: serverinfoCommand, afk: afkCommand, level: levelCommand, warn: warnCommand, timeout: timeoutCommand, kick: kickCommand, ban: banCommand, purge: purgeCommand, slowmode: slowmodeCommand, deletethread: deletethreadCommand, merge: mergeCommand, starboard: starboardCommand, poll: pollCommand, welcome: welcomeCommand, reactionrole: reactionroleCommand, giveaway: giveawayCommand, suggest: suggestCommand, creator: creatorCommand, rickandmorty: rickandmortyCommand, automod: automodCommand, 'feedback-triage': feedbackTriageCommand, recipes: recipesCommand };
+  const commands = { config: configCommand, help: helpCommand, changelog: changelogCommand, feedback: feedbackCommand, issue: issueCommand, ping: pingCommand, lock: lockCommand, unlock: unlockCommand, leaderboard: leaderboardCommand, pokedex: pokedexCommand, pokedexbug: pokedexbugCommand, typechart: typechartCommand, serverinfo: serverinfoCommand, afk: afkCommand, level: levelCommand, warn: warnCommand, timeout: timeoutCommand, kick: kickCommand, ban: banCommand, purge: purgeCommand, slowmode: slowmodeCommand, deletethread: deletethreadCommand, merge: mergeCommand, starboard: starboardCommand, poll: pollCommand, welcome: welcomeCommand, reactionrole: reactionroleCommand, giveaway: giveawayCommand, suggest: suggestCommand, creator: creatorCommand, rickandmorty: rickandmortyCommand, automod: automodCommand, 'feedback-triage': feedbackTriageCommand, recipes: recipesCommand, autoscrape: autoscrapeCommand };
   const command = commands[interaction.commandName];
   if (!command) return;
 
@@ -474,7 +482,26 @@ async function handleButtonInteraction(interaction) {
 
   // --- Recipe approval buttons ---
   if (customId.startsWith('recipe_')) {
-    if (!canModerate(interaction.member)) {
+    const isDeleteAction = customId.startsWith('recipe_delete_');
+
+    // For delete: allow OP or mods. For approve/decline: mods only.
+    if (isDeleteAction) {
+      let allowed = canModerate(interaction.member);
+      if (!allowed) {
+        try {
+          const prefix = 'recipe_delete_';
+          const recipeId = customId.slice(prefix.length);
+          const recipe = await firestore.getRecipeById(recipeId);
+          if (recipe?.sharedBy?.some(s => s.id === interaction.user.id)) {
+            allowed = true;
+          }
+        } catch {}
+      }
+      if (!allowed) {
+        await interaction.reply({ content: 'You can only delete recipes you shared, or you need **Manage Messages** permission.', ephemeral: true }).catch(() => {});
+        return;
+      }
+    } else if (!canModerate(interaction.member)) {
       await interaction.reply({ content: 'You need **Manage Messages** permission to approve or decline recipes.', ephemeral: true }).catch(() => {});
       return;
     }

@@ -407,6 +407,11 @@ async function updateRecipeStatus(recipeId, status, reviewerId, reviewerName) {
   });
 }
 
+async function deleteRecipe(recipeId) {
+  const db = admin.firestore();
+  await db.collection('recipes').doc(recipeId).delete();
+}
+
 // --- Feedback (public website) ---
 
 async function saveFeedback(feedbackData) {
@@ -468,6 +473,7 @@ module.exports = {
   getRecipeById,
   getRecipeByUrl,
   updateRecipeStatus,
+  deleteRecipe,
   saveFeedback,
   getPublishedFeedback,
 };
