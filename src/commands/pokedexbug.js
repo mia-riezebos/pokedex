@@ -61,6 +61,8 @@ async function execute(interaction) {
       url: screenshot.url,
       name: screenshot.name,
       contentType: screenshot.contentType,
+      size: screenshot.size,
+      isImage: (screenshot.contentType || '').startsWith('image/'),
     });
   }
 
@@ -69,8 +71,8 @@ async function execute(interaction) {
     reporterId: interaction.user.id,
     reporterName: interaction.user.username,
     guildId: interaction.guildId,
-    channelId: interaction.channelId,
-    messageId: `pokedexbug-${interaction.id}`,
+    channelId: null,
+    messageId: null,
     priority,
     category,
     summary: title,
@@ -88,8 +90,7 @@ async function execute(interaction) {
   }
 
   try {
-    const savedIssue = await firestore.getIssueById(issueId);
-    await postIssueEmbed(interaction.guild, savedIssue || { ...issueData, id: issueId }, issueId);
+    await postIssueEmbed(interaction.guild, { ...issueData, id: issueId }, issueId);
   } catch (err) {
     console.error('pokedexbug: failed to post triage embed', err);
   }
