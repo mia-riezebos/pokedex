@@ -2,6 +2,15 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.5.1',
+    date: '2026-04-14',
+    changes: [
+      'Added **`/pokedexbug`** — report bugs against Pokedex directly from Discord',
+      'Accepts title, description, optional priority, category, and screenshot attachment',
+      'Reports flow through the existing Firestore issues pipeline and land in the eng-triage channel alongside other issues',
+    ],
+  },
+  {
     version: '2.5.0',
     date: '2026-03-26',
     changes: [
