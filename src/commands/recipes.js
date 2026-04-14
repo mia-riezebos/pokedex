@@ -680,7 +680,7 @@ async function executeDelete(interaction) {
     .setColor(0xf43f5e)
     .setDescription(`**${(recipe.title || 'Untitled').slice(0, 80)}** has been deleted.`)
     .addFields(
-      { name: 'URL', value: recipe.url.slice(0, 200) },
+      { name: 'URL', value: (recipe.url || 'Unknown').slice(0, 200) },
       { name: 'Deleted By', value: interaction.user.username, inline: true },
     )
     .setTimestamp();
@@ -756,7 +756,7 @@ async function postApprovalEmbed(channel, recipe, recipeId) {
       `Shared by: **${sharer}**`
     )
     .addFields(
-      { name: 'URL', value: recipe.url.slice(0, 200) },
+      { name: 'URL', value: (recipe.url || 'Unknown').slice(0, 200) },
     )
     .setFooter({ text: `Recipe ID: ${recipeId}` })
     .setTimestamp();
@@ -798,7 +798,8 @@ async function handleRecipeButton(interaction) {
   const { customId } = interaction;
   const isApprove = customId.startsWith('recipe_approve_');
   const isDelete = customId.startsWith('recipe_delete_');
-  const recipeId = customId.replace('recipe_approve_', '').replace('recipe_decline_', '').replace('recipe_delete_', '');
+  const prefix = isDelete ? 'recipe_delete_' : isApprove ? 'recipe_approve_' : 'recipe_decline_';
+  const recipeId = customId.slice(prefix.length);
 
   if (isDelete) {
     const recipe = await firestore.getRecipeById(recipeId);

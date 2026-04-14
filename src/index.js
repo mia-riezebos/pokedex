@@ -481,8 +481,6 @@ async function handleButtonInteraction(interaction) {
 
   // --- Recipe approval buttons ---
   if (customId.startsWith('recipe_')) {
-    // Extract recipe ID from button customId
-    const recipeId = customId.replace('recipe_approve_', '').replace('recipe_decline_', '').replace('recipe_delete_', '');
     const isDeleteAction = customId.startsWith('recipe_delete_');
 
     // For delete: allow OP or mods. For approve/decline: mods only.
@@ -490,6 +488,8 @@ async function handleButtonInteraction(interaction) {
       let allowed = canModerate(interaction.member);
       if (!allowed) {
         try {
+          const prefix = 'recipe_delete_';
+          const recipeId = customId.slice(prefix.length);
           const recipe = await firestore.getRecipeById(recipeId);
           if (recipe?.sharedBy?.some(s => s.id === interaction.user.id)) {
             allowed = true;

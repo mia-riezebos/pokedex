@@ -55,8 +55,7 @@ async function handleAutoScrape(thread) {
   if (!autoApprove) {
     approvalChannel = findApprovalChannel(thread.guild);
     if (!approvalChannel) {
-      console.warn('Auto-scrape: no approval channel found, skipping pending recipes');
-      return;
+      console.warn('Auto-scrape: no approval channel found, recipes will be saved as pending without approval embed');
     }
   }
 
