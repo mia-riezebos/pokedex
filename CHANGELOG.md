@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.5.0] - 2026-04-14
+
+### Added
+- **`/pokedexbug`** — new slash command for reporting bugs against Pokedex directly from Discord. Accepts a title, description, optional priority (critical/high/medium/low), category (bug/performance/security/ux_issue/infrastructure/other), and screenshot attachment. Reports flow through the existing Firestore issues pipeline and are posted to the eng-triage channel.
+
 ## [2.4.0] - 2026-03-25
 
 ### Added
