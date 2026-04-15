@@ -29,9 +29,10 @@ async function fetchStats(): Promise<Stats> {
     snap.docs.forEach((d) => {
       const data = d.data() as { sharedBy?: Array<{ id?: string; name?: string }> };
       (data.sharedBy ?? []).forEach((s) => {
-        // Dedupe by stable id when available; fall back to name for legacy docs
-        // where sharedBy[].id wasn't recorded.
-        const key = s.id ?? s.name;
+        // Dedupe by stable id when available; fall back to name for legacy docs.
+        // Namespace the two identifier sources so a legacy `name` can't collide
+        // with a newer `id` that happens to have the same string value.
+        const key = s.id ? `id:${s.id}` : s.name ? `name:${s.name}` : null;
         if (key) contributors.add(key);
       });
     });
