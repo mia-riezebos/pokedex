@@ -412,6 +412,15 @@ async function deleteRecipe(recipeId) {
   await db.collection('recipes').doc(recipeId).delete();
 }
 
+async function updateRecipeTagsAndSource(recipeId, tags, source) {
+  const db = admin.firestore();
+  await db.collection('recipes').doc(recipeId).update({
+    tags,
+    source,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+}
+
 // --- Feedback (public website) ---
 
 async function saveFeedback(feedbackData) {
@@ -474,6 +483,7 @@ module.exports = {
   getRecipeByUrl,
   updateRecipeStatus,
   deleteRecipe,
+  updateRecipeTagsAndSource,
   saveFeedback,
   getPublishedFeedback,
 };
