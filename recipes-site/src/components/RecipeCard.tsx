@@ -1,5 +1,8 @@
 "use client";
 
+import { formatRelativeTime, isFresh, type TimestampLike } from "@/lib/relativeTime";
+import { getSourceColor } from "@/lib/sourceColors";
+
 interface Sharer {
   name: string;
   sharedAt?: string;
@@ -15,23 +18,13 @@ interface Recipe {
   tags?: string[];
   shareCount?: number;
   sharedBy?: Sharer[];
+  createdAt?: TimestampLike;
 }
 
-const sourceColors: Record<string, string> = {
-  Poke: "bg-yellow-500/10 text-yellow-400 border-yellow-500/20",
-  Pokepaste: "bg-blue-500/10 text-blue-400 border-blue-500/20",
-  Showdown: "bg-purple-500/10 text-purple-400 border-purple-500/20",
-  Smogon: "bg-orange-500/10 text-orange-400 border-orange-500/20",
-  YouTube: "bg-red-500/10 text-red-400 border-red-500/20",
-  Reddit: "bg-orange-500/10 text-orange-400 border-orange-500/20",
-  Pikalytics: "bg-cyan-500/10 text-cyan-400 border-cyan-500/20",
-  Limitless: "bg-green-500/10 text-green-400 border-green-500/20",
-};
-
 export default function RecipeCard({ recipe: r }: { recipe: Recipe }) {
-  const sourceColor =
-    sourceColors[r.source || ""] ||
-    "bg-indigo-500/10 text-indigo-400 border-indigo-500/20";
+  const sourceColor = getSourceColor(r.source);
+  const timestampLabel = formatRelativeTime(r.createdAt);
+  const timestampIsFresh = isFresh(r.createdAt);
 
   return (
     <a
@@ -40,6 +33,16 @@ export default function RecipeCard({ recipe: r }: { recipe: Recipe }) {
       rel="noopener noreferrer"
       className="group glass rounded-xl p-5 block relative transition-all duration-200 hover:bg-bg-hover hover:border-white/10 hover:-translate-y-0.5"
     >
+      {timestampLabel && (
+        <span
+          className={`absolute top-4 right-10 text-[10px] font-medium ${
+            timestampIsFresh ? "text-emerald-400/70" : "text-gray-600"
+          }`}
+        >
+          {timestampLabel}
+        </span>
+      )}
+
       {/* External link icon */}
       <svg
         className="absolute top-4 right-4 w-4 h-4 text-gray-700 group-hover:text-gold transition-colors"
