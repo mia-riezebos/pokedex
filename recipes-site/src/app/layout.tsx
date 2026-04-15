@@ -2,12 +2,23 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Community Hub — Pokedex",
-  description: "Browse community-shared recipes and feedback. Powered by Pokedex.",
+  metadataBase: new URL("https://pokedex-recipes.vercel.app"),
+  title: "Community Recipes — Pokedex",
+  description:
+    "Browse community-shared recipes, team builds, and strategies from the Pokedex Discord community.",
   openGraph: {
-    title: "Community Hub — Pokedex",
-    description: "Browse community-shared recipes and feedback",
+    title: "Community Recipes — Pokedex",
+    description:
+      "Browse community-shared recipes, team builds, and strategies from the Pokedex Discord community.",
     type: "website",
+    siteName: "Pokedex Community Hub",
+    url: "/",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Community Recipes — Pokedex",
+    description:
+      "Browse community-shared recipes, team builds, and strategies from the Pokedex Discord community.",
   },
 };
 
