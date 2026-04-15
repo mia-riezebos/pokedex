@@ -481,9 +481,9 @@ git commit -m "feat(recipes-site): show relative timestamp on RecipeCard"
 - Modify: `recipes-site/src/app/page.tsx`
 
 Five changes in this one file:
-1. Import `TrendingRow`, `computeTrending`, and `TimestampLike`
+1. Import `TrendingRow`, `computeTrending`, `toMillis`, and `TimestampLike`
 2. Add `createdAt` to the `Recipe` interface
-3. Change `orderBy("shareCount", "desc")` → `orderBy("createdAt", "desc")`
+3. Remove the Firestore `orderBy` entirely; add a client-side `sortByCreatedAtDesc` helper (see Step 4)
 4. Compute the trending slice and filtering flag with `useMemo`
 5. Render `<TrendingRow>` above the main grid, gated on `!loading && !isFiltering`
 6. Bump `APP_VERSION` from `"1.0.1"` to `"1.1.0"`
@@ -552,27 +552,39 @@ interface Recipe {
 }
 ```
 
-- [ ] **Step 4: Change the Firestore query sort**
+- [ ] **Step 4: Remove the Firestore `orderBy` and add client-side sort**
 
-Find:
+> **STATUS: SUPERSEDED** — during review the `orderBy("createdAt", "desc")` approach was rejected because Firestore silently excludes documents that are missing the ordered field. Any legacy recipe document without `createdAt` would disappear from the list entirely. The implementation was switched to client-side sorting, which has no index requirement and treats missing `createdAt` as "very old" (sorted to the bottom) so nothing is dropped.
+
+Remove the `orderBy` import from Firebase and drop it from the query. Add a `sortByCreatedAtDesc` helper that uses the exported `toMillis` from `relativeTime.ts`:
+
 ```tsx
+      // Fetch all approved recipes without a Firestore orderBy — legacy docs
+      // may lack `createdAt`, and Firestore silently excludes them from any
+      // ordered query. We sort client-side instead, treating missing
+      // createdAt as "very old" (sorted to the bottom) so nothing is dropped.
       const q = query(
         collection(db, "recipes"),
-        where("status", "==", "approved"),
-        orderBy("shareCount", "desc")
+        where("status", "==", "approved")
       );
 ```
 
-Replace with:
+And add the sort helper before the component:
+
 ```tsx
-      const q = query(
-        collection(db, "recipes"),
-        where("status", "==", "approved"),
-        orderBy("createdAt", "desc")
-      );
+function sortByCreatedAtDesc(recipes: Recipe[]): Recipe[] {
+  return [...recipes].sort((a, b) => {
+    const aMs = toMillis(a.createdAt) ?? -Infinity;
+    const bMs = toMillis(b.createdAt) ?? -Infinity;
+    if (aMs === bMs) return 0;
+    return bMs - aMs;
+  });
+}
 ```
 
-**Firestore composite index required** — see Task 7 below. This query will fail at runtime if the `(status ASC, createdAt DESC)` composite index doesn't exist yet. Do not skip Task 7.
+Apply the sort after fetching: `const sorted = sortByCreatedAtDesc(docs);`
+
+No Firestore composite index is required. Task 7 is obsolete — see below.
 
 - [ ] **Step 5: Add trending and isFiltering useMemo hooks**
 
@@ -674,49 +686,13 @@ git commit -m "chore(recipes-site): bump version to 1.1.0"
 
 ---
 
-### Task 7: Verify (or create) the Firestore composite index
+### Task 7: (REMOVED — no Firestore index needed after client-side sort fix)
 
-**Files:** none — this is a Firebase console action.
-
-> ⚠️ **Human-only task.** An agentic executor cannot click through the Firebase console. If a subagent reaches this task, it should stop and hand off to the user with a message like *"Task 7 requires Firebase console access — please verify/create the composite index on `recipes` with fields `(status ASC, createdAt DESC)`, then tell me to continue."*
-
-The Firestore query in `page.tsx` changes from:
-```
-where("status", "==", "approved") + orderBy("shareCount", "desc")
-```
-to:
-```
-where("status", "==", "approved") + orderBy("createdAt", "desc")
-```
-
-Firestore requires a composite index for any query that combines an `==` filter with an `orderBy` on a different field. The old index is `(status ASC, shareCount DESC)`; the new one is `(status ASC, createdAt DESC)`. **Both must exist** — the old one because the production site might still be running the old code during the deploy window, the new one because the new code needs it.
-
-- [ ] **Step 1: Check if the index exists**
-
-Open https://console.firebase.google.com → select the Pokedex project → **Firestore Database** → **Indexes** tab.
-
-Look for a composite index on collection `recipes` with fields in this order:
-1. `status` — Ascending
-2. `createdAt` — Descending
-
-If it exists and its status is **Enabled**, skip to Task 8.
-
-- [ ] **Step 2: If missing — create it the lazy way**
-
-Easiest path: run the dev server with the new query, let Firestore throw the "missing index" error, and click the auto-generated link in the browser console.
-
-```bash
-cd recipes-site && npm run dev
-# open localhost:3001, open browser devtools console
-```
-
-When the recipes list fails to load, a Firestore error in the console will include a full URL like `https://console.firebase.google.com/project/.../firestore/indexes?create_composite=...`. Click it — Firebase pre-fills the index definition. Click **Create index**. Wait 1-5 minutes for Firestore to finish building (the console shows build progress).
-
-Refresh the dev server. The page should now load recipes normally.
-
-- [ ] **Step 3: Confirm the old `shareCount` index still exists**
-
-Back in the Firestore **Indexes** tab, confirm the old `(status ASC, shareCount DESC)` index is still there. Do **not** delete it — production is still running the old query until your PR merges and Vercel deploys, and you want a clean cutover with both indexes active during the brief overlap window.
+> **STATUS: SUPERSEDED**
+>
+> This task was originally written to instruct implementers to create a Firestore composite index on `(status ASC, createdAt DESC)` to support an `orderBy("createdAt", "desc")` query. During code review, that approach was rejected because Firestore silently excludes any document that is missing the field used in `orderBy`. Any legacy recipe document without a `createdAt` field would silently disappear from the list — an unacceptable data loss risk.
+>
+> The implementation was changed to fetch all approved recipes without an `orderBy` and sort them client-side using `sortByCreatedAtDesc` (which calls `toMillis` from `relativeTime.ts` and treats `null` as `-Infinity`, pushing legacy docs to the bottom rather than dropping them). No composite index is required for a `where`-only query. This task is a no-op and can be skipped entirely.
 
 ---
 
