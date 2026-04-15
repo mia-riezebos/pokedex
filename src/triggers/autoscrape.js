@@ -7,6 +7,7 @@ const {
   cleanDescription, getPokeCode, isDuplicateRecipe, findApprovalChannel,
   postApprovalEmbed,
 } = require('../commands/recipes');
+const { generateRecipeTags } = require('../services/recipeTagger');
 
 const STARTER_MSG_RETRIES = 3;
 const STARTER_MSG_DELAY_MS = 2000;
@@ -101,10 +102,14 @@ async function handleAutoScrape(thread) {
       if (fetched) title = fetched;
     }
 
+    const autoScrapeSource = inferSource(url);
+    const autoScrapeDescription = cleanDescription(text, url);
+    const aiTags = await generateRecipeTags({ title, description: autoScrapeDescription, url, source: autoScrapeSource });
+    const mergedTags = [...new Set([...forumTags, ...aiTags])].sort();
     const recipe = {
       url,
       title,
-      description: cleanDescription(text, url),
+      description: autoScrapeDescription,
       referCode,
       sharedBy: [{ id: thread.ownerId, name: posterName, sharedAt: new Date().toISOString() }],
       channelId: thread.parentId,
@@ -112,8 +117,8 @@ async function handleAutoScrape(thread) {
       guildId: thread.guild.id,
       threadId: thread.id,
       messageId: starterMessage.id,
-      source: inferSource(url),
-      tags: [...new Set([...forumTags, ...extractTags(text)])],
+      source: autoScrapeSource,
+      tags: mergedTags,
       status: autoApprove ? 'approved' : 'pending',
     };
 

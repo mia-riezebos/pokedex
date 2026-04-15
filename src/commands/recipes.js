@@ -3,6 +3,7 @@ const admin = require('firebase-admin');
 const firestore = require('../services/firestore');
 const { getConfig } = require('../config/config');
 const { extractTags, inferSource } = require('../recipes/extractors');
+const { generateRecipeTags } = require('../services/recipeTagger');
 
 // URL regex — matches http/https links (no g flag to avoid stateful .test() failures)
 const URL_REGEX = /https?:\/\/[^\s<>"')\]]+/i;
@@ -77,7 +78,13 @@ const commandData = new SlashCommandBuilder()
           .setAutocomplete(true)))
   .addSubcommand(sub =>
     sub.setName('retag')
-      .setDescription('Retag all recipes using the current extractors (mod only)'));
+      .setDescription('Regenerate tags for all recipes via OpenRouter (mod only)')
+      .addBooleanOption(option =>
+        option
+          .setName('preview')
+          .setDescription('Dry-run: show what would change without writing')
+          .setRequired(false),
+      ));
 
 async function execute(interaction) {
   const sub = interaction.options.getSubcommand();
@@ -260,18 +267,21 @@ async function executeScrape(interaction) {
             continue;
           }
 
+          const recipeTitle = extractTitleFromMessage(msg.content, url);
+          const recipeSource = inferSource(url);
+          const recipeDescription = cleanDescription(msg.content, url);
           const recipe = {
             url,
-            title: extractTitleFromMessage(msg.content, url),
-            description: cleanDescription(msg.content, url),
+            title: recipeTitle,
+            description: recipeDescription,
             referCode,
             sharedBy: [{ id: msg.author.id, name: msg.author.username, sharedAt: msg.createdAt.toISOString() }],
             channelId: channel.id,
             channelName: channel.name,
             guildId: interaction.guild.id,
             messageId: msg.id,
-            source: inferSource(url),
-            tags: extractTags(msg.content),
+            source: recipeSource,
+            tags: await generateRecipeTags({ title: recipeTitle, description: recipeDescription, url, source: recipeSource }),
             status: autoApprove ? 'approved' : 'pending',
           };
 
@@ -528,64 +538,74 @@ async function executeGrab(interaction) {
     return true;
   });
 
-  // Extract all links from non-bot messages
-  const recipes = [];
-  const stats = { found: 0, new: 0, duplicate: 0 };
-
+  // Extract all links from non-bot messages, capped at 50 per invocation
+  const MAX_URLS_PER_GRAB = 50;
+  const allUrls = [];
+  const urlToMsg = new Map();
   for (const msg of allMessages) {
     if (msg.author.bot) continue;
-    const urls = extractLinks(msg.content);
-    stats.found += urls.length;
+    for (const url of extractLinks(msg.content)) {
+      allUrls.push(url);
+      urlToMsg.set(url, msg);
+    }
+  }
+  const truncatedUrls = allUrls.slice(0, MAX_URLS_PER_GRAB);
+  const truncated = allUrls.length > MAX_URLS_PER_GRAB;
 
-    for (const url of urls) {
-      const referCode = getPokeCode(url);
+  const recipes = [];
+  const stats = { found: allUrls.length, new: 0, duplicate: 0 };
 
-      if (isDuplicateRecipe(url, referCode, existingUrls, existingCodes)) {
-        stats.duplicate++;
-        continue;
-      }
+  for (const url of truncatedUrls) {
+    const msg = urlToMsg.get(url);
+    const referCode = getPokeCode(url);
 
-      // Try to get a good title
-      let title = channel.name || extractTitleFromMessage(msg.content, url);
-      if (isPokeLink(url) && title === extractTitleFromUrl(url)) {
-        const fetched = await fetchPageTitle(url);
-        if (fetched) title = fetched;
-      }
+    if (isDuplicateRecipe(url, referCode, existingUrls, existingCodes)) {
+      stats.duplicate++;
+      continue;
+    }
 
-      const recipe = {
-        url,
-        title,
-        description: cleanDescription(msg.content, url),
-        referCode,
-        sharedBy: [{ id: msg.author.id, name: msg.author.username, sharedAt: msg.createdAt.toISOString() }],
-        channelId: channel.parentId || channel.id,
-        channelName: channel.parent?.name || channel.name,
-        guildId: interaction.guild.id,
-        threadId: channel.id,
-        messageId: msg.id,
-        source: inferSource(url),
-        tags: extractTags(msg.content),
-        status: autoApprove ? 'approved' : 'pending',
-      };
+    // Try to get a good title
+    let title = channel.name || extractTitleFromMessage(msg.content, url);
+    if (isPokeLink(url) && title === extractTitleFromUrl(url)) {
+      const fetched = await fetchPageTitle(url);
+      if (fetched) title = fetched;
+    }
 
-      if (autoApprove) {
-        recipe.reviewedBy = interaction.user.username;
-        recipe.reviewedById = interaction.user.id;
-      }
+    const grabSource = inferSource(url);
+    const grabDescription = cleanDescription(msg.content, url);
+    const recipe = {
+      url,
+      title,
+      description: grabDescription,
+      referCode,
+      sharedBy: [{ id: msg.author.id, name: msg.author.username, sharedAt: msg.createdAt.toISOString() }],
+      channelId: channel.parentId || channel.id,
+      channelName: channel.parent?.name || channel.name,
+      guildId: interaction.guild.id,
+      threadId: channel.id,
+      messageId: msg.id,
+      source: grabSource,
+      tags: await generateRecipeTags({ title, description: grabDescription, url, source: grabSource }),
+      status: autoApprove ? 'approved' : 'pending',
+    };
 
-      const saved = await firestore.saveRecipe(recipe);
-      stats.new++;
-      recipes.push({ ...recipe, id: saved.id });
+    if (autoApprove) {
+      recipe.reviewedBy = interaction.user.username;
+      recipe.reviewedById = interaction.user.id;
+    }
 
-      existingUrls.add(normalizeUrl(url));
-      if (referCode) existingCodes.add(referCode);
+    const saved = await firestore.saveRecipe(recipe);
+    stats.new++;
+    recipes.push({ ...recipe, id: saved.id });
 
-      // Post approval embed if not auto-approving
-      if (!autoApprove) {
-        const approvalChannel = findApprovalChannel(interaction.guild);
-        if (approvalChannel) {
-          await postApprovalEmbed(approvalChannel, recipe, saved.id);
-        }
+    existingUrls.add(normalizeUrl(url));
+    if (referCode) existingCodes.add(referCode);
+
+    // Post approval embed if not auto-approving
+    if (!autoApprove) {
+      const approvalChannel = findApprovalChannel(interaction.guild);
+      if (approvalChannel) {
+        await postApprovalEmbed(approvalChannel, recipe, saved.id);
       }
     }
   }
@@ -596,11 +616,14 @@ async function executeGrab(interaction) {
 
   const statusText = autoApprove ? 'live on the website' : 'sent for approval';
   const dashboardUrl = process.env.DASHBOARD_URL || 'https://pokedex-recipes.vercel.app';
+  const truncationNote = truncated
+    ? `\n_(truncated to first ${MAX_URLS_PER_GRAB} of ${stats.found} URLs — run again to process the rest)_`
+    : '';
 
   const embed = new EmbedBuilder()
     .setTitle(autoApprove ? 'Recipes Published' : 'Recipes Submitted')
     .setColor(autoApprove ? 0x2ecc71 : 0xf0c840)
-    .setDescription(`Found **${stats.found}** link${stats.found !== 1 ? 's' : ''} in this thread.`)
+    .setDescription(`Found **${stats.found}** link${stats.found !== 1 ? 's' : ''} in this thread.${truncationNote}`)
     .addFields(
       { name: autoApprove ? 'Published' : 'Pending Approval', value: `${stats.new}`, inline: true },
       { name: 'Duplicates', value: `${stats.duplicate}`, inline: true },
@@ -697,32 +720,65 @@ async function executeDelete(interaction) {
 // --- RETAG (mod only) ---
 
 async function executeRetag(interaction) {
+  const preview = interaction.options.getBoolean('preview') ?? false;
   await interaction.deferReply({ ephemeral: true });
 
   const recipes = await firestore.getAllRecipesUncapped();
-  await interaction.editReply({ content: `⏳ Scanning ${recipes.length} recipes...` });
+  const total = recipes.length;
+  await interaction.editReply({ content: `⏳ ${preview ? 'Previewing' : 'Retagging'} ${total} recipes via OpenRouter...` });
 
-  // Compute what to change in memory first — no DB calls yet.
   const changes = [];
+  // Update at least every 20 recipes, but no more than every 10% — pick the
+  // smaller interval so users see progress move.
+  const progressInterval = Math.max(1, Math.min(20, Math.floor(total / 10)));
+  let processed = 0;
+
   for (const recipe of recipes) {
-    const textForTags = [recipe.title, recipe.description].filter(Boolean).join(' ');
-    const newTags = extractTags(textForTags);
+    // Compute new source and tags via AI
     const newSource = recipe.url ? inferSource(recipe.url) : null;
+    let newTags;
+    try {
+      newTags = await generateRecipeTags({
+        title: recipe.title,
+        description: recipe.description,
+        url: recipe.url,
+        source: newSource,
+      });
+    } catch (err) {
+      console.error(`[retag] failed to tag recipe ${recipe.id}:`, err);
+      newTags = [...(recipe.tags || [])].sort(); // keep existing on failure
+    }
+
+    // Rate limiting is handled inside generateRecipeTags via throttledFetch
 
     const oldTagsSorted = [...(recipe.tags || [])].sort();
-    const newTagsSorted = [...newTags].sort();
-    const tagsChanged = JSON.stringify(oldTagsSorted) !== JSON.stringify(newTagsSorted);
-    // Normalize both sides: legacy docs may have source undefined, and the
-    // extractor now returns null for unknown hosts — treat those as equal.
     const oldSource = recipe.source ?? null;
+    const tagsChanged = JSON.stringify(oldTagsSorted) !== JSON.stringify(newTags);
     const sourceChanged = oldSource !== newSource;
 
     if (tagsChanged || sourceChanged) {
-      changes.push({ id: recipe.id, newTags, newSource });
+      changes.push({ id: recipe.id, newTags, newSource, oldTags: oldTagsSorted, oldSource });
+    }
+
+    processed++;
+    if (processed % progressInterval === 0) {
+      await interaction.editReply({
+        content: `⏳ ${preview ? 'Previewing' : 'Retagging'}: ${processed}/${total}... (${changes.length} changes so far)`,
+      }).catch(() => {});
     }
   }
 
-  // Commit in Firestore-batch-size chunks (500 is the hard limit).
+  if (preview) {
+    // Just report what would change — no writes
+    const sample = changes.slice(0, 5).map((c) =>
+      `• \`${c.id.slice(0, 8)}\`: ${JSON.stringify(c.oldTags)} → ${JSON.stringify(c.newTags)}`
+    ).join('\n');
+    return interaction.editReply({
+      content: `🔍 **Preview**: ${changes.length} of ${total} recipes would change.\n${sample}\n\nRun \`/recipes retag preview:false\` to apply.`,
+    });
+  }
+
+  // Write phase: batch commits of 500
   const db = admin.firestore();
   const BATCH_SIZE = 500;
   let succeeded = 0;
@@ -749,8 +805,8 @@ async function executeRetag(interaction) {
   }
 
   const summary = failed > 0
-    ? `⚠️ Retagged ${succeeded} of ${changes.length} changed recipes (${failed} failed — see logs). Scanned ${recipes.length} total.`
-    : `✅ Retagged ${succeeded} of ${recipes.length} recipes (${recipes.length - changes.length} already correct).`;
+    ? `⚠️ Retagged ${succeeded} of ${changes.length} changed recipes (${failed} failed — see logs). Scanned ${total} total.`
+    : `✅ Retagged ${succeeded} of ${total} recipes (${total - changes.length} already correct).`;
 
   return interaction.editReply({ content: summary });
 }
@@ -1018,10 +1074,14 @@ async function scrapeThreadForRecipes(thread, forumChannel) {
         if (fetched) title = fetched;
       }
 
+      const scrapeSource = inferSource(url);
+      const scrapeDescription = cleanDescription(msg.content, url);
+      const aiTags = await generateRecipeTags({ title, description: scrapeDescription, url, source: scrapeSource });
+      const mergedTags = [...new Set([...forumTags, ...aiTags])].sort();
       links.push({
         url,
         title,
-        description: cleanDescription(msg.content, url),
+        description: scrapeDescription,
         referCode: getPokeCode(url),
         sharedBy: [{ id: msg.author.id, name: msg.author.username, sharedAt: msg.createdAt.toISOString() }],
         channelId: forumChannel.id,
@@ -1029,8 +1089,8 @@ async function scrapeThreadForRecipes(thread, forumChannel) {
         guildId: thread.guild.id,
         threadId: thread.id,
         messageId: msg.id,
-        source: inferSource(url),
-        tags: [...new Set([...forumTags, ...extractTags(msg.content)])],
+        source: scrapeSource,
+        tags: mergedTags,
       });
     }
   }
