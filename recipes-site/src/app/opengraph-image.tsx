@@ -25,7 +25,8 @@ async function fetchStats(): Promise<Stats> {
       });
     });
     return { total: snap.size, contributors: contributors.size };
-  } catch {
+  } catch (err) {
+    console.error("[opengraph-image] fetchStats failed:", err);
     return { total: 0, contributors: 0 };
   }
 }
