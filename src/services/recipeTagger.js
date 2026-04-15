@@ -26,35 +26,34 @@ async function throttledFetch(url, options) {
 }
 
 const CANONICAL_TAGS = [
-  // Format
-  'vgc', 'ou', 'uu', 'ru', 'nu', 'pu', 'ubers', 'lc', 'monotype', 'doubles', 'singles',
-  // Generation
-  'gen-9', 'gen-8', 'gen-7', 'gen-6',
-  // Regulation
-  'reg-f', 'reg-g', 'reg-h',
-  // Weather
-  'rain', 'sun', 'sand', 'snow',
-  // Archetype
-  'hyper-offense', 'balance', 'bulky-offense', 'stall', 'trick-room', 'tailwind', 'screens', 'weather',
-  // Tempo / role
-  'setup', 'lead', 'pivot', 'wallbreaker', 'sweeper', 'tank',
-  // Misc
-  'tournament', 'ladder', 'showdown', 'rmt',
+  // Topic — what the recipe is about
+  'productivity', 'travel', 'finance', 'food', 'music', 'entertainment',
+  'research', 'social', 'games', 'coding', 'health', 'news', 'shopping', 'education',
+  // Function — what it does
+  'search', 'monitoring', 'summarizer', 'tracker', 'lookup', 'automation',
+  'notification', 'assistant', 'integration',
+  // Service — what it connects to
+  'gmail', 'google-calendar', 'icloud', 'notion', 'linear', 'github',
+  'tripit', 'spotify', 'apple-music', 'youtube', 'reddit', 'mcp',
+  // Behavior
+  'proactive', 'scheduled', 'on-demand',
 ];
 
 const CANONICAL_TAG_SET = new Set(CANONICAL_TAGS);
 
 function buildSystemPrompt() {
-  return `You are Pokedex, a recipe classifier for a Pokemon competitive battling community.
+  return `You are Pokedex, a recipe classifier for the poke.com community Discord.
 
-Your job: read a recipe (a shared team or strategy) and assign 3–6 tags from this fixed vocabulary:
+poke.com is an AI assistant that lives inside messaging apps. "Recipes" are pre-built workflow templates — for example: a Tax Oracle, a Google Flight search via MCP, a calendar integration, a research assistant, a Tripit monitor.
+
+Your job: read a recipe and assign 3–6 tags from this fixed vocabulary:
 
 ${CANONICAL_TAGS.join(', ')}
 
 Rules:
 - Pick ONLY tags from the list above. Do not invent new tags.
 - Pick tags that accurately describe the recipe. If you cannot confidently assign a tag, don't include it.
-- Prefer specificity: if a recipe is clearly VGC Reg G, include both "vgc" and "reg-g".
+- Prefer specificity: if a recipe is clearly a Google Calendar integration for travel, include "travel", "google-calendar", and "integration".
 - Return 3–6 tags. Never return more than 6. Return 0 if the recipe is truly untaggable.
 
 Return ONLY valid JSON:

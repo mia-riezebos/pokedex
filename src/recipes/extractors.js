@@ -11,37 +11,56 @@ function extractTags(text) {
   const tags = [];
   const lower = text.toLowerCase();
 
-  // Single-word keywords that map directly to a canonical tag. Matched with \b
-  // word boundaries so substring noise like "about" (→ "ou") doesn't trigger.
+  // Single-word keywords matched with \b word boundaries.
   const singleWordKeywords = {
-    // Formats
-    ou: 'ou', uu: 'uu', ru: 'ru', nu: 'nu', pu: 'pu', ubers: 'ubers', uber: 'ubers',
-    lc: 'lc', vgc: 'vgc', doubles: 'doubles', singles: 'singles', monotype: 'monotype',
-    // Weather (note: no "team" suffix — matches canonical)
-    rain: 'rain', sun: 'sun', sand: 'sand', snow: 'snow',
-    // Archetypes
-    stall: 'stall', balance: 'balance', tailwind: 'tailwind', screens: 'screens',
-    // Tempo / role
-    setup: 'setup', lead: 'lead', pivot: 'pivot', wallbreaker: 'wallbreaker',
-    sweeper: 'sweeper', tank: 'tank',
-    // Misc
-    showdown: 'showdown', tournament: 'tournament', ladder: 'ladder', rmt: 'rmt',
-    // Generation aliases
-    scarlet: 'gen-9', violet: 'gen-9',
+    // Topics
+    travel: 'travel', flight: 'travel', flights: 'travel', trip: 'travel',
+    finance: 'finance', tax: 'finance', taxes: 'finance', money: 'finance', budget: 'finance', expense: 'finance',
+    food: 'food', recipe: 'food', restaurant: 'food',
+    music: 'music', playlist: 'music', song: 'music',
+    research: 'research', study: 'research',
+    game: 'games', games: 'games', puzzle: 'games',
+    code: 'coding', coding: 'coding', dev: 'coding', developer: 'coding', frontend: 'coding', backend: 'coding',
+    health: 'health', fitness: 'health', wellness: 'health',
+    news: 'news',
+    shop: 'shopping', shopping: 'shopping',
+    learn: 'education', education: 'education', learning: 'education',
+    productivity: 'productivity',
+    social: 'social', instagram: 'social',
+    entertainment: 'entertainment', movie: 'entertainment', tv: 'entertainment',
+    // Functions
+    search: 'search', find: 'search',
+    monitor: 'monitoring', monitoring: 'monitoring', watch: 'monitoring',
+    summary: 'summarizer', summarize: 'summarizer', summarizer: 'summarizer',
+    track: 'tracker', tracker: 'tracker', tracking: 'tracker',
+    lookup: 'lookup', check: 'lookup',
+    automate: 'automation', automation: 'automation',
+    notify: 'notification', notification: 'notification', alert: 'notification',
+    assistant: 'assistant', helper: 'assistant',
+    integration: 'integration', integrate: 'integration',
+    // Services
+    gmail: 'gmail', email: 'gmail',
+    icloud: 'icloud',
+    notion: 'notion',
+    linear: 'linear',
+    github: 'github', git: 'github',
+    tripit: 'tripit',
+    spotify: 'spotify',
+    youtube: 'youtube',
+    reddit: 'reddit',
+    mcp: 'mcp',
+    // Behavior
+    proactive: 'proactive',
+    scheduled: 'scheduled', daily: 'scheduled', weekly: 'scheduled',
   };
 
-  // Phrase keywords — safe to substring-match, emit canonical forms.
+  // Phrase keywords — match as substrings, emit canonical forms.
   const phraseKeywords = {
-    'trick room': 'trick-room',
-    'hyper offense': 'hyper-offense',
-    'bulky offense': 'bulky-offense',
-    'gen 9': 'gen-9',
-    'gen 8': 'gen-8',
-    'gen 7': 'gen-7',
-    'gen 6': 'gen-6',
-    'reg f': 'reg-f',
-    'reg g': 'reg-g',
-    'reg h': 'reg-h',
+    'google calendar': 'google-calendar',
+    'google cal': 'google-calendar',
+    'apple music': 'apple-music',
+    'on demand': 'on-demand',
+    'on-demand': 'on-demand',
   };
 
   for (const [keyword, tag] of Object.entries(singleWordKeywords)) {
@@ -60,21 +79,12 @@ function inferSource(url) {
   try {
     const hostname = new URL(url).hostname.toLowerCase();
     if (hostname.includes('poke.com')) return 'Poke';
-    if (hostname.includes('pokepast')) return 'Pokepaste';
-    if (hostname.includes('pokemonshowdown')) return 'Showdown';
-    if (hostname.includes('pastebin')) return 'Pastebin';
-    if (hostname.includes('paste.pokemon-online')) return 'PO Paste';
     if (hostname.includes('github')) return 'GitHub';
     if (hostname.includes('docs.google')) return 'Google Docs';
     if (hostname.includes('youtube') || hostname.includes('youtu.be')) return 'YouTube';
     if (hostname.includes('reddit')) return 'Reddit';
-    if (hostname.includes('smogon')) return 'Smogon';
-    if (hostname.includes('marriland')) return 'Marriland';
-    if (hostname.includes('serebii')) return 'Serebii';
-    if (hostname.includes('bulbapedia')) return 'Bulbapedia';
-    if (hostname.includes('pikalytics')) return 'Pikalytics';
-    if (hostname.includes('limitlessv')) return 'Limitless';
-    if (hostname.includes('victoryroad')) return 'Victory Road';
+    if (hostname.includes('notion.so') || hostname.includes('notion.site')) return 'Notion';
+    if (hostname.includes('pastebin')) return 'Pastebin';
     // Unknown hostname: return null instead of promoting a domain prefix to a
     // first-class source. The front-end filter chips iterate unique r.source
     // values; returning null keeps unknown-host recipes from polluting them.
