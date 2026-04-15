@@ -72,13 +72,16 @@ const commandData = new SlashCommandBuilder()
         opt.setName('recipe')
           .setDescription('Recipe to delete')
           .setRequired(true)
-          .setAutocomplete(true)));
+          .setAutocomplete(true)))
+  .addSubcommand(sub =>
+    sub.setName('retag')
+      .setDescription('Retag all recipes using the current extractors (mod only)'));
 
 async function execute(interaction) {
   const sub = interaction.options.getSubcommand();
 
   // Mod-only subcommands require ManageMessages
-  const modOnly = ['scrape', 'pending', 'approve-all', 'grab', 'approve'];
+  const modOnly = ['scrape', 'pending', 'approve-all', 'grab', 'approve', 'retag'];
   if (modOnly.includes(sub) && !interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
     return interaction.reply({ content: 'You need **Manage Messages** permission to use this command.', ephemeral: true });
   }
@@ -91,6 +94,7 @@ async function execute(interaction) {
   if (sub === 'grab') return executeGrab(interaction);
   if (sub === 'approve') return executeApprove(interaction);
   if (sub === 'delete') return executeDelete(interaction);
+  if (sub === 'retag') return executeRetag(interaction);
   return interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
 }
 
@@ -688,6 +692,36 @@ async function executeDelete(interaction) {
   return interaction.editReply({ embeds: [embed] });
 }
 
+// --- RETAG (mod only) ---
+
+async function executeRetag(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+
+  const allRecipes = await firestore.getAllRecipes(5000);
+  let changedCount = 0;
+  const updates = [];
+
+  for (const recipe of allRecipes) {
+    const textForTags = [recipe.title, recipe.description].filter(Boolean).join(' ');
+    const newTags = extractTags(textForTags);
+    const newSource = recipe.url ? inferSource(recipe.url) : null;
+
+    const tagsChanged = JSON.stringify([...(recipe.tags || [])].sort()) !== JSON.stringify([...newTags].sort());
+    const sourceChanged = recipe.source !== newSource;
+
+    if (tagsChanged || sourceChanged) {
+      updates.push(firestore.updateRecipeTagsAndSource(recipe.id, newTags, newSource));
+      changedCount++;
+    }
+  }
+
+  await Promise.all(updates);
+
+  return interaction.editReply({
+    content: `✅ Retagged ${changedCount} of ${allRecipes.length} recipes.`,
+  });
+}
+
 // --- Autocomplete for recipe approve / delete ---
 
 async function autocomplete(interaction) {
@@ -1095,9 +1129,12 @@ function inferSource(url) {
     if (hostname.includes('pikalytics')) return 'Pikalytics';
     if (hostname.includes('limitlessv')) return 'Limitless';
     if (hostname.includes('victoryroad')) return 'Victory Road';
-    return hostname.replace('www.', '').split('.')[0];
+    // Unknown hostname: return null instead of promoting a domain prefix to a
+    // first-class source. The front-end filter chips iterate unique r.source
+    // values; returning null keeps unknown-host recipes from polluting them.
+    return null;
   } catch {
-    return 'Unknown';
+    return null;
   }
 }
 
@@ -1106,17 +1143,37 @@ function extractTags(text) {
   const tags = [];
   const lower = text.toLowerCase();
 
-  const tagKeywords = {
-    'ou': 'ou', 'uu': 'uu', 'uber': 'ubers', 'ubers': 'ubers', 'ru': 'ru', 'nu': 'nu', 'pu': 'pu',
-    'vgc': 'vgc', 'doubles': 'doubles', 'singles': 'singles', 'monotype': 'monotype',
-    'rain': 'rain team', 'sun': 'sun team', 'sand': 'sand team', 'hail': 'hail team', 'snow': 'snow team',
-    'trick room': 'trick room', 'hyper offense': 'hyper offense', 'stall': 'stall', 'balance': 'balance',
-    'competitive': 'competitive', 'casual': 'casual', 'showdown': 'showdown',
-    'gen 9': 'gen 9', 'gen 8': 'gen 8', 'gen 7': 'gen 7', 'scarlet': 'gen 9', 'violet': 'gen 9',
-    'regulation': 'regulation', 'reg g': 'reg g', 'reg h': 'reg h', 'reg f': 'reg f',
+  // Single-word keywords — matched with \b word boundaries so substring noise
+  // like "about" (→ "ou") or "popular" (→ "pu") no longer produces false hits.
+  const singleWordKeywords = {
+    ou: 'ou', uu: 'uu', uber: 'ubers', ubers: 'ubers', ru: 'ru', nu: 'nu', pu: 'pu',
+    vgc: 'vgc', doubles: 'doubles', singles: 'singles', monotype: 'monotype',
+    rain: 'rain team', sun: 'sun team', sand: 'sand team', hail: 'hail team', snow: 'snow team',
+    stall: 'stall', balance: 'balance', competitive: 'competitive', casual: 'casual',
+    showdown: 'showdown', regulation: 'regulation', scarlet: 'gen 9', violet: 'gen 9',
   };
 
-  for (const [keyword, tag] of Object.entries(tagKeywords)) {
+  // Multi-word / literal phrase keywords — these already have enough specificity
+  // that substring matching is safe (no natural English substring collides).
+  const phraseKeywords = {
+    'trick room': 'trick room',
+    'hyper offense': 'hyper offense',
+    'gen 9': 'gen 9',
+    'gen 8': 'gen 8',
+    'gen 7': 'gen 7',
+    'reg g': 'reg g',
+    'reg h': 'reg h',
+    'reg f': 'reg f',
+  };
+
+  for (const [keyword, tag] of Object.entries(singleWordKeywords)) {
+    // \b doesn't work for keywords containing special chars, but all single-word
+    // keywords here are [a-z]+ so plain \b is fine.
+    const pattern = new RegExp(`\\b${keyword}\\b`, 'i');
+    if (pattern.test(lower)) tags.push(tag);
+  }
+
+  for (const [keyword, tag] of Object.entries(phraseKeywords)) {
     if (lower.includes(keyword)) tags.push(tag);
   }
 
