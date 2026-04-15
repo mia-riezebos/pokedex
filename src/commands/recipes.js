@@ -1,6 +1,8 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionFlagsBits } = require('discord.js');
+const admin = require('firebase-admin');
 const firestore = require('../services/firestore');
 const { getConfig } = require('../config/config');
+const { extractTags, inferSource } = require('../recipes/extractors');
 
 // URL regex — matches http/https links (no g flag to avoid stateful .test() failures)
 const URL_REGEX = /https?:\/\/[^\s<>"')\]]+/i;
@@ -700,9 +702,8 @@ async function executeRetag(interaction) {
   const recipes = await firestore.getAllRecipesUncapped();
   await interaction.editReply({ content: `⏳ Scanning ${recipes.length} recipes...` });
 
-  const updates = [];
-  let changedCount = 0;
-
+  // Compute what to change in memory first — no DB calls yet.
+  const changes = [];
   for (const recipe of recipes) {
     const textForTags = [recipe.title, recipe.description].filter(Boolean).join(' ');
     const newTags = extractTags(textForTags);
@@ -711,29 +712,45 @@ async function executeRetag(interaction) {
     const oldTagsSorted = [...(recipe.tags || [])].sort();
     const newTagsSorted = [...newTags].sort();
     const tagsChanged = JSON.stringify(oldTagsSorted) !== JSON.stringify(newTagsSorted);
-    const sourceChanged = recipe.source !== newSource;
+    // Normalize both sides: legacy docs may have source undefined, and the
+    // extractor now returns null for unknown hosts — treat those as equal.
+    const oldSource = recipe.source ?? null;
+    const sourceChanged = oldSource !== newSource;
 
     if (tagsChanged || sourceChanged) {
-      updates.push(
-        firestore.updateRecipeTagsAndSource(recipe.id, newTags, newSource)
-          .then(() => ({ ok: true }))
-          .catch((err) => ({ ok: false, id: recipe.id, err })),
-      );
-      changedCount++;
+      changes.push({ id: recipe.id, newTags, newSource });
     }
   }
 
-  const results = await Promise.all(updates);
-  const succeeded = results.filter((r) => r.ok).length;
-  const failed = results.filter((r) => !r.ok);
+  // Commit in Firestore-batch-size chunks (500 is the hard limit).
+  const db = admin.firestore();
+  const BATCH_SIZE = 500;
+  let succeeded = 0;
+  let failed = 0;
 
-  if (failed.length > 0) {
-    console.error('[retag] Some updates failed:', failed.map((f) => `${f.id}: ${f.err?.message}`).join('; '));
+  for (let i = 0; i < changes.length; i += BATCH_SIZE) {
+    const slice = changes.slice(i, i + BATCH_SIZE);
+    const batch = db.batch();
+    for (const change of slice) {
+      const ref = db.collection('recipes').doc(change.id);
+      batch.update(ref, {
+        tags: change.newTags,
+        source: change.newSource,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+    try {
+      await batch.commit();
+      succeeded += slice.length;
+    } catch (err) {
+      console.error(`[retag] batch ${i / BATCH_SIZE + 1} failed:`, err);
+      failed += slice.length;
+    }
   }
 
-  const summary = failed.length > 0
-    ? `⚠️ Retagged ${succeeded} of ${changedCount} changed recipes (${failed.length} failed — see logs). Scanned ${recipes.length} total.`
-    : `✅ Retagged ${succeeded} of ${recipes.length} recipes (${recipes.length - changedCount} already correct).`;
+  const summary = failed > 0
+    ? `⚠️ Retagged ${succeeded} of ${changes.length} changed recipes (${failed} failed — see logs). Scanned ${recipes.length} total.`
+    : `✅ Retagged ${succeeded} of ${recipes.length} recipes (${recipes.length - changes.length} already correct).`;
 
   return interaction.editReply({ content: summary });
 }
@@ -1126,75 +1143,7 @@ function getPokeCode(url) {
   }
 }
 
-function inferSource(url) {
-  try {
-    const hostname = new URL(url).hostname.toLowerCase();
-    if (hostname.includes('poke.com')) return 'Poke';
-    if (hostname.includes('pokepast')) return 'Pokepaste';
-    if (hostname.includes('pokemonshowdown')) return 'Showdown';
-    if (hostname.includes('pastebin')) return 'Pastebin';
-    if (hostname.includes('paste.pokemon-online')) return 'PO Paste';
-    if (hostname.includes('github')) return 'GitHub';
-    if (hostname.includes('docs.google')) return 'Google Docs';
-    if (hostname.includes('youtube') || hostname.includes('youtu.be')) return 'YouTube';
-    if (hostname.includes('reddit')) return 'Reddit';
-    if (hostname.includes('smogon')) return 'Smogon';
-    if (hostname.includes('marriland')) return 'Marriland';
-    if (hostname.includes('serebii')) return 'Serebii';
-    if (hostname.includes('bulbapedia')) return 'Bulbapedia';
-    if (hostname.includes('pikalytics')) return 'Pikalytics';
-    if (hostname.includes('limitlessv')) return 'Limitless';
-    if (hostname.includes('victoryroad')) return 'Victory Road';
-    // Unknown hostname: return null instead of promoting a domain prefix to a
-    // first-class source. The front-end filter chips iterate unique r.source
-    // values; returning null keeps unknown-host recipes from polluting them.
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-function extractTags(text) {
-  if (!text) return [];
-  const tags = [];
-  const lower = text.toLowerCase();
-
-  // Single-word keywords — matched with \b word boundaries so substring noise
-  // like "about" (→ "ou") or "popular" (→ "pu") no longer produces false hits.
-  const singleWordKeywords = {
-    ou: 'ou', uu: 'uu', uber: 'ubers', ubers: 'ubers', ru: 'ru', nu: 'nu', pu: 'pu',
-    vgc: 'vgc', doubles: 'doubles', singles: 'singles', monotype: 'monotype',
-    rain: 'rain team', sun: 'sun team', sand: 'sand team', hail: 'hail team', snow: 'snow team',
-    stall: 'stall', balance: 'balance', competitive: 'competitive', casual: 'casual',
-    showdown: 'showdown', regulation: 'regulation', scarlet: 'gen 9', violet: 'gen 9',
-  };
-
-  // Multi-word / literal phrase keywords — these already have enough specificity
-  // that substring matching is safe (no natural English substring collides).
-  const phraseKeywords = {
-    'trick room': 'trick room',
-    'hyper offense': 'hyper offense',
-    'gen 9': 'gen 9',
-    'gen 8': 'gen 8',
-    'gen 7': 'gen 7',
-    'reg g': 'reg g',
-    'reg h': 'reg h',
-    'reg f': 'reg f',
-  };
-
-  for (const [keyword, tag] of Object.entries(singleWordKeywords)) {
-    // \b doesn't work for keywords containing special chars, but all single-word
-    // keywords here are [a-z]+ so plain \b is fine.
-    const pattern = new RegExp(`\\b${keyword}\\b`, 'i');
-    if (pattern.test(lower)) tags.push(tag);
-  }
-
-  for (const [keyword, tag] of Object.entries(phraseKeywords)) {
-    if (lower.includes(keyword)) tags.push(tag);
-  }
-
-  return [...new Set(tags)];
-}
+// inferSource and extractTags are imported from ../recipes/extractors at the top of this file.
 
 async function fetchChannelMessages(channel, limit) {
   const allMessages = [];

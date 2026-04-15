@@ -1,5 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { extractTags, inferSource } from '../../src/commands/recipes.js';
+import extractorsModule from '../../src/recipes/extractors.js';
+
+const { extractTags, inferSource } = extractorsModule;
 
 describe('extractTags', () => {
   it('returns empty array for empty or nullish input', () => {

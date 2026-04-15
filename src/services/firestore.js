@@ -362,6 +362,11 @@ async function getAllRecipes(limit = 200) {
 /**
  * Iterate every recipe in the collection with no limit. Used by the retag
  * backfill command. Prefer getAllRecipes() for normal reads.
+ *
+ * NOTE: this reads the full collection into memory as a single array. Fine for
+ * the current (~hundreds of docs) collection size. For collections above ~10k
+ * docs, switch to a cursor-based iterator (orderBy + startAfter + limit) to
+ * avoid memory pressure.
  */
 async function getAllRecipesUncapped() {
   const db = admin.firestore();
@@ -420,15 +425,6 @@ async function updateRecipeStatus(recipeId, status, reviewerId, reviewerName) {
 async function deleteRecipe(recipeId) {
   const db = admin.firestore();
   await db.collection('recipes').doc(recipeId).delete();
-}
-
-async function updateRecipeTagsAndSource(recipeId, tags, source) {
-  const db = admin.firestore();
-  await db.collection('recipes').doc(recipeId).update({
-    tags,
-    source,
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
 }
 
 // --- Feedback (public website) ---
@@ -494,7 +490,6 @@ module.exports = {
   getRecipeByUrl,
   updateRecipeStatus,
   deleteRecipe,
-  updateRecipeTagsAndSource,
   saveFeedback,
   getPublishedFeedback,
 };
