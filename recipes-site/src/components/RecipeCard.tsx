@@ -31,7 +31,7 @@ export default function RecipeCard({ recipe: r }: { recipe: Recipe }) {
       href={r.url}
       target="_blank"
       rel="noopener noreferrer"
-      className="group glass rounded-xl p-5 block relative transition-all duration-300 hover:bg-bg-hover hover:border-gold/30 hover:-translate-y-1 hover:shadow-[0_20px_40px_-15px_rgba(240,200,64,0.18)]"
+      className="group glass rounded-xl p-5 block relative transition-all duration-300 hover:bg-bg-hover hover:border-gold/30 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-[0_20px_40px_-15px_rgba(240,200,64,0.18)]"
     >
       {timestampLabel && (
         <span

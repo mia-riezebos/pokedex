@@ -20,8 +20,8 @@ body {
 
 @keyframes float {
   0%, 100% { transform: translate(0, 0) scale(1); }
-  33% { transform: translate(50px, -35px) scale(1.08); }
-  66% { transform: translate(-35px, 25px) scale(0.94); }
+  33% { transform: translate(36px, -24px) scale(1.05); }
+  66% { transform: translate(-24px, 18px) scale(0.96); }
 }
 
 /* Glass card effect */

@@ -43,7 +43,7 @@ export default function TrendingRow({ recipes }: { recipes: Recipe[] }) {
               href={recipe.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="group relative block rounded-xl p-5 border border-gold/25 bg-gradient-to-br from-gold/[0.08] via-white/[0.03] to-transparent hover:border-gold/50 hover:-translate-y-1 hover:shadow-[0_20px_40px_-15px_rgba(240,200,64,0.25)] transition-all duration-300 overflow-hidden fade-up"
+              className="group relative block rounded-xl p-5 border border-gold/25 bg-gradient-to-br from-gold/[0.08] via-white/[0.03] to-transparent hover:border-gold/50 motion-safe:hover:-translate-y-1 motion-safe:hover:shadow-[0_20px_40px_-15px_rgba(240,200,64,0.25)] transition-all duration-300 overflow-hidden fade-up"
               style={{ animationDelay: `${i * 80}ms` }}
             >
               <span className="absolute top-3 right-4 text-2xl font-black text-gold/20 select-none pointer-events-none">
