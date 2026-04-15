@@ -6,13 +6,15 @@ import {
   collection,
   query,
   where,
-  orderBy,
   getDocs,
 } from "firebase/firestore";
 import RecipeCard from "@/components/RecipeCard";
+import TrendingRow from "@/components/TrendingRow";
+import { computeTrending } from "@/lib/trending";
+import type { TimestampLike } from "@/lib/relativeTime";
 import Link from "next/link";
 
-const APP_VERSION = "1.0.1";
+const APP_VERSION = "1.1.0";
 const CACHE_KEY = "pokedex_recipes_cache";
 const CACHE_TTL = 60_000; // 1 minute
 
@@ -32,6 +34,7 @@ interface Recipe {
   shareCount?: number;
   sharedBy?: Sharer[];
   status?: string;
+  createdAt?: TimestampLike;
 }
 
 interface CacheData {
@@ -60,6 +63,30 @@ function saveCache(recipes: Recipe[]) {
   } catch {}
 }
 
+function createdAtMillis(recipe: Recipe): number {
+  const value = recipe.createdAt;
+  if (value == null) return -Infinity;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? -Infinity : parsed;
+  }
+  if (typeof value === "object") {
+    if ("toDate" in value && typeof value.toDate === "function") {
+      return value.toDate().getTime();
+    }
+    if ("seconds" in value && typeof value.seconds === "number") {
+      return value.seconds * 1000 + Math.floor((value.nanoseconds ?? 0) / 1e6);
+    }
+  }
+  return -Infinity;
+}
+
+function sortByCreatedAtDesc(recipes: Recipe[]): Recipe[] {
+  return [...recipes].sort((a, b) => createdAtMillis(b) - createdAtMillis(a));
+}
+
 export default function RecipesPage() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [loading, setLoading] = useState(true);
@@ -83,18 +110,23 @@ export default function RecipesPage() {
     }
 
     try {
+      // Fetch all approved recipes without a Firestore orderBy — legacy docs
+      // may lack `createdAt`, and Firestore silently excludes them from any
+      // ordered query. We sort client-side instead, treating missing
+      // createdAt as "very old" (sorted to the bottom) so nothing is dropped.
       const q = query(
         collection(db, "recipes"),
-        where("status", "==", "approved"),
-        orderBy("shareCount", "desc")
+        where("status", "==", "approved")
       );
       const snapshot = await getDocs(q);
       const docs = snapshot.docs.map((d) => ({
         id: d.id,
         ...d.data(),
       })) as Recipe[];
-      setRecipes(docs);
-      saveCache(docs);
+
+      const sorted = sortByCreatedAtDesc(docs);
+      setRecipes(sorted);
+      saveCache(sorted);
       setLastFetched(new Date());
     } catch (err) {
       console.error("Firestore error:", err);
@@ -136,6 +168,16 @@ export default function RecipesPage() {
     });
     return { tagCounts: tc, sourceCounts: sc };
   }, [recipes]);
+
+  // Trending slice: top 3 recipes by new shares in the last 7 days.
+  // Window recomputes whenever `recipes` changes (i.e. on refetch). For a
+  // user keeping the tab open for hours, the 7-day cutoff drifts with
+  // fetches rather than wall-clock time — acceptable for a passive
+  // discovery affordance on a community site.
+  const trending = useMemo(() => computeTrending(recipes), [recipes]);
+
+  // User has taken explicit filtering action — hide passive discovery affordances
+  const isFiltering = Boolean(search || activeTag || activeSource);
 
   // Filtered results
   const filtered = useMemo(() => {
@@ -188,8 +230,12 @@ export default function RecipesPage() {
           { label: "Sources", value: stats.sources, icon: "\uD83C\uDF10" },
           { label: "Contributors", value: stats.contributors, icon: "\uD83D\uDC65" },
           { label: "Tags", value: stats.tags, icon: "\uD83C\uDFF7\uFE0F" },
-        ].map((s) => (
-          <div key={s.label} className="glass rounded-xl p-4 text-center">
+        ].map((s, i) => (
+          <div
+            key={s.label}
+            className="glass rounded-xl p-4 text-center fade-up"
+            style={{ animationDelay: `${i * 60}ms` }}
+          >
             <div className="text-2xl font-bold text-gold">
               {loading ? "..." : s.value}
             </div>
@@ -253,6 +299,9 @@ export default function RecipesPage() {
         </div>
       )}
 
+      {/* Trending row — hidden during search/filter and while loading */}
+      {!loading && !isFiltering && <TrendingRow recipes={trending} />}
+
       {/* Recipe grid */}
       {loading ? (
         <div className="text-center py-20">
@@ -272,8 +321,14 @@ export default function RecipesPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((r) => (
-            <RecipeCard key={r.id} recipe={r} />
+          {filtered.map((r, i) => (
+            <div
+              key={r.id}
+              className="fade-up"
+              style={{ animationDelay: `${Math.min(i, 12) * 40}ms` }}
+            >
+              <RecipeCard recipe={r} />
+            </div>
           ))}
         </div>
       )}
