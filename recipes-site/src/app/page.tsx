@@ -10,9 +10,12 @@ import {
   getDocs,
 } from "firebase/firestore";
 import RecipeCard from "@/components/RecipeCard";
+import TrendingRow from "@/components/TrendingRow";
+import { computeTrending } from "@/lib/trending";
+import type { TimestampLike } from "@/lib/relativeTime";
 import Link from "next/link";
 
-const APP_VERSION = "1.0.1";
+const APP_VERSION = "1.1.0";
 const CACHE_KEY = "pokedex_recipes_cache";
 const CACHE_TTL = 60_000; // 1 minute
 
@@ -32,6 +35,7 @@ interface Recipe {
   shareCount?: number;
   sharedBy?: Sharer[];
   status?: string;
+  createdAt?: TimestampLike;
 }
 
 interface CacheData {
@@ -86,7 +90,7 @@ export default function RecipesPage() {
       const q = query(
         collection(db, "recipes"),
         where("status", "==", "approved"),
-        orderBy("shareCount", "desc")
+        orderBy("createdAt", "desc")
       );
       const snapshot = await getDocs(q);
       const docs = snapshot.docs.map((d) => ({
@@ -136,6 +140,12 @@ export default function RecipesPage() {
     });
     return { tagCounts: tc, sourceCounts: sc };
   }, [recipes]);
+
+  // Trending slice: top 3 recipes by new shares in the last 7 days
+  const trending = useMemo(() => computeTrending(recipes), [recipes]);
+
+  // User has taken explicit filtering action — hide passive discovery affordances
+  const isFiltering = Boolean(search || activeTag || activeSource);
 
   // Filtered results
   const filtered = useMemo(() => {
@@ -252,6 +262,9 @@ export default function RecipesPage() {
           ))}
         </div>
       )}
+
+      {/* Trending row — hidden during search/filter and while loading */}
+      {!loading && !isFiltering && <TrendingRow recipes={trending} />}
 
       {/* Recipe grid */}
       {loading ? (
