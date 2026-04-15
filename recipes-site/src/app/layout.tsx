@@ -1,11 +1,23 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
-export const metadata: Metadata = {
-  metadataBase: new URL(
+function resolveMetadataBase(): URL {
+  const fallback = new URL("http://localhost:3001");
+  const raw =
     process.env.NEXT_PUBLIC_SITE_URL ??
-      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3001"),
-  ),
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null);
+  if (!raw) return fallback;
+  // Normalize: add https:// if the value is missing a protocol.
+  const normalized = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    return new URL(normalized);
+  } catch {
+    return fallback;
+  }
+}
+
+export const metadata: Metadata = {
+  metadataBase: resolveMetadataBase(),
   title: "Community Recipes — Pokedex",
   description:
     "Browse community-shared recipes, team builds, and strategies from the Pokedex Discord community.",

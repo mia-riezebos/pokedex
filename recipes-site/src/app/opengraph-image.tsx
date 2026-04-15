@@ -1,6 +1,6 @@
 import { ImageResponse } from "next/og";
 import { serverDb } from "@/lib/firebase-server";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { collection, getCountFromServer, getDocs, query, where } from "firebase/firestore";
 
 export const runtime = "nodejs";
 export const revalidate = 300; // regenerate at most every 5 min
@@ -16,15 +16,28 @@ interface Stats {
 async function fetchStats(): Promise<Stats> {
   try {
     const q = query(collection(serverDb, "recipes"), where("status", "==", "approved"));
+
+    // Cheap count aggregation (1 billable read regardless of collection size).
+    const countSnap = await getCountFromServer(q);
+    const total = countSnap.data().count;
+
+    // Separate full read only to dedupe contributors. If the collection grows
+    // large this is where the cost lives; revisit with a precomputed stats doc
+    // or Firestore aggregation on a flattened contributors field.
     const snap = await getDocs(q);
     const contributors = new Set<string>();
     snap.docs.forEach((d) => {
-      const data = d.data() as { sharedBy?: Array<{ name?: string }> };
+      const data = d.data() as { sharedBy?: Array<{ id?: string; name?: string }> };
       (data.sharedBy ?? []).forEach((s) => {
-        if (s.name) contributors.add(s.name);
+        // Dedupe by stable id when available; fall back to name for legacy docs.
+        // Namespace the two identifier sources so a legacy `name` can't collide
+        // with a newer `id` that happens to have the same string value.
+        const key = s.id ? `id:${s.id}` : s.name ? `name:${s.name}` : null;
+        if (key) contributors.add(key);
       });
     });
-    return { total: snap.size, contributors: contributors.size };
+
+    return { total, contributors: contributors.size };
   } catch (err) {
     console.error("[opengraph-image] fetchStats failed:", err);
     return { total: 0, contributors: 0 };
