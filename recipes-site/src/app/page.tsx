@@ -6,7 +6,6 @@ import {
   collection,
   query,
   where,
-  orderBy,
   getDocs,
 } from "firebase/firestore";
 import RecipeCard from "@/components/RecipeCard";
@@ -64,6 +63,30 @@ function saveCache(recipes: Recipe[]) {
   } catch {}
 }
 
+function createdAtMillis(recipe: Recipe): number {
+  const value = recipe.createdAt;
+  if (value == null) return -Infinity;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? -Infinity : parsed;
+  }
+  if (typeof value === "object") {
+    if ("toDate" in value && typeof value.toDate === "function") {
+      return value.toDate().getTime();
+    }
+    if ("seconds" in value && typeof value.seconds === "number") {
+      return value.seconds * 1000 + Math.floor((value.nanoseconds ?? 0) / 1e6);
+    }
+  }
+  return -Infinity;
+}
+
+function sortByCreatedAtDesc(recipes: Recipe[]): Recipe[] {
+  return [...recipes].sort((a, b) => createdAtMillis(b) - createdAtMillis(a));
+}
+
 export default function RecipesPage() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,18 +110,23 @@ export default function RecipesPage() {
     }
 
     try {
+      // Fetch all approved recipes without a Firestore orderBy — legacy docs
+      // may lack `createdAt`, and Firestore silently excludes them from any
+      // ordered query. We sort client-side instead, treating missing
+      // createdAt as "very old" (sorted to the bottom) so nothing is dropped.
       const q = query(
         collection(db, "recipes"),
-        where("status", "==", "approved"),
-        orderBy("createdAt", "desc")
+        where("status", "==", "approved")
       );
       const snapshot = await getDocs(q);
       const docs = snapshot.docs.map((d) => ({
         id: d.id,
         ...d.data(),
       })) as Recipe[];
-      setRecipes(docs);
-      saveCache(docs);
+
+      const sorted = sortByCreatedAtDesc(docs);
+      setRecipes(sorted);
+      saveCache(sorted);
       setLastFetched(new Date());
     } catch (err) {
       console.error("Firestore error:", err);
@@ -141,7 +169,11 @@ export default function RecipesPage() {
     return { tagCounts: tc, sourceCounts: sc };
   }, [recipes]);
 
-  // Trending slice: top 3 recipes by new shares in the last 7 days
+  // Trending slice: top 3 recipes by new shares in the last 7 days.
+  // Window recomputes whenever `recipes` changes (i.e. on refetch). For a
+  // user keeping the tab open for hours, the 7-day cutoff drifts with
+  // fetches rather than wall-clock time — acceptable for a passive
+  // discovery affordance on a community site.
   const trending = useMemo(() => computeTrending(recipes), [recipes]);
 
   // User has taken explicit filtering action — hide passive discovery affordances
