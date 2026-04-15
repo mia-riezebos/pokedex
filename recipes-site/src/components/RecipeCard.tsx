@@ -59,7 +59,7 @@ export default function RecipeCard({ recipe: r }: { recipe: Recipe }) {
       </svg>
 
       {/* Title */}
-      <h3 className="text-sm font-semibold text-gray-100 pr-6 line-clamp-2 group-hover:text-gold transition-colors">
+      <h3 className="text-sm font-semibold text-gray-100 pr-28 line-clamp-2 group-hover:text-gold transition-colors">
         {r.title || "Untitled Recipe"}
       </h3>
 
