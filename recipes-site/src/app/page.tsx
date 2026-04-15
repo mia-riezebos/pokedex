@@ -230,8 +230,12 @@ export default function RecipesPage() {
           { label: "Sources", value: stats.sources, icon: "\uD83C\uDF10" },
           { label: "Contributors", value: stats.contributors, icon: "\uD83D\uDC65" },
           { label: "Tags", value: stats.tags, icon: "\uD83C\uDFF7\uFE0F" },
-        ].map((s) => (
-          <div key={s.label} className="glass rounded-xl p-4 text-center">
+        ].map((s, i) => (
+          <div
+            key={s.label}
+            className="glass rounded-xl p-4 text-center fade-up"
+            style={{ animationDelay: `${i * 60}ms` }}
+          >
             <div className="text-2xl font-bold text-gold">
               {loading ? "..." : s.value}
             </div>
@@ -317,8 +321,14 @@ export default function RecipesPage() {
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((r) => (
-            <RecipeCard key={r.id} recipe={r} />
+          {filtered.map((r, i) => (
+            <div
+              key={r.id}
+              className="fade-up"
+              style={{ animationDelay: `${Math.min(i, 12) * 40}ms` }}
+            >
+              <RecipeCard recipe={r} />
+            </div>
           ))}
         </div>
       )}
