@@ -3,6 +3,28 @@ const { extractTags: fallbackExtractTags } = require('../recipes/extractors');
 
 const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
+// Module-level throttle: serialize all calls to ~10 req/s regardless of caller.
+// This protects us from 429s when multiple callers (retag batch, scrape path,
+// auto-scrape trigger) fire concurrent requests.
+const MIN_REQUEST_INTERVAL_MS = 100;
+let lastRequestMs = 0;
+let queueTail = Promise.resolve();
+
+async function throttledFetch(url, options) {
+  // Chain onto the queue tail so calls run sequentially.
+  const currentSpot = queueTail.then(async () => {
+    const elapsed = Date.now() - lastRequestMs;
+    const wait = Math.max(0, MIN_REQUEST_INTERVAL_MS - elapsed);
+    if (wait > 0) {
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
+    lastRequestMs = Date.now();
+  });
+  queueTail = currentSpot.catch(() => {}); // don't let one failure break the chain
+  await currentSpot;
+  return fetch(url, options);
+}
+
 const CANONICAL_TAGS = [
   // Format
   'vgc', 'ou', 'uu', 'ru', 'nu', 'pu', 'ubers', 'lc', 'monotype', 'doubles', 'singles',
@@ -65,7 +87,7 @@ async function generateRecipeTags({ title, description, url, source }) {
   ].join('\n');
 
   try {
-    const response = await fetch(OPENROUTER_URL, {
+    const response = await throttledFetch(OPENROUTER_URL, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`,

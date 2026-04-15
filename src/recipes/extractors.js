@@ -11,27 +11,37 @@ function extractTags(text) {
   const tags = [];
   const lower = text.toLowerCase();
 
-  // Single-word keywords — matched with \b word boundaries so substring noise
-  // like "about" (→ "ou") or "popular" (→ "pu") no longer produces false hits.
+  // Single-word keywords that map directly to a canonical tag. Matched with \b
+  // word boundaries so substring noise like "about" (→ "ou") doesn't trigger.
   const singleWordKeywords = {
-    ou: 'ou', uu: 'uu', uber: 'ubers', ubers: 'ubers', ru: 'ru', nu: 'nu', pu: 'pu',
-    vgc: 'vgc', doubles: 'doubles', singles: 'singles', monotype: 'monotype',
-    rain: 'rain team', sun: 'sun team', sand: 'sand team', hail: 'hail team', snow: 'snow team',
-    stall: 'stall', balance: 'balance', competitive: 'competitive', casual: 'casual',
-    showdown: 'showdown', regulation: 'regulation', scarlet: 'gen 9', violet: 'gen 9',
+    // Formats
+    ou: 'ou', uu: 'uu', ru: 'ru', nu: 'nu', pu: 'pu', ubers: 'ubers', uber: 'ubers',
+    lc: 'lc', vgc: 'vgc', doubles: 'doubles', singles: 'singles', monotype: 'monotype',
+    // Weather (note: no "team" suffix — matches canonical)
+    rain: 'rain', sun: 'sun', sand: 'sand', snow: 'snow',
+    // Archetypes
+    stall: 'stall', balance: 'balance', tailwind: 'tailwind', screens: 'screens',
+    // Tempo / role
+    setup: 'setup', lead: 'lead', pivot: 'pivot', wallbreaker: 'wallbreaker',
+    sweeper: 'sweeper', tank: 'tank',
+    // Misc
+    showdown: 'showdown', tournament: 'tournament', ladder: 'ladder', rmt: 'rmt',
+    // Generation aliases
+    scarlet: 'gen-9', violet: 'gen-9',
   };
 
-  // Multi-word / literal phrase keywords — these already have enough specificity
-  // that substring matching is safe (no natural English substring collides).
+  // Phrase keywords — safe to substring-match, emit canonical forms.
   const phraseKeywords = {
-    'trick room': 'trick room',
-    'hyper offense': 'hyper offense',
-    'gen 9': 'gen 9',
-    'gen 8': 'gen 8',
-    'gen 7': 'gen 7',
-    'reg g': 'reg g',
-    'reg h': 'reg h',
-    'reg f': 'reg f',
+    'trick room': 'trick-room',
+    'hyper offense': 'hyper-offense',
+    'bulky offense': 'bulky-offense',
+    'gen 9': 'gen-9',
+    'gen 8': 'gen-8',
+    'gen 7': 'gen-7',
+    'gen 6': 'gen-6',
+    'reg f': 'reg-f',
+    'reg g': 'reg-g',
+    'reg h': 'reg-h',
   };
 
   for (const [keyword, tag] of Object.entries(singleWordKeywords)) {

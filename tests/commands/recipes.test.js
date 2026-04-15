@@ -13,7 +13,7 @@ describe('extractTags', () => {
   it('matches single-word keywords with word boundaries', () => {
     expect(extractTags('this is an OU team')).toContain('ou');
     expect(extractTags('VGC reg g sun team')).toEqual(
-      expect.arrayContaining(['vgc', 'reg g', 'sun team'])
+      expect.arrayContaining(['vgc', 'reg-g', 'sun'])
     );
   });
 
@@ -24,19 +24,19 @@ describe('extractTags', () => {
     // "popular", "push", "cup" should NOT produce "pu"
     expect(extractTags('a popular strategy')).not.toContain('pu');
     expect(extractTags('push through')).not.toContain('pu');
-    // "training", "rain-check" should NOT produce "rain team"
-    expect(extractTags('training montage')).not.toContain('rain team');
+    // "training", "rain-check" should NOT produce "rain"
+    expect(extractTags('training montage')).not.toContain('rain');
     // "install", "installation" should NOT produce "stall"
     expect(extractTags('install this update')).not.toContain('stall');
-    // "sunday" should NOT produce "sun team"
-    expect(extractTags('sunday tournament')).not.toContain('sun team');
+    // "sunday" should NOT produce "sun"
+    expect(extractTags('on a sunday afternoon')).not.toContain('sun');
   });
 
   it('still matches legitimate multi-word phrases via substring', () => {
-    expect(extractTags('this is a trick room build')).toContain('trick room');
-    expect(extractTags('hyper offense core')).toContain('hyper offense');
+    expect(extractTags('this is a trick room build')).toContain('trick-room');
+    expect(extractTags('hyper offense core')).toContain('hyper-offense');
     expect(extractTags('gen 9 ou analysis')).toEqual(
-      expect.arrayContaining(['gen 9', 'ou'])
+      expect.arrayContaining(['gen-9', 'ou'])
     );
   });
 
