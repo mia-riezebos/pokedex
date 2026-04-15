@@ -8,7 +8,6 @@ const CHANGELOG = [
       'Fixed `/recipes` tag noise — switched from substring matching to word-boundary regex so `#ou` no longer fires on "about"/"cloud"/"out", etc.',
       'Fixed `/recipes` source noise — unknown hostnames no longer get promoted to fake sources like "ogeneo" or "petrol"; they return null and drop out of the filter chips',
       'Added `/recipes retag` — mod-only subcommand that re-runs the extractors against every stored recipe to fix historical data',
-      'Fixed recipes site OG preview — cheaper count query, correct contributor dedupe by user ID, safer metadataBase URL handling',
     ],
   },
   {

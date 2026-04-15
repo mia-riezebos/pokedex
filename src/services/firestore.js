@@ -359,6 +359,16 @@ async function getAllRecipes(limit = 200) {
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
+/**
+ * Iterate every recipe in the collection with no limit. Used by the retag
+ * backfill command. Prefer getAllRecipes() for normal reads.
+ */
+async function getAllRecipesUncapped() {
+  const db = admin.firestore();
+  const snap = await db.collection('recipes').get();
+  return snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
 async function getApprovedRecipes(limit = 200) {
   const db = admin.firestore();
   const snapshot = await db.collection('recipes')
@@ -477,6 +487,7 @@ module.exports = {
   getAllIssuesWithThreadId,
   saveRecipe,
   getAllRecipes,
+  getAllRecipesUncapped,
   getApprovedRecipes,
   getPendingRecipes,
   getRecipeById,

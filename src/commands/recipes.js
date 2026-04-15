@@ -697,29 +697,45 @@ async function executeDelete(interaction) {
 async function executeRetag(interaction) {
   await interaction.deferReply({ ephemeral: true });
 
-  const allRecipes = await firestore.getAllRecipes(5000);
-  let changedCount = 0;
-  const updates = [];
+  const recipes = await firestore.getAllRecipesUncapped();
+  await interaction.editReply({ content: `⏳ Scanning ${recipes.length} recipes...` });
 
-  for (const recipe of allRecipes) {
+  const updates = [];
+  let changedCount = 0;
+
+  for (const recipe of recipes) {
     const textForTags = [recipe.title, recipe.description].filter(Boolean).join(' ');
     const newTags = extractTags(textForTags);
     const newSource = recipe.url ? inferSource(recipe.url) : null;
 
-    const tagsChanged = JSON.stringify([...(recipe.tags || [])].sort()) !== JSON.stringify([...newTags].sort());
+    const oldTagsSorted = [...(recipe.tags || [])].sort();
+    const newTagsSorted = [...newTags].sort();
+    const tagsChanged = JSON.stringify(oldTagsSorted) !== JSON.stringify(newTagsSorted);
     const sourceChanged = recipe.source !== newSource;
 
     if (tagsChanged || sourceChanged) {
-      updates.push(firestore.updateRecipeTagsAndSource(recipe.id, newTags, newSource));
+      updates.push(
+        firestore.updateRecipeTagsAndSource(recipe.id, newTags, newSource)
+          .then(() => ({ ok: true }))
+          .catch((err) => ({ ok: false, id: recipe.id, err })),
+      );
       changedCount++;
     }
   }
 
-  await Promise.all(updates);
+  const results = await Promise.all(updates);
+  const succeeded = results.filter((r) => r.ok).length;
+  const failed = results.filter((r) => !r.ok);
 
-  return interaction.editReply({
-    content: `✅ Retagged ${changedCount} of ${allRecipes.length} recipes.`,
-  });
+  if (failed.length > 0) {
+    console.error('[retag] Some updates failed:', failed.map((f) => `${f.id}: ${f.err?.message}`).join('; '));
+  }
+
+  const summary = failed.length > 0
+    ? `⚠️ Retagged ${succeeded} of ${changedCount} changed recipes (${failed.length} failed — see logs). Scanned ${recipes.length} total.`
+    : `✅ Retagged ${succeeded} of ${recipes.length} recipes (${recipes.length - changedCount} already correct).`;
+
+  return interaction.editReply({ content: summary });
 }
 
 // --- Autocomplete for recipe approve / delete ---
