@@ -11,7 +11,7 @@ import {
 import RecipeCard from "@/components/RecipeCard";
 import TrendingRow from "@/components/TrendingRow";
 import { computeTrending } from "@/lib/trending";
-import type { TimestampLike } from "@/lib/relativeTime";
+import { toMillis, type TimestampLike } from "@/lib/relativeTime";
 import Link from "next/link";
 
 const APP_VERSION = "1.1.0";
@@ -63,28 +63,13 @@ function saveCache(recipes: Recipe[]) {
   } catch {}
 }
 
-function createdAtMillis(recipe: Recipe): number {
-  const value = recipe.createdAt;
-  if (value == null) return -Infinity;
-  if (value instanceof Date) return value.getTime();
-  if (typeof value === "number") return value;
-  if (typeof value === "string") {
-    const parsed = Date.parse(value);
-    return Number.isNaN(parsed) ? -Infinity : parsed;
-  }
-  if (typeof value === "object") {
-    if ("toDate" in value && typeof value.toDate === "function") {
-      return value.toDate().getTime();
-    }
-    if ("seconds" in value && typeof value.seconds === "number") {
-      return value.seconds * 1000 + Math.floor((value.nanoseconds ?? 0) / 1e6);
-    }
-  }
-  return -Infinity;
-}
-
 function sortByCreatedAtDesc(recipes: Recipe[]): Recipe[] {
-  return [...recipes].sort((a, b) => createdAtMillis(b) - createdAtMillis(a));
+  return [...recipes].sort((a, b) => {
+    const aMs = toMillis(a.createdAt) ?? -Infinity;
+    const bMs = toMillis(b.createdAt) ?? -Infinity;
+    if (aMs === bMs) return 0;
+    return bMs - aMs;
+  });
 }
 
 export default function RecipesPage() {
@@ -300,7 +285,7 @@ export default function RecipesPage() {
       )}
 
       {/* Trending row — hidden during search/filter and while loading */}
-      {!loading && !isFiltering && <TrendingRow recipes={trending} />}
+      {!loading && !isFiltering && <TrendingRow entries={trending} />}
 
       {/* Recipe grid */}
       {loading ? (

@@ -7,7 +7,7 @@ export type TimestampLike =
   | null
   | undefined;
 
-function toMillis(value: TimestampLike): number | null {
+export function toMillis(value: TimestampLike): number | null {
   if (value == null) return null;
   if (value instanceof Date) return value.getTime();
   if (typeof value === "number") return value;

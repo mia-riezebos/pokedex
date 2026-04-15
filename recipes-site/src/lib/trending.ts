@@ -20,12 +20,17 @@ function countSharesSinceCutoff(
   }, 0);
 }
 
+export interface TrendingEntry<T> {
+  recipe: T;
+  recentShares: number;
+}
+
 export function computeTrending<T extends RecipeShareTimestamps>(
   recipes: T[],
   nowMs: number = Date.now(),
   windowDays: number = 7,
   limit: number = 3,
-): T[] {
+): TrendingEntry<T>[] {
   const cutoff = nowMs - windowDays * DAY_MS;
 
   return recipes
@@ -35,8 +40,7 @@ export function computeTrending<T extends RecipeShareTimestamps>(
     }))
     .filter((entry) => entry.recentShares > 0)
     .sort((a, b) => b.recentShares - a.recentShares)
-    .slice(0, limit)
-    .map((entry) => entry.recipe);
+    .slice(0, limit);
 }
 
 export function countRecentShares(

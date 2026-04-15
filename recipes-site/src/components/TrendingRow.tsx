@@ -1,6 +1,6 @@
 "use client";
 
-import { countRecentShares } from "@/lib/trending";
+import type { TrendingEntry } from "@/lib/trending";
 import { getSourceColor } from "@/lib/sourceColors";
 
 interface Sharer {
@@ -18,8 +18,8 @@ interface Recipe {
 }
 
 
-export default function TrendingRow({ recipes }: { recipes: Recipe[] }) {
-  if (recipes.length < 2) return null;
+export default function TrendingRow({ entries }: { entries: TrendingEntry<Recipe>[] }) {
+  if (entries.length < 2) return null;
 
   return (
     <section className="mb-8">
@@ -33,9 +33,10 @@ export default function TrendingRow({ recipes }: { recipes: Recipe[] }) {
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {recipes.map((recipe, i) => {
+        {entries.map((entry, i) => {
+          const recipe = entry.recipe;
+          const recent = entry.recentShares;
           const sourceColor = getSourceColor(recipe.source);
-          const recent = countRecentShares(recipe.sharedBy);
 
           return (
             <a
