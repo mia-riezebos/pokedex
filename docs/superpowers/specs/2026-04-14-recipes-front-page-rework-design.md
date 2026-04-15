@@ -163,11 +163,11 @@ Renders `formatRelativeTime(createdAt)` in the top-right corner of the card, abs
 ### Modified: `src/app/page.tsx`
 
 1. Add `import TrendingRow from "@/components/TrendingRow"` and the helper imports.
-2. Change the Firestore query's `orderBy("shareCount", "desc")` to `orderBy("createdAt", "desc")`.
+2. Remove the Firestore `orderBy` entirely. Add a client-side `sortByCreatedAtDesc` helper (using `toMillis` exported from `relativeTime.ts`) and apply it after fetching. This approach was chosen over `orderBy("createdAt", "desc")` because Firestore silently excludes documents missing the ordered field — any legacy recipe without `createdAt` would vanish from the list.
 3. Add `createdAt` to the `Recipe` interface as `TimestampLike`.
 4. Compute `const trending = useMemo(() => computeTrending(recipes), [recipes])`.
 5. Compute `const isFiltering = Boolean(search || activeTag || activeSource)`.
-6. Render `<TrendingRow recipes={trending} />` between the filter chips and the grid, gated on `!loading && !isFiltering && trending.length >= 2`.
+6. Render `<TrendingRow entries={trending} />` between the filter chips and the grid, gated on `!loading && !isFiltering`. (`TrendingEntry<Recipe>[]` is passed as the `entries` prop; `TrendingRow` handles the `< 2` guard internally.)
 7. Bump `APP_VERSION` from `"1.0.1"` to `"1.1.0"` so existing localStorage caches invalidate (older cached shapes may lack `createdAt`).
 
 ## Cache compatibility
@@ -182,9 +182,7 @@ If `computeTrending` or `formatRelativeTime` throw on malformed data (they shoul
 
 ## Firestore query compatibility
 
-The sort change (`shareCount desc` → `createdAt desc`) is an `orderBy` on a different field, filtered by the same `where("status", "==", "approved")`. This requires a Firestore composite index on `(status ASC, createdAt DESC)`. **Action item:** verify this index exists in the Firebase console before deploying, or the query will fail at runtime with a "missing index" error that includes a one-click link to create it.
-
-If the index is missing at deploy time, the implementation plan should either (a) create it ahead of the deploy, or (b) accept that the first page load will error, click the auto-create link, wait a minute, and retry. Option (a) is preferred.
+The final implementation fetches all approved recipes without a Firestore `orderBy` and sorts client-side. No composite index is required. This approach was chosen because Firestore's `orderBy` silently excludes documents missing the ordered field, which would have hidden any legacy recipe documents lacking `createdAt`. The query is simply `where("status", "==", "approved")`, and `sortByCreatedAtDesc` runs in the client after the snapshot is returned, treating missing `createdAt` as `-Infinity` (sorted to the bottom) so no documents are dropped.
 
 ## File manifest
 
