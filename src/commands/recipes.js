@@ -1,6 +1,8 @@
 const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionFlagsBits } = require('discord.js');
+const admin = require('firebase-admin');
 const firestore = require('../services/firestore');
 const { getConfig } = require('../config/config');
+const { extractTags, inferSource } = require('../recipes/extractors');
 
 // URL regex — matches http/https links (no g flag to avoid stateful .test() failures)
 const URL_REGEX = /https?:\/\/[^\s<>"')\]]+/i;
@@ -72,13 +74,16 @@ const commandData = new SlashCommandBuilder()
         opt.setName('recipe')
           .setDescription('Recipe to delete')
           .setRequired(true)
-          .setAutocomplete(true)));
+          .setAutocomplete(true)))
+  .addSubcommand(sub =>
+    sub.setName('retag')
+      .setDescription('Retag all recipes using the current extractors (mod only)'));
 
 async function execute(interaction) {
   const sub = interaction.options.getSubcommand();
 
   // Mod-only subcommands require ManageMessages
-  const modOnly = ['scrape', 'pending', 'approve-all', 'grab', 'approve'];
+  const modOnly = ['scrape', 'pending', 'approve-all', 'grab', 'approve', 'retag'];
   if (modOnly.includes(sub) && !interaction.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
     return interaction.reply({ content: 'You need **Manage Messages** permission to use this command.', ephemeral: true });
   }
@@ -91,6 +96,7 @@ async function execute(interaction) {
   if (sub === 'grab') return executeGrab(interaction);
   if (sub === 'approve') return executeApprove(interaction);
   if (sub === 'delete') return executeDelete(interaction);
+  if (sub === 'retag') return executeRetag(interaction);
   return interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
 }
 
@@ -688,6 +694,67 @@ async function executeDelete(interaction) {
   return interaction.editReply({ embeds: [embed] });
 }
 
+// --- RETAG (mod only) ---
+
+async function executeRetag(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+
+  const recipes = await firestore.getAllRecipesUncapped();
+  await interaction.editReply({ content: `⏳ Scanning ${recipes.length} recipes...` });
+
+  // Compute what to change in memory first — no DB calls yet.
+  const changes = [];
+  for (const recipe of recipes) {
+    const textForTags = [recipe.title, recipe.description].filter(Boolean).join(' ');
+    const newTags = extractTags(textForTags);
+    const newSource = recipe.url ? inferSource(recipe.url) : null;
+
+    const oldTagsSorted = [...(recipe.tags || [])].sort();
+    const newTagsSorted = [...newTags].sort();
+    const tagsChanged = JSON.stringify(oldTagsSorted) !== JSON.stringify(newTagsSorted);
+    // Normalize both sides: legacy docs may have source undefined, and the
+    // extractor now returns null for unknown hosts — treat those as equal.
+    const oldSource = recipe.source ?? null;
+    const sourceChanged = oldSource !== newSource;
+
+    if (tagsChanged || sourceChanged) {
+      changes.push({ id: recipe.id, newTags, newSource });
+    }
+  }
+
+  // Commit in Firestore-batch-size chunks (500 is the hard limit).
+  const db = admin.firestore();
+  const BATCH_SIZE = 500;
+  let succeeded = 0;
+  let failed = 0;
+
+  for (let i = 0; i < changes.length; i += BATCH_SIZE) {
+    const slice = changes.slice(i, i + BATCH_SIZE);
+    const batch = db.batch();
+    for (const change of slice) {
+      const ref = db.collection('recipes').doc(change.id);
+      batch.update(ref, {
+        tags: change.newTags,
+        source: change.newSource,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+    }
+    try {
+      await batch.commit();
+      succeeded += slice.length;
+    } catch (err) {
+      console.error(`[retag] batch ${i / BATCH_SIZE + 1} failed:`, err);
+      failed += slice.length;
+    }
+  }
+
+  const summary = failed > 0
+    ? `⚠️ Retagged ${succeeded} of ${changes.length} changed recipes (${failed} failed — see logs). Scanned ${recipes.length} total.`
+    : `✅ Retagged ${succeeded} of ${recipes.length} recipes (${recipes.length - changes.length} already correct).`;
+
+  return interaction.editReply({ content: summary });
+}
+
 // --- Autocomplete for recipe approve / delete ---
 
 async function autocomplete(interaction) {
@@ -1076,52 +1143,7 @@ function getPokeCode(url) {
   }
 }
 
-function inferSource(url) {
-  try {
-    const hostname = new URL(url).hostname.toLowerCase();
-    if (hostname.includes('poke.com')) return 'Poke';
-    if (hostname.includes('pokepast')) return 'Pokepaste';
-    if (hostname.includes('pokemonshowdown')) return 'Showdown';
-    if (hostname.includes('pastebin')) return 'Pastebin';
-    if (hostname.includes('paste.pokemon-online')) return 'PO Paste';
-    if (hostname.includes('github')) return 'GitHub';
-    if (hostname.includes('docs.google')) return 'Google Docs';
-    if (hostname.includes('youtube') || hostname.includes('youtu.be')) return 'YouTube';
-    if (hostname.includes('reddit')) return 'Reddit';
-    if (hostname.includes('smogon')) return 'Smogon';
-    if (hostname.includes('marriland')) return 'Marriland';
-    if (hostname.includes('serebii')) return 'Serebii';
-    if (hostname.includes('bulbapedia')) return 'Bulbapedia';
-    if (hostname.includes('pikalytics')) return 'Pikalytics';
-    if (hostname.includes('limitlessv')) return 'Limitless';
-    if (hostname.includes('victoryroad')) return 'Victory Road';
-    return hostname.replace('www.', '').split('.')[0];
-  } catch {
-    return 'Unknown';
-  }
-}
-
-function extractTags(text) {
-  if (!text) return [];
-  const tags = [];
-  const lower = text.toLowerCase();
-
-  const tagKeywords = {
-    'ou': 'ou', 'uu': 'uu', 'uber': 'ubers', 'ubers': 'ubers', 'ru': 'ru', 'nu': 'nu', 'pu': 'pu',
-    'vgc': 'vgc', 'doubles': 'doubles', 'singles': 'singles', 'monotype': 'monotype',
-    'rain': 'rain team', 'sun': 'sun team', 'sand': 'sand team', 'hail': 'hail team', 'snow': 'snow team',
-    'trick room': 'trick room', 'hyper offense': 'hyper offense', 'stall': 'stall', 'balance': 'balance',
-    'competitive': 'competitive', 'casual': 'casual', 'showdown': 'showdown',
-    'gen 9': 'gen 9', 'gen 8': 'gen 8', 'gen 7': 'gen 7', 'scarlet': 'gen 9', 'violet': 'gen 9',
-    'regulation': 'regulation', 'reg g': 'reg g', 'reg h': 'reg h', 'reg f': 'reg f',
-  };
-
-  for (const [keyword, tag] of Object.entries(tagKeywords)) {
-    if (lower.includes(keyword)) tags.push(tag);
-  }
-
-  return [...new Set(tags)];
-}
+// inferSource and extractTags are imported from ../recipes/extractors at the top of this file.
 
 async function fetchChannelMessages(channel, limit) {
   const allMessages = [];
