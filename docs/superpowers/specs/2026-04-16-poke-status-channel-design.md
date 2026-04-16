@@ -63,12 +63,13 @@ src/
   index.js                 EDIT — start cron if status.enabled
 
 config.json                EDIT — add status block
-test/
+tests/
   fixtures/status/         NEW — 4 JSON fixtures
-  statusDiff.test.js       NEW
-  statusFormatter.test.js  NEW
-  statusStore.test.js      NEW
-  statusPoller.test.js     NEW
+  services/
+    statusDiff.test.js       NEW
+    statusFormatter.test.js  NEW
+    statusStore.test.js      NEW
+    statusPoller.test.js     NEW
 ```
 
 ### Data flow — cron tick
@@ -167,25 +168,25 @@ interaction → status.js execute
 
 ## Config
 
-`config.json` additions (all overridable via Firestore `config/*` following the two-layer pattern):
+`config.json` uses **flat keys** — the two-layer config service (`src/config/config.js`) validates that override keys exist in `fileDefaults`, so nested objects would not be overridable. Additions:
 
 ```json
-"status": {
-  "enabled": false,
-  "api_url": "https://status.poke.com/api/v2/summary.json",
-  "poll_cron": "*/2 * * * *",
-  "fetch_timeout_ms": 10000,
-  "default_channel_name": "poke-status"
-}
+"status_enabled": false,
+"status_api_url": "https://status.poke.com/api/v2/summary.json",
+"status_poll_cron": "*/2 * * * *",
+"status_fetch_timeout_ms": 10000,
+"status_default_channel_name": "poke-status"
 ```
 
-`status.enabled: false` by default — the cron job does not start and `index.js` skips poller init. The slash command is still registered but `/status setup` refuses with "status feature is disabled globally; set status.enabled true in config".
+All are overridable via Firestore `config/{key}` following the existing pattern.
+
+`status_enabled: false` by default — the cron job does not start and `index.js` skips poller init. The slash command is still registered but `/status setup` refuses with "status feature is disabled globally; enable `status_enabled` via /config".
 
 ## Testing
 
-**Runner:** `node:test` (built into Node 18+, zero new deps). Added as `"test": "node --test test/"` in `package.json`.
+**Runner:** **vitest** — already a devDependency (`vitest ^4.1.4`), `npm test` and `npm run test:watch` are already wired in `package.json`. Existing tests live in `tests/services/` and `tests/commands/` using ESM `import` syntax and `describe`/`it`/`expect` from vitest. New tests follow the same pattern.
 
-**Fixtures** (`test/fixtures/status/`):
+**Fixtures** (`tests/fixtures/status/`):
 - `all-operational.json`
 - `partial-outage.json`
 - `active-incident.json`
@@ -203,7 +204,8 @@ interaction → status.js execute
 
 **Regression guarantee:**
 - All new files are additive. Only `index.js` and `config.json` are edited.
-- With `status.enabled: false` (default), `index.js` skips poller init entirely — no behavior change for existing users.
+- With `status_enabled: false` (default), `index.js` skips poller init entirely — no behavior change for existing users.
+- `npm test` continues to pass (existing suites unchanged; new suites pass in isolation).
 - Smoke check: run `npm start` locally, confirm bot boots and registers commands as today.
 
 ## Delivery
