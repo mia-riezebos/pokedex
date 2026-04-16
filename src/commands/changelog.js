@@ -2,6 +2,14 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.7.2',
+    date: '2026-04-15',
+    changes: [
+      'Compacted `/changelog` — now shows one version per page instead of three, so each page fits in a single viewport without scrolling',
+      'Added ⏮ / ⏭ jump-to-first / jump-to-last buttons to the pager for faster navigation through the full history',
+    ],
+  },
+  {
     version: '2.7.1',
     date: '2026-04-15',
     changes: [
@@ -322,8 +330,7 @@ const CHANGELOG = [
   },
 ];
 
-const ITEMS_PER_PAGE = 3;
-const TOTAL_PAGES = Math.ceil(CHANGELOG.length / ITEMS_PER_PAGE);
+const TOTAL_PAGES = CHANGELOG.length;
 
 const commandData = new SlashCommandBuilder()
   .setName('changelog')
@@ -335,37 +342,35 @@ const commandData = new SlashCommandBuilder()
   );
 
 function buildChangelogPage(page) {
-  const start = page * ITEMS_PER_PAGE;
-  const entries = CHANGELOG.slice(start, start + ITEMS_PER_PAGE);
+  const entry = CHANGELOG[page];
+  if (!entry) return null;
 
   const embed = new EmbedBuilder()
-    .setTitle('Pokedex Changelog')
+    .setTitle(`Pokedex Changelog — v${entry.version}`)
     .setColor(0x5865f2);
 
-  for (const entry of entries) {
-    const FIELD_LIMIT = 1024;
-    const bullets = entry.changes.map(c => `• ${c}`);
-    const chunks = [];
-    let current = '';
+  const FIELD_LIMIT = 1024;
+  const bullets = entry.changes.map(c => `• ${c}`);
+  const chunks = [];
+  let current = '';
 
-    for (const bullet of bullets) {
-      const candidate = current ? current + '\n' + bullet : bullet;
-      if (candidate.length > FIELD_LIMIT) {
-        if (current) chunks.push(current);
-        current = bullet;
-      } else {
-        current = candidate;
-      }
+  for (const bullet of bullets) {
+    const candidate = current ? current + '\n' + bullet : bullet;
+    if (candidate.length > FIELD_LIMIT) {
+      if (current) chunks.push(current);
+      current = bullet;
+    } else {
+      current = candidate;
     }
-    if (current) chunks.push(current);
-
-    chunks.forEach((chunk, i) => {
-      embed.addFields({
-        name: i === 0 ? `v${entry.version} — ${entry.date}` : '\u200b',
-        value: chunk,
-      });
-    });
   }
+  if (current) chunks.push(current);
+
+  chunks.forEach((chunk, i) => {
+    embed.addFields({
+      name: i === 0 ? entry.date : '\u200b',
+      value: chunk,
+    });
+  });
 
   embed.setFooter({ text: `Page ${page + 1} of ${TOTAL_PAGES} • Pokedex v${CHANGELOG[0].version}` });
   return embed;
@@ -374,8 +379,13 @@ function buildChangelogPage(page) {
 function buildPageButtons(page) {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
+      .setCustomId(`changelog_first_${page}`)
+      .setLabel('⏮')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(page === 0),
+    new ButtonBuilder()
       .setCustomId(`changelog_prev_${page}`)
-      .setLabel('◀ Previous')
+      .setLabel('◀ Prev')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page === 0),
     new ButtonBuilder()
@@ -386,6 +396,11 @@ function buildPageButtons(page) {
     new ButtonBuilder()
       .setCustomId(`changelog_next_${page}`)
       .setLabel('Next ▶')
+      .setStyle(ButtonStyle.Secondary)
+      .setDisabled(page >= TOTAL_PAGES - 1),
+    new ButtonBuilder()
+      .setCustomId(`changelog_last_${page}`)
+      .setLabel('⏭')
       .setStyle(ButtonStyle.Secondary)
       .setDisabled(page >= TOTAL_PAGES - 1),
   );
@@ -402,12 +417,14 @@ async function execute(interaction) {
 async function handleChangelogButton(interaction) {
   const customId = interaction.customId;
   const parts = customId.split('_');
-  const action = parts[1]; // prev or next
+  const action = parts[1]; // first, prev, next, last
   const currentPage = parseInt(parts[2], 10);
 
   let newPage = currentPage;
+  if (action === 'first') newPage = 0;
   if (action === 'prev') newPage = Math.max(0, currentPage - 1);
   if (action === 'next') newPage = Math.min(TOTAL_PAGES - 1, currentPage + 1);
+  if (action === 'last') newPage = TOTAL_PAGES - 1;
 
   const embed = buildChangelogPage(newPage);
   const buttons = buildPageButtons(newPage);
