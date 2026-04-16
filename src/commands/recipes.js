@@ -1120,7 +1120,7 @@ function extractTitleFromUrl(url) {
     const pathname = u.pathname;
 
     // Poke.com links — extract the code from the path
-    if (hostname.includes('poke.com')) {
+    if (hostname === 'poke.com' || hostname.endsWith('.poke.com')) {
       const parts = pathname.split('/').filter(Boolean);
       const code = parts[parts.length - 1];
       if (code) return `Poke Recipe ${code}`;
@@ -1185,7 +1185,8 @@ function cleanDescription(text, url) {
 
 function isPokeLink(url) {
   try {
-    return new URL(url).hostname.toLowerCase().includes('poke.com');
+    const h = new URL(url).hostname.toLowerCase();
+    return h === 'poke.com' || h.endsWith('.poke.com');
   } catch {
     return false;
   }
@@ -1194,7 +1195,8 @@ function isPokeLink(url) {
 function getPokeCode(url) {
   try {
     const u = new URL(url);
-    if (!u.hostname.toLowerCase().includes('poke.com')) return null;
+    const h = u.hostname.toLowerCase();
+    if (h !== 'poke.com' && !h.endsWith('.poke.com')) return null;
     // Extract the last path segment as the code (works for /r/, /refer/, /recipe/, etc.)
     const parts = u.pathname.split('/').filter(Boolean);
     return parts.length > 0 ? parts[parts.length - 1] : null;

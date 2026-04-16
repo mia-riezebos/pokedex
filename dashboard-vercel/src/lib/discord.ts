@@ -12,6 +12,13 @@ function botHeaders() {
   };
 }
 
+/** Validate that a value looks like a Discord snowflake (numeric string). */
+function assertSnowflake(value: string, label: string): void {
+  if (!/^\d{17,20}$/.test(value)) {
+    throw new Error(`Invalid ${label}: must be a Discord snowflake`);
+  }
+}
+
 export async function exchangeCode(code: string) {
   const params = new URLSearchParams({
     client_id: CLIENT_ID,
@@ -47,6 +54,7 @@ export async function getDiscordUser(accessToken: string) {
 }
 
 export async function getGuildMember(userId: string) {
+  assertSnowflake(userId, "userId");
   const res = await fetch(
     `${DISCORD_API}/guilds/${GUILD_ID}/members/${userId}`,
     { headers: botHeaders() }
@@ -98,6 +106,7 @@ export async function getGuildChannels() {
 }
 
 export async function banUser(userId: string, reason: string) {
+  assertSnowflake(userId, "userId");
   const res = await fetch(
     `${DISCORD_API}/guilds/${GUILD_ID}/bans/${userId}`,
     {
@@ -115,6 +124,7 @@ export async function banUser(userId: string, reason: string) {
 }
 
 export async function kickUser(userId: string, reason: string) {
+  assertSnowflake(userId, "userId");
   const res = await fetch(
     `${DISCORD_API}/guilds/${GUILD_ID}/members/${userId}`,
     {
@@ -142,6 +152,7 @@ export async function timeoutUser(
     Date.now() + durationSeconds * 1000
   ).toISOString();
 
+  assertSnowflake(userId, "userId");
   const res = await fetch(
     `${DISCORD_API}/guilds/${GUILD_ID}/members/${userId}`,
     {
@@ -162,6 +173,7 @@ export async function timeoutUser(
 }
 
 export async function removeTimeout(userId: string) {
+  assertSnowflake(userId, "userId");
   const res = await fetch(
     `${DISCORD_API}/guilds/${GUILD_ID}/members/${userId}`,
     {
