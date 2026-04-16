@@ -80,12 +80,22 @@ function inferSource(url) {
     const hostname = new URL(url).hostname.toLowerCase();
     const domainMatch = (domain) => hostname === domain || hostname.endsWith('.' + domain);
     if (domainMatch('poke.com')) return 'Poke';
+    if (domainMatch('pokepast.es')) return 'Pokepaste';
+    if (domainMatch('pokemonshowdown.com')) return 'Showdown';
+    if (domainMatch('pastebin.com')) return 'Pastebin';
+    if (domainMatch('paste.pokemon-online.eu')) return 'PO Paste';
     if (domainMatch('github.com')) return 'GitHub';
     if (domainMatch('docs.google.com')) return 'Google Docs';
     if (domainMatch('youtube.com') || domainMatch('youtu.be')) return 'YouTube';
     if (domainMatch('reddit.com')) return 'Reddit';
     if (domainMatch('notion.so') || domainMatch('notion.site')) return 'Notion';
-    if (domainMatch('pastebin.com')) return 'Pastebin';
+    if (domainMatch('smogon.com')) return 'Smogon';
+    if (domainMatch('marriland.com')) return 'Marriland';
+    if (domainMatch('serebii.net')) return 'Serebii';
+    if (domainMatch('bulbapedia.bulbagarden.net')) return 'Bulbapedia';
+    if (domainMatch('pikalytics.com')) return 'Pikalytics';
+    if (domainMatch('limitlesstcg.com') || domainMatch('limitlessvgc.com')) return 'Limitless';
+    if (domainMatch('victoryroadvgc.com')) return 'Victory Road';
     // Unknown hostname: return null instead of promoting a domain prefix to a
     // first-class source. The front-end filter chips iterate unique r.source
     // values; returning null keeps unknown-host recipes from polluting them.
