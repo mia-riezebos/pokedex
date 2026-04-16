@@ -162,7 +162,7 @@ app.get('/api/issues/:id', async (req, res) => {
 });
 
 // Catch-all: serve frontend for SPA routing
-app.use((req, res) => {
+app.use(rateLimit, (req, res) => {
   const reqPath = req.path;
   // Serve recipes page for /recipes route
   if (reqPath === '/recipes' || reqPath === '/recipes/') {

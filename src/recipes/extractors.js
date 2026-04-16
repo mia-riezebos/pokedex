@@ -78,13 +78,14 @@ function extractTags(text) {
 function inferSource(url) {
   try {
     const hostname = new URL(url).hostname.toLowerCase();
-    if (hostname.includes('poke.com')) return 'Poke';
-    if (hostname.includes('github')) return 'GitHub';
-    if (hostname.includes('docs.google')) return 'Google Docs';
-    if (hostname.includes('youtube') || hostname.includes('youtu.be')) return 'YouTube';
-    if (hostname.includes('reddit')) return 'Reddit';
-    if (hostname.includes('notion.so') || hostname.includes('notion.site')) return 'Notion';
-    if (hostname.includes('pastebin')) return 'Pastebin';
+    const domainMatch = (domain) => hostname === domain || hostname.endsWith('.' + domain);
+    if (domainMatch('poke.com')) return 'Poke';
+    if (domainMatch('github.com')) return 'GitHub';
+    if (domainMatch('docs.google.com')) return 'Google Docs';
+    if (domainMatch('youtube.com') || domainMatch('youtu.be')) return 'YouTube';
+    if (domainMatch('reddit.com')) return 'Reddit';
+    if (domainMatch('notion.so') || domainMatch('notion.site')) return 'Notion';
+    if (domainMatch('pastebin.com')) return 'Pastebin';
     // Unknown hostname: return null instead of promoting a domain prefix to a
     // first-class source. The front-end filter chips iterate unique r.source
     // values; returning null keeps unknown-host recipes from polluting them.
