@@ -2,6 +2,15 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.7.1',
+    date: '2026-04-15',
+    changes: [
+      'Fixed the canonical recipe tag vocabulary — it was accidentally Pokemon-themed from an earlier prototype, now matches the actual poke.com recipe domain (productivity, travel, coding, mcp, etc.)',
+      'Fixed `inferSource` whitelist — dropped Pokemon battling sites, added poke.com, Notion, and the other real sources',
+      'Updated keyword fallback and test suite to match the new vocabulary',
+    ],
+  },
+  {
     version: '2.7.0',
     date: '2026-04-15',
     changes: [
