@@ -305,6 +305,11 @@ async function handleButtonInteraction(interaction) {
     return changelogCommand.handleChangelogButton(interaction);
   }
 
+  // --- Status incident buttons ---
+  if (customId.startsWith('status_incidents_')) {
+    return statusCommand.handleIncidentButton(interaction);
+  }
+
   // Parse button ID: triage_<action>_<issueId> or fb_<action>_<themeIndex>
   const ACTION_LABELS = {
     ack: { label: '👀 Acknowledged', color: 0x3498db, status: 'acknowledged' },
