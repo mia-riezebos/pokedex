@@ -45,6 +45,10 @@ const automod = require('./services/automod');
 const feedbackTriageCommand = require('./commands/feedbacktriage');
 const recipesCommand = require('./commands/recipes');
 const autoscrapeCommand = require('./commands/autoscrape');
+const statusCommand = require('./commands/status');
+const { createFetcher } = require('./services/statusFetcher');
+const { createStore: createStatusStore } = require('./services/statusStore');
+const { createPoller: createStatusPoller } = require('./services/statusPoller');
 const {
   canModerate,
   processPendingDecision,
@@ -69,7 +73,7 @@ async function registerCommands() {
   const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
   await rest.put(
     Routes.applicationGuildCommands(process.env.DISCORD_APP_ID, process.env.DISCORD_GUILD_ID),
-    { body: [configCommand.data.toJSON(), helpCommand.data.toJSON(), changelogCommand.data.toJSON(), feedbackCommand.data.toJSON(), issueCommand.data.toJSON(), pingCommand.data.toJSON(), lockCommand.data.toJSON(), unlockCommand.data.toJSON(), leaderboardCommand.data.toJSON(), pokedexCommand.data.toJSON(), pokedexbugCommand.data.toJSON(), typechartCommand.data.toJSON(), serverinfoCommand.data.toJSON(), afkCommand.data.toJSON(), levelCommand.data.toJSON(), warnCommand.data.toJSON(), timeoutCommand.data.toJSON(), kickCommand.data.toJSON(), banCommand.data.toJSON(), purgeCommand.data.toJSON(), slowmodeCommand.data.toJSON(), deletethreadCommand.data.toJSON(), mergeCommand.data.toJSON(), starboardCommand.data.toJSON(), pollCommand.data.toJSON(), welcomeCommand.data.toJSON(), reactionroleCommand.data.toJSON(), giveawayCommand.data.toJSON(), suggestCommand.data.toJSON(), creatorCommand.data.toJSON(), rickandmortyCommand.data.toJSON(), automodCommand.data.toJSON(), feedbackTriageCommand.data.toJSON(), recipesCommand.data.toJSON(), autoscrapeCommand.data.toJSON()] },
+    { body: [configCommand.data.toJSON(), helpCommand.data.toJSON(), changelogCommand.data.toJSON(), feedbackCommand.data.toJSON(), issueCommand.data.toJSON(), pingCommand.data.toJSON(), lockCommand.data.toJSON(), unlockCommand.data.toJSON(), leaderboardCommand.data.toJSON(), pokedexCommand.data.toJSON(), pokedexbugCommand.data.toJSON(), typechartCommand.data.toJSON(), serverinfoCommand.data.toJSON(), afkCommand.data.toJSON(), levelCommand.data.toJSON(), warnCommand.data.toJSON(), timeoutCommand.data.toJSON(), kickCommand.data.toJSON(), banCommand.data.toJSON(), purgeCommand.data.toJSON(), slowmodeCommand.data.toJSON(), deletethreadCommand.data.toJSON(), mergeCommand.data.toJSON(), starboardCommand.data.toJSON(), pollCommand.data.toJSON(), welcomeCommand.data.toJSON(), reactionroleCommand.data.toJSON(), giveawayCommand.data.toJSON(), suggestCommand.data.toJSON(), creatorCommand.data.toJSON(), rickandmortyCommand.data.toJSON(), automodCommand.data.toJSON(), feedbackTriageCommand.data.toJSON(), recipesCommand.data.toJSON(), autoscrapeCommand.data.toJSON(), statusCommand.data.toJSON()] },
   );
   console.log('Slash commands registered.');
 }
@@ -95,6 +99,27 @@ client.once('ready', async () => {
 
     // Start digest scheduler
     triage.startDigestScheduler(guild);
+  }
+
+  if (config.getConfig('status_enabled')) {
+    try {
+      const admin = require('firebase-admin');
+      const statusStore = createStatusStore(admin.firestore());
+      const statusFetcher = createFetcher({
+        timeoutMs: config.getConfig('status_fetch_timeout_ms') || 10000,
+      });
+      const statusPoller = createStatusPoller({
+        client,
+        fetcher: statusFetcher,
+        store: statusStore,
+        config,
+      });
+      statusPoller.start();
+    } catch (err) {
+      console.error('[status] failed to start poller:', err);
+    }
+  } else {
+    console.log('[status] poller not started (status_enabled=false)');
   }
 });
 
@@ -256,7 +281,7 @@ client.on('interactionCreate', async (interaction) => {
   }
 
   if (!interaction.isChatInputCommand()) return;
-  const commands = { config: configCommand, help: helpCommand, changelog: changelogCommand, feedback: feedbackCommand, issue: issueCommand, ping: pingCommand, lock: lockCommand, unlock: unlockCommand, leaderboard: leaderboardCommand, pokedex: pokedexCommand, pokedexbug: pokedexbugCommand, typechart: typechartCommand, serverinfo: serverinfoCommand, afk: afkCommand, level: levelCommand, warn: warnCommand, timeout: timeoutCommand, kick: kickCommand, ban: banCommand, purge: purgeCommand, slowmode: slowmodeCommand, deletethread: deletethreadCommand, merge: mergeCommand, starboard: starboardCommand, poll: pollCommand, welcome: welcomeCommand, reactionrole: reactionroleCommand, giveaway: giveawayCommand, suggest: suggestCommand, creator: creatorCommand, rickandmorty: rickandmortyCommand, automod: automodCommand, 'feedback-triage': feedbackTriageCommand, recipes: recipesCommand, autoscrape: autoscrapeCommand };
+  const commands = { config: configCommand, help: helpCommand, changelog: changelogCommand, feedback: feedbackCommand, issue: issueCommand, ping: pingCommand, lock: lockCommand, unlock: unlockCommand, leaderboard: leaderboardCommand, pokedex: pokedexCommand, pokedexbug: pokedexbugCommand, typechart: typechartCommand, serverinfo: serverinfoCommand, afk: afkCommand, level: levelCommand, warn: warnCommand, timeout: timeoutCommand, kick: kickCommand, ban: banCommand, purge: purgeCommand, slowmode: slowmodeCommand, deletethread: deletethreadCommand, merge: mergeCommand, starboard: starboardCommand, poll: pollCommand, welcome: welcomeCommand, reactionrole: reactionroleCommand, giveaway: giveawayCommand, suggest: suggestCommand, creator: creatorCommand, rickandmorty: rickandmortyCommand, automod: automodCommand, 'feedback-triage': feedbackTriageCommand, recipes: recipesCommand, autoscrape: autoscrapeCommand, status: statusCommand };
   const command = commands[interaction.commandName];
   if (!command) return;
 
