@@ -68,11 +68,13 @@ async function handleCheck(interaction) {
   });
 
   try {
-    const raw = await poller.runTickForGuild(interaction.guildId).catch(async () => {
-      return poller.fetchOnce();
-    });
+    let raw = await poller.runTickForGuild(interaction.guildId);
+    if (!raw) raw = await poller.fetchOnce();
     const snap = normalize(raw);
-    const { embed, row } = buildSummaryEmbed(snap, { statusPageUrl: 'https://status.poke.com' });
+    const apiUrl = config.getConfig('status_api_url') || 'https://status.poke.com/api/v2/summary.json';
+    let pageUrl;
+    try { pageUrl = new URL(apiUrl).origin; } catch { pageUrl = 'https://status.poke.com'; }
+    const { embed, row } = buildSummaryEmbed(snap, { statusPageUrl: pageUrl });
     await interaction.editReply({ embeds: [embed], components: [row] });
   } catch (err) {
     console.error('[status] /status check failed:', err);

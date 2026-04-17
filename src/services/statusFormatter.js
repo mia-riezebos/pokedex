@@ -16,6 +16,14 @@ const COMPONENT_EMOJI = {
   under_maintenance: '🔵',
 };
 
+const INDICATOR_EMOJI = {
+  none: '🟢',
+  minor: '🟡',
+  major: '🟠',
+  critical: '🔴',
+  maintenance: '🔵',
+};
+
 function colorForIndicator(indicator) {
   return SEVERITY_COLORS[indicator] ?? SEVERITY_COLORS.none;
 }
@@ -44,7 +52,7 @@ function buildSummaryEmbed(snapshot, { statusPageUrl }) {
   const nowSecs = Math.floor(Date.now() / 1000);
 
   const embed = new EmbedBuilder()
-    .setTitle(`${COMPONENT_EMOJI[indicator === 'none' ? 'operational' : 'major_outage']} Poke Status — ${description}`)
+    .setTitle(`${INDICATOR_EMOJI[indicator] ?? '⚪'} Poke Status — ${description}`)
     .setColor(colorForIndicator(indicator))
     .setDescription(lines.join('\n'))
     .addFields(
@@ -104,6 +112,7 @@ function buildTransitionEmbed(transition, statusPageUrl) {
     : transition.next === 'degraded_performance' ? 'minor'
     : transition.next === 'partial_outage' ? 'major'
     : transition.next === 'major_outage' ? 'critical'
+    : transition.next === 'under_maintenance' ? 'maintenance'
     : 'minor';
 
   return new EmbedBuilder()
@@ -122,4 +131,5 @@ module.exports = {
   prettyStatus,
   SEVERITY_COLORS,
   COMPONENT_EMOJI,
+  INDICATOR_EMOJI,
 };

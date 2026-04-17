@@ -128,7 +128,7 @@ interaction → status.js execute
     enabled, updatedAt }
   ```
 - Methods: `get(guildId)`, `save(guildId, patch)`, `listEnabled()`, `disable(guildId)`, `clearPinnedMessageId(guildId)`.
-- `lastSummary` holds the full previous JSON used for diffing on the next tick; bounded in size by trimming `incident_updates` bodies to 1 KB each before storing.
+- `lastSummary` holds the full previous JSON used for diffing on the next tick. Poke's status page typically has few active incidents, so the document size stays well within Firestore's 1 MB limit.
 
 ### `statusPoller.js`
 - `start(client)` — registers the `node-cron` job (`*/2 * * * *` from config `status.poll_cron`).
