@@ -11,5 +11,10 @@
   "level_announce": true,
   "feedback_forum": "feedback",
   "autoscrape_recipes_enabled": false,
-  "autoscrape_recipes_auto_approve": false
+  "autoscrape_recipes_auto_approve": false,
+  "status_enabled": false,
+  "status_api_url": "https://status.poke.com/api/v2/summary.json",
+  "status_poll_cron": "*/2 * * * *",
+  "status_fetch_timeout_ms": 10000,
+  "status_default_channel_name": "poke-status"
 }
