@@ -131,6 +131,8 @@ function buildIncidentListEmbeds(snapshot, { statusPageUrl }) {
       embed.setDescription(truncate(timeline, 4000));
     }
 
+    embed.setFooter({ text: 'Incident data may be incomplete — status integration is not native to Poke and relies on their public status page API.' });
+
     return embed;
   });
 }
