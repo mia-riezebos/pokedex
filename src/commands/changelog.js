@@ -2,6 +2,18 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.8.2',
+    date: '2026-04-17',
+    changes: [
+      '**`/status check`** is now visible to everyone by default — admins can set the default via `/config set status_check_public false`',
+      'Added `display:public` / `display:private` option to **`/status check`** to override the default per-use',
+      'Added **View Incidents** button to the status embed — shows detailed incident info with impact, status, timestamps, and a full update timeline',
+      'Only the user who ran `/status check` can click the button — others get a private message explaining why',
+      'Incident details now match the visibility of the parent status check (public or private)',
+      'Added disclaimer footer on incident embeds noting the integration relies on the public status page API',
+    ],
+  },
+  {
     version: '2.8.1',
     date: '2026-04-17',
     changes: [
