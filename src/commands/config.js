@@ -8,18 +8,18 @@ const commandData = new SlashCommandBuilder()
   .addSubcommand(sub =>
     sub.setName('set')
       .setDescription('Set a config value')
-      .addStringOption(opt => opt.setName('key').setDescription('Config key').setRequired(true))
+      .addStringOption(opt => opt.setName('key').setDescription('Config key').setRequired(true).setAutocomplete(true))
       .addStringOption(opt => opt.setName('value').setDescription('Config value').setRequired(true))
   )
   .addSubcommand(sub =>
     sub.setName('get')
       .setDescription('Get a config value')
-      .addStringOption(opt => opt.setName('key').setDescription('Config key').setRequired(true))
+      .addStringOption(opt => opt.setName('key').setDescription('Config key').setRequired(true).setAutocomplete(true))
   )
   .addSubcommand(sub =>
     sub.setName('reset')
       .setDescription('Reset a config key to default')
-      .addStringOption(opt => opt.setName('key').setDescription('Config key').setRequired(true))
+      .addStringOption(opt => opt.setName('key').setDescription('Config key').setRequired(true).setAutocomplete(true))
   )
   .addSubcommand(sub =>
     sub.setName('list')
@@ -78,4 +78,14 @@ async function execute(interaction) {
   }
 }
 
-module.exports = { data: commandData, execute };
+async function autocomplete(interaction) {
+  const focused = interaction.options.getFocused().toLowerCase();
+  const keys = Object.keys(config.getAllConfig());
+  const filtered = keys
+    .filter(k => k.toLowerCase().includes(focused))
+    .slice(0, 25)
+    .map(k => ({ name: k, value: k }));
+  await interaction.respond(filtered);
+}
+
+module.exports = { data: commandData, execute, autocomplete };

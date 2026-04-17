@@ -89,7 +89,8 @@ const commandData = new SlashCommandBuilder()
           .addStringOption(opt =>
             opt.setName('word')
               .setDescription('Word or phrase to unblock')
-              .setRequired(true)))
+              .setRequired(true)
+              .setAutocomplete(true)))
       .addSubcommand(sub =>
         sub.setName('list')
           .setDescription('View all blocked words/phrases')))
@@ -117,7 +118,8 @@ const commandData = new SlashCommandBuilder()
           .addStringOption(opt =>
             opt.setName('domain')
               .setDescription('Domain to remove')
-              .setRequired(true)))
+              .setRequired(true)
+              .setAutocomplete(true)))
       .addSubcommand(sub =>
         sub.setName('list')
           .setDescription('View link allowlist and blocklist')))
@@ -385,4 +387,30 @@ function normalizeDomain(input) {
   return raw;
 }
 
-module.exports = { data: commandData, execute };
+async function autocomplete(interaction) {
+  const group = interaction.options.getSubcommandGroup();
+  const focused = interaction.options.getFocused().toLowerCase();
+
+  if (group === 'blocklist') {
+    const words = await automod.getBlocklist();
+    const filtered = words
+      .filter(w => w.toLowerCase().includes(focused))
+      .slice(0, 25)
+      .map(w => ({ name: w, value: w }));
+    return interaction.respond(filtered);
+  }
+
+  if (group === 'links') {
+    const linkConfig = await automod.getLinkConfig();
+    const domains = [...(linkConfig.allowed || []), ...(linkConfig.blocked || [])];
+    const filtered = domains
+      .filter(d => d.toLowerCase().includes(focused))
+      .slice(0, 25)
+      .map(d => ({ name: d, value: d }));
+    return interaction.respond(filtered);
+  }
+
+  await interaction.respond([]);
+}
+
+module.exports = { data: commandData, execute, autocomplete };
