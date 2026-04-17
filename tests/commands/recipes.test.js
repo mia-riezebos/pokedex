@@ -56,11 +56,14 @@ describe('inferSource', () => {
     expect(inferSource('https://notion.site/public-page')).toBe('Notion');
   });
 
+  it('recognizes re-added sources with exact domain matching', () => {
+    expect(inferSource('https://pokepast.es/xyz')).toBe('Pokepaste');
+    expect(inferSource('https://www.smogon.com/forums/threads/xyz')).toBe('Smogon');
+  });
+
   it('returns null for unknown hostnames', () => {
     expect(inferSource('https://random-site.example/x')).toBeNull();
     expect(inferSource('https://ogeneo.foo.com/y')).toBeNull();
-    expect(inferSource('https://pokepast.es/xyz')).toBeNull();  // dropped from whitelist
-    expect(inferSource('https://www.smogon.com/forums/threads/xyz')).toBeNull(); // dropped
   });
 
   it('returns null for unparseable URLs', () => {

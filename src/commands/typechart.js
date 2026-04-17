@@ -29,7 +29,10 @@ const commandData = new SlashCommandBuilder()
   .addStringOption(opt =>
     opt.setName('type')
       .setDescription('Pokemon type, like fire or dragon')
-      .setRequired(true));
+      .setRequired(true)
+      .addChoices(
+        ...Object.keys(TYPE_COLORS).map(t => ({ name: t.charAt(0).toUpperCase() + t.slice(1), value: t }))
+      ));
 
 async function execute(interaction) {
   const query = interaction.options.getString('type').toLowerCase().trim();
