@@ -2,6 +2,16 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.8.1',
+    date: '2026-04-17',
+    changes: [
+      'Added autocomplete to **`/config`** — key param now shows all valid config keys',
+      'Added autocomplete to **`/pokedex`** — search Pokemon by name or number with cached PokeAPI list',
+      'Added static type choices to **`/typechart`** — all 18 types as a dropdown',
+      'Added autocomplete to **`/automod blocklist remove`** and **`/automod links remove`** — shows current entries',
+    ],
+  },
+  {
     version: '2.8.0',
     date: '2026-04-17',
     changes: [
