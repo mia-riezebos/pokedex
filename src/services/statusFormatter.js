@@ -40,7 +40,7 @@ function truncate(text, max) {
   return s.length <= max ? s : s.slice(0, max - 1) + '…';
 }
 
-function buildSummaryEmbed(snapshot, { statusPageUrl, userId }) {
+function buildSummaryEmbed(snapshot, { statusPageUrl, userId, isPublic }) {
   const indicator = snapshot.overall.indicator;
   const description = snapshot.overall.description || prettyStatus(indicator);
   const lines = snapshot.components.map(c => {
@@ -70,9 +70,10 @@ function buildSummaryEmbed(snapshot, { statusPageUrl, userId }) {
   ];
 
   if (activeIncidents.length > 0 && userId) {
+    const visibility = isPublic ? 'pub' : 'priv';
     buttons.push(
       new ButtonBuilder()
-        .setCustomId(`status_incidents_${userId}`)
+        .setCustomId(`status_incidents_${userId}_${visibility}`)
         .setLabel(`View Incidents (${activeIncidents.length})`)
         .setStyle(ButtonStyle.Primary),
     );
@@ -93,7 +94,45 @@ function buildIncidentListEmbeds(snapshot, { statusPageUrl }) {
       .setTimestamp()];
   }
 
-  return active.map(incident => buildIncidentEmbed(incident, { kind: 'update', statusPageUrl }));
+  return active.map(incident => {
+    const indicatorForImpact = {
+      critical: 'critical', major: 'major', minor: 'minor', none: 'none',
+    }[incident.impact] ?? 'minor';
+
+    const createdSecs = incident.createdAt ? Math.floor(new Date(incident.createdAt).getTime() / 1000) : null;
+    const updatedSecs = incident.updatedAt ? Math.floor(new Date(incident.updatedAt).getTime() / 1000) : null;
+
+    const embed = new EmbedBuilder()
+      .setTitle(`${INDICATOR_EMOJI[indicatorForImpact] ?? '🟡'} ${incident.name}`)
+      .setColor(colorForIndicator(indicatorForImpact))
+      .setURL(incident.shortlink || statusPageUrl)
+      .addFields(
+        { name: 'Impact', value: prettyStatus(incident.impact || 'unknown'), inline: true },
+        { name: 'Status', value: prettyStatus(incident.status || 'unknown'), inline: true },
+      )
+      .setTimestamp();
+
+    if (createdSecs) {
+      embed.addFields({ name: 'Created', value: `<t:${createdSecs}:R>`, inline: true });
+    }
+    if (updatedSecs) {
+      embed.addFields({ name: 'Last Updated', value: `<t:${updatedSecs}:R>`, inline: true });
+    }
+
+    // Show update timeline (most recent first, up to 5)
+    const updates = (incident.updates || []).slice(0, 5);
+    if (updates.length > 0) {
+      const timeline = updates.map(u => {
+        const ts = u.createdAt ? `<t:${Math.floor(new Date(u.createdAt).getTime() / 1000)}:R>` : '';
+        const status = u.status ? `**${prettyStatus(u.status)}**` : '';
+        const body = truncate(u.body || '', 200);
+        return `${status} ${ts}\n> ${body}`;
+      }).join('\n\n');
+      embed.setDescription(truncate(timeline, 4000));
+    }
+
+    return embed;
+  });
 }
 
 function buildIncidentEmbed(incident, { kind, statusPageUrl }) {

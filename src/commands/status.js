@@ -84,7 +84,7 @@ async function handleCheck(interaction) {
     const apiUrl = config.getConfig('status_api_url') || 'https://status.poke.com/api/v2/summary.json';
     let pageUrl;
     try { pageUrl = new URL(apiUrl).origin; } catch { pageUrl = 'https://status.poke.com'; }
-    const { embed, row } = buildSummaryEmbed(snap, { statusPageUrl: pageUrl, userId: interaction.user.id });
+    const { embed, row } = buildSummaryEmbed(snap, { statusPageUrl: pageUrl, userId: interaction.user.id, isPublic });
     await interaction.editReply({ embeds: [embed], components: [row] });
   } catch (err) {
     console.error('[status] /status check failed:', err);
@@ -93,8 +93,10 @@ async function handleCheck(interaction) {
 }
 
 async function handleIncidentButton(interaction) {
-  const parts = interaction.customId.split('_');
-  const ownerId = parts[2];
+  // customId format: status_incidents_<userId>_<pub|priv>
+  const ownerId = interaction.customId.split('_')[2];
+  const visibility = interaction.customId.split('_')[3];
+  const isPublic = visibility === 'pub';
 
   if (interaction.user.id !== ownerId) {
     return interaction.reply({
@@ -103,7 +105,7 @@ async function handleIncidentButton(interaction) {
     });
   }
 
-  await interaction.deferReply({ ephemeral: true });
+  await interaction.deferReply({ ephemeral: !isPublic });
 
   const { fetcher } = getDeps();
   const apiUrl = config.getConfig('status_api_url') || 'https://status.poke.com/api/v2/summary.json';
