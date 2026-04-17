@@ -1,0 +1,14 @@
+{
+  "page": { "id": "pkstatus", "name": "Poke", "url": "https://status.poke.com", "updated_at": "2026-04-16T15:00:00Z" },
+  "status": { "indicator": "major", "description": "Partial System Outage" },
+  "components": [
+    { "id": "c-app",   "name": "App",              "status": "operational",          "updated_at": "2026-04-16T12:00:00Z" },
+    { "id": "c-email", "name": "Email",            "status": "partial_outage",       "updated_at": "2026-04-16T15:00:00Z" },
+    { "id": "c-int",   "name": "Integrations",     "status": "operational",          "updated_at": "2026-04-16T12:00:00Z" },
+    { "id": "c-wa",    "name": "WhatsApp",         "status": "operational",          "updated_at": "2026-04-16T12:00:00Z" },
+    { "id": "c-sms",   "name": "SMS",              "status": "operational",          "updated_at": "2026-04-16T12:00:00Z" },
+    { "id": "c-im",    "name": "iMessage",         "status": "operational",          "updated_at": "2026-04-16T12:00:00Z" },
+    { "id": "c-img",   "name": "iMessage Group",   "status": "degraded_performance", "updated_at": "2026-04-16T12:00:00Z" }
+  ],
+  "incidents": []
+}
