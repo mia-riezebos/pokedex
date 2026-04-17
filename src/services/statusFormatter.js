@@ -37,7 +37,7 @@ function buildSummaryEmbed(snapshot, { statusPageUrl }) {
   const description = snapshot.overall.description || prettyStatus(indicator);
   const lines = snapshot.components.map(c => {
     const emoji = COMPONENT_EMOJI[c.status] ?? '⚪';
-    return `${emoji} ${c.name} — ${prettyStatus(c.status)}`;
+    return `${emoji}  **${c.name}** — ${prettyStatus(c.status)}`;
   });
 
   const activeIncidents = snapshot.incidents.filter(i => i.status !== 'resolved').length;

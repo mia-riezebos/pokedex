@@ -59,10 +59,10 @@ describe('buildSummaryEmbed', () => {
     const snap = normalize(fixture('partial-outage.json'));
     const { embed } = buildSummaryEmbed(snap, { statusPageUrl: STATUS_URL });
     const description = embed.toJSON().description ?? '';
-    expect(description).toContain('🟢 App');
-    expect(description).toContain('🟠 Email');
+    expect(description).toContain('🟢  **App**');
+    expect(description).toContain('🟠  **Email**');
     expect(description).toContain('Partial Outage');
-    expect(description).toContain('🟡 iMessage Group');
+    expect(description).toContain('🟡  **iMessage Group**');
     expect(description).toContain('Degraded Performance');
   });
 
