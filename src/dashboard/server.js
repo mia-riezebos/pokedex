@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const crypto = require('crypto');
+const rateLimit = require('express-rate-limit');
 const firestore = require('../services/firestore');
 
 const app = express();
@@ -32,42 +33,22 @@ function apiAuth(req, res, next) {
 }
 
 // --- Rate Limiting ---
-const rateLimitMap = new Map();
-const RATE_LIMIT_WINDOW_MS = 60_000;
-const RATE_LIMIT_MAX = 60;
+const limiter = rateLimit({
+  windowMs: 60_000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Rate limit exceeded. Try again later.' },
+});
 
-// Evict expired entries every 5 minutes to prevent unbounded memory growth
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, bucket] of rateLimitMap) {
-    if (now > bucket.resetAt) rateLimitMap.delete(key);
-  }
-}, 300_000).unref();
-
-function rateLimit(req, res, next) {
-  const ip = req.ip || req.connection.remoteAddress || 'unknown';
-  const now = Date.now();
-  const bucket = rateLimitMap.get(ip);
-
-  if (!bucket || now > bucket.resetAt) {
-    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return next();
-  }
-
-  if (bucket.count >= RATE_LIMIT_MAX) {
-    res.set('Retry-After', String(Math.ceil((bucket.resetAt - now) / 1000)));
-    return res.status(429).json({ error: 'Rate limit exceeded. Try again later.' });
-  }
-
-  bucket.count++;
-  next();
-}
+// Apply rate limiting globally to all routes
+app.use(limiter);
 
 // Serve static frontend
 app.use(express.static(path.join(__dirname, 'public')));
 
-// API: Get all recipes (public — no auth required, rate limited)
-app.get('/api/recipes', rateLimit, async (req, res) => {
+// API: Get all recipes (public — no auth required)
+app.get('/api/recipes', async (req, res) => {
   try {
     const { tag, source, limit: limitParam, search } = req.query;
     const safeLimit = Math.min(Math.max(parseInt(limitParam) || 200, 1), 500);
@@ -100,8 +81,8 @@ app.get('/api/recipes', rateLimit, async (req, res) => {
   }
 });
 
-// Apply auth and rate limiting to all API routes
-app.use('/api', rateLimit, apiAuth);
+// Apply auth to all remaining API routes (rate limiting is global)
+app.use('/api', apiAuth);
 
 // API: Get all issues
 app.get('/api/issues', async (req, res) => {
@@ -162,7 +143,7 @@ app.get('/api/issues/:id', async (req, res) => {
 });
 
 // Catch-all: serve frontend for SPA routing
-app.use(rateLimit, (req, res) => {
+app.use((req, res) => {
   const reqPath = req.path;
   // Serve recipes page for /recipes route
   if (reqPath === '/recipes' || reqPath === '/recipes/') {
