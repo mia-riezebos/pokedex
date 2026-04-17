@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 
 const SEVERITY_COLORS = {
   none: 0x2ECC71,
@@ -93,7 +93,7 @@ function buildIncidentListEmbeds(snapshot, { statusPageUrl }) {
       .setTimestamp()];
   }
 
-  return active.map(incident => buildIncidentEmbed(incident, { kind: 'new', statusPageUrl }));
+  return active.map(incident => buildIncidentEmbed(incident, { kind: 'update', statusPageUrl }));
 }
 
 function buildIncidentEmbed(incident, { kind, statusPageUrl }) {

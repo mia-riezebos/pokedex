@@ -105,17 +105,12 @@ async function handleIncidentButton(interaction) {
 
   await interaction.deferReply({ ephemeral: true });
 
-  const { store, fetcher } = getDeps();
-  const poller = createPoller({
-    client: interaction.client,
-    fetcher, store, config,
-  });
+  const { fetcher } = getDeps();
+  const apiUrl = config.getConfig('status_api_url') || 'https://status.poke.com/api/v2/summary.json';
 
   try {
-    let raw = await poller.runTickForGuild(interaction.guildId);
-    if (!raw) raw = await poller.fetchOnce();
+    const raw = await fetcher.fetchSummary(apiUrl);
     const snap = normalize(raw);
-    const apiUrl = config.getConfig('status_api_url') || 'https://status.poke.com/api/v2/summary.json';
     let pageUrl;
     try { pageUrl = new URL(apiUrl).origin; } catch { pageUrl = 'https://status.poke.com'; }
     const embeds = buildIncidentListEmbeds(snap, { statusPageUrl: pageUrl });
