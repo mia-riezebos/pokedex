@@ -1,4 +1,4 @@
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
 
 const SEVERITY_COLORS = {
   none: 0x2ECC71,
@@ -40,7 +40,7 @@ function truncate(text, max) {
   return s.length <= max ? s : s.slice(0, max - 1) + '…';
 }
 
-function buildSummaryEmbed(snapshot, { statusPageUrl }) {
+function buildSummaryEmbed(snapshot, { statusPageUrl, userId }) {
   const indicator = snapshot.overall.indicator;
   const description = snapshot.overall.description || prettyStatus(indicator);
   const lines = snapshot.components.map(c => {
@@ -48,7 +48,7 @@ function buildSummaryEmbed(snapshot, { statusPageUrl }) {
     return `${emoji}  **${c.name}** — ${prettyStatus(c.status)}`;
   });
 
-  const activeIncidents = snapshot.incidents.filter(i => i.status !== 'resolved').length;
+  const activeIncidents = snapshot.incidents.filter(i => i.status !== 'resolved');
   const nowSecs = Math.floor(Date.now() / 1000);
 
   const embed = new EmbedBuilder()
@@ -56,20 +56,44 @@ function buildSummaryEmbed(snapshot, { statusPageUrl }) {
     .setColor(colorForIndicator(indicator))
     .setDescription(lines.join('\n'))
     .addFields(
-      { name: 'Active Incidents', value: String(activeIncidents), inline: true },
+      { name: 'Active Incidents', value: String(activeIncidents.length), inline: true },
       { name: 'Last Checked', value: `<t:${nowSecs}:R>`, inline: true },
     )
     .setFooter({ text: 'Data: status.poke.com' })
     .setTimestamp();
 
-  const row = new ActionRowBuilder().addComponents(
+  const buttons = [
     new ButtonBuilder()
       .setLabel('Open status page')
       .setStyle(ButtonStyle.Link)
       .setURL(statusPageUrl),
-  );
+  ];
+
+  if (activeIncidents.length > 0 && userId) {
+    buttons.push(
+      new ButtonBuilder()
+        .setCustomId(`status_incidents_${userId}`)
+        .setLabel(`View Incidents (${activeIncidents.length})`)
+        .setStyle(ButtonStyle.Primary),
+    );
+  }
+
+  const row = new ActionRowBuilder().addComponents(...buttons);
 
   return { embed, row };
+}
+
+function buildIncidentListEmbeds(snapshot, { statusPageUrl }) {
+  const active = snapshot.incidents.filter(i => i.status !== 'resolved');
+  if (active.length === 0) {
+    return [new EmbedBuilder()
+      .setTitle('No Active Incidents')
+      .setColor(SEVERITY_COLORS.none)
+      .setDescription('All systems are operating normally.')
+      .setTimestamp()];
+  }
+
+  return active.map(incident => buildIncidentEmbed(incident, { kind: 'new', statusPageUrl }));
 }
 
 function buildIncidentEmbed(incident, { kind, statusPageUrl }) {
@@ -126,6 +150,7 @@ function buildTransitionEmbed(transition, statusPageUrl) {
 module.exports = {
   buildSummaryEmbed,
   buildIncidentEmbed,
+  buildIncidentListEmbeds,
   buildTransitionEmbed,
   colorForIndicator,
   prettyStatus,
