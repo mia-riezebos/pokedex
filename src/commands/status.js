@@ -12,7 +12,14 @@ const commandData = new SlashCommandBuilder()
   .setDescription('Check Poke status')
   .addSubcommand(sub =>
     sub.setName('check')
-      .setDescription('Show the current Poke status'))
+      .setDescription('Show the current Poke status')
+      .addStringOption(opt =>
+        opt.setName('display')
+          .setDescription('Show publicly or privately (default: set by /config)')
+          .addChoices(
+            { name: 'Public — visible to everyone', value: 'public' },
+            { name: 'Private — only you can see', value: 'private' },
+          )))
   .addSubcommand(sub =>
     sub.setName('setup')
       .setDescription('Create or adopt a status channel for this server')
@@ -55,7 +62,10 @@ function getDeps() {
 }
 
 async function handleCheck(interaction) {
-  await interaction.deferReply();
+  const displayChoice = interaction.options.getString('display');
+  const defaultPublic = config.getConfig('status_check_public') ?? true;
+  const isPublic = displayChoice ? displayChoice === 'public' : defaultPublic;
+  await interaction.deferReply({ ephemeral: !isPublic });
 
   if (!config.getConfig('status_enabled')) {
     return interaction.editReply({ content: 'Status feature is disabled globally. Ask an admin to enable `status_enabled` via `/config`.' });
