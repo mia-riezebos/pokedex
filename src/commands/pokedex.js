@@ -119,19 +119,22 @@ function capitalize(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
-let pokemonListCache = null;
+let pokemonListPromise = null;
 
-async function loadPokemonList() {
-  if (pokemonListCache) return pokemonListCache;
-  try {
-    const res = await fetch(`${POKEAPI_URL}/pokemon?limit=1025`);
-    if (!res.ok) return [];
-    const data = await res.json();
-    pokemonListCache = data.results.map((p, i) => ({ name: p.name, id: i + 1 }));
-    return pokemonListCache;
-  } catch {
-    return [];
+function loadPokemonList() {
+  if (!pokemonListPromise) {
+    pokemonListPromise = fetch(`${POKEAPI_URL}/pokemon?limit=1025`)
+      .then(res => {
+        if (!res.ok) throw new Error(`PokeAPI ${res.status}`);
+        return res.json();
+      })
+      .then(data => data.results.map((p, i) => ({ name: p.name, id: i + 1 })))
+      .catch(() => {
+        pokemonListPromise = null; // allow retry on next call
+        return [];
+      });
   }
+  return pokemonListPromise;
 }
 
 async function autocomplete(interaction) {

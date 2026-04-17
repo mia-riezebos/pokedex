@@ -402,7 +402,7 @@ async function autocomplete(interaction) {
 
   if (group === 'links') {
     const linkConfig = await automod.getLinkConfig();
-    const domains = [...(linkConfig.allowed || []), ...(linkConfig.blocked || [])];
+    const domains = [...new Set([...(linkConfig.allowed || []), ...(linkConfig.blocked || [])])];
     const filtered = domains
       .filter(d => d.toLowerCase().includes(focused))
       .slice(0, 25)
