@@ -2,6 +2,15 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.8.0',
+    date: '2026-04-17',
+    changes: [
+      'Added **`/status`** command — check poke.com service status on demand with `check`, `setup` a live-updating status channel, or `disable` it',
+      'Auto-updating status channel — cron-driven poller detects incidents, component changes, and resolutions, posting embeds in real time',
+      'Fixed 9 CodeQL security alerts: SSRF prevention via snowflake validation and `encodeURIComponent` in Discord API calls, exact domain matching (`endsWith`) replacing `hostname.includes()`, and global rate limiting via `express-rate-limit`',
+    ],
+  },
+  {
     version: '2.7.2',
     date: '2026-04-15',
     changes: [
