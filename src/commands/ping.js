@@ -8,8 +8,8 @@ const commandData = new SlashCommandBuilder()
 const startTime = Date.now();
 
 async function execute(interaction) {
-  const sent = await interaction.deferReply({ fetchReply: true });
-  const roundtrip = sent.createdTimestamp - interaction.createdTimestamp;
+  await interaction.deferReply();
+  const roundtrip = Date.now() - interaction.createdTimestamp;
   const ws = interaction.client.ws.ping;
   const uptime = formatUptime(Date.now() - startTime);
   const guilds = interaction.client.guilds.cache.size;

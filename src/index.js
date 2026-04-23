@@ -55,6 +55,7 @@ const {
   syncPendingWebhookMessage,
 } = require('./services/mcpApproval');
 const { startDashboard } = require('./dashboard/server');
+const { safeInteractionReply } = require('./utils/safeInteractionReply');
 
 const client = new Client({
   intents: [
@@ -78,7 +79,7 @@ async function registerCommands() {
   console.log('Slash commands registered.');
 }
 
-client.once('ready', async () => {
+client.once('clientReady', async () => {
   console.log(`Logged in as ${client.user.tag}`);
 
   // Set rich presence
@@ -289,9 +290,7 @@ client.on('interactionCreate', async (interaction) => {
     await command.execute(interaction);
   } catch (err) {
     console.error(`Error handling /${interaction.commandName}:`, err);
-    if (!interaction.replied) {
-      await interaction.reply({ content: 'An error occurred.', ephemeral: true });
-    }
+    await safeInteractionReply(interaction, 'An error occurred.');
   }
 });
 
