@@ -167,7 +167,7 @@ export default function FeedbackPage() {
       <header className="mb-8">
         <div className="flex items-center gap-3 mb-2">
           <Link
-            href="/"
+            href="/recipes"
             className="text-xs text-gray-600 hover:text-gold transition-colors"
           >
             Recipes
@@ -295,26 +295,21 @@ export default function FeedbackPage() {
         </p>
       )}
 
-      <footer className="text-center mt-12 pb-8 space-y-2">
-        <p className="text-xs text-gray-700">
-          Powered by <span className="text-gold/60">Pokedex</span> — feedback synced automatically from Discord
-        </p>
-        <div className="flex items-center justify-center gap-3 text-[10px] text-gray-700">
-          <span>v{APP_VERSION}</span>
-          {lastFetched && (
-            <span>Updated {lastFetched.toLocaleTimeString()}</span>
-          )}
-          <button
-            onClick={() => {
-              setLoading(true);
-              fetchFeedback(false);
-            }}
-            className="text-gold/40 hover:text-gold transition-colors"
-          >
-            Refresh
-          </button>
-        </div>
-      </footer>
+      <div className="flex items-center justify-center gap-3 text-[10px] text-gray-700 mt-8 pb-2">
+        <span>v{APP_VERSION}</span>
+        {lastFetched && (
+          <span>Updated {lastFetched.toLocaleTimeString()}</span>
+        )}
+        <button
+          onClick={() => {
+            setLoading(true);
+            fetchFeedback(false);
+          }}
+          className="text-gold/40 hover:text-gold transition-colors"
+        >
+          Refresh
+        </button>
+      </div>
     </div>
   );
 }

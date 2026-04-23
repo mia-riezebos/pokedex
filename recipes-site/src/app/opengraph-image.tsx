@@ -1,53 +1,11 @@
 import { ImageResponse } from "next/og";
-import { serverDb } from "@/lib/firebase-server";
-import { collection, getCountFromServer, getDocs, query, where } from "firebase/firestore";
 
-export const runtime = "nodejs";
-export const revalidate = 300; // regenerate at most every 5 min
+export const runtime = "edge";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
-export const alt = "Community Recipes — shared by the Pokedex community";
+export const alt = "Pokedex — AI-assisted Discord triage, moderation & community tools";
 
-interface Stats {
-  total: number;
-  contributors: number;
-}
-
-async function fetchStats(): Promise<Stats> {
-  try {
-    const q = query(collection(serverDb, "recipes"), where("status", "==", "approved"));
-
-    // Cheap count aggregation (1 billable read regardless of collection size).
-    const countSnap = await getCountFromServer(q);
-    const total = countSnap.data().count;
-
-    // Separate full read only to dedupe contributors. If the collection grows
-    // large this is where the cost lives; revisit with a precomputed stats doc
-    // or Firestore aggregation on a flattened contributors field.
-    const snap = await getDocs(q);
-    const contributors = new Set<string>();
-    snap.docs.forEach((d) => {
-      const data = d.data() as { sharedBy?: Array<{ id?: string; name?: string }> };
-      (data.sharedBy ?? []).forEach((s) => {
-        // Dedupe by stable id when available; fall back to name for legacy docs.
-        // Namespace the two identifier sources so a legacy `name` can't collide
-        // with a newer `id` that happens to have the same string value.
-        const key = s.id ? `id:${s.id}` : s.name ? `name:${s.name}` : null;
-        if (key) contributors.add(key);
-      });
-    });
-
-    return { total, contributors: contributors.size };
-  } catch (err) {
-    console.error("[opengraph-image] fetchStats failed:", err);
-    return { total: 0, contributors: 0 };
-  }
-}
-
-export default async function OpengraphImage() {
-  const stats = await fetchStats();
-  const hasRecipes = stats.total > 0;
-
+export default function OpengraphImage() {
   return new ImageResponse(
     (
       <div
@@ -63,7 +21,6 @@ export default async function OpengraphImage() {
           fontFamily: "system-ui, sans-serif",
         }}
       >
-        {/* Ambient gold orb */}
         <div
           style={{
             position: "absolute",
@@ -76,7 +33,6 @@ export default async function OpengraphImage() {
             display: "flex",
           }}
         />
-        {/* Ambient indigo orb */}
         <div
           style={{
             position: "absolute",
@@ -90,12 +46,8 @@ export default async function OpengraphImage() {
           }}
         />
 
-        {/* Eyebrow */}
         <div
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
             color: "#f0c840",
             fontSize: 24,
             letterSpacing: 4,
@@ -105,82 +57,39 @@ export default async function OpengraphImage() {
             zIndex: 1,
           }}
         >
-          <span>POKEDEX</span>
-          <span style={{ color: "rgba(255,255,255,0.3)" }}>·</span>
-          <span style={{ color: "rgba(255,255,255,0.6)" }}>Community Hub</span>
+          POKEDEX
         </div>
 
-        {/* Title */}
         <div
           style={{
-            fontSize: 110,
+            fontSize: 96,
             fontWeight: 800,
             color: "#f0c840",
             letterSpacing: -2,
             lineHeight: 1,
-            marginBottom: 36,
+            marginBottom: 24,
+            textAlign: "center",
             zIndex: 1,
+            display: "flex",
+            flexDirection: "column",
           }}
         >
-          Community Recipes
+          <span>Run your Discord</span>
+          <span>on autopilot.</span>
         </div>
 
-        {/* Subtitle with live stats */}
         <div
           style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 28,
-            fontSize: 32,
-            color: "rgba(255,255,255,0.8)",
+            fontSize: 28,
+            color: "rgba(255,255,255,0.7)",
             zIndex: 1,
+            textAlign: "center",
+            maxWidth: 900,
           }}
         >
-          {hasRecipes ? (
-            <>
-              <span>
-                <span style={{ color: "#f0c840", fontWeight: 700 }}>{stats.total}</span> recipes
-              </span>
-              <span style={{ color: "rgba(255,255,255,0.2)" }}>·</span>
-              <span>
-                <span style={{ color: "#f0c840", fontWeight: 700 }}>{stats.contributors}</span>{" "}
-                contributors
-              </span>
-              <span style={{ color: "rgba(255,255,255,0.2)" }}>·</span>
-              <span>Updated live</span>
-            </>
-          ) : (
-            <span>Browse the latest builds shared by the community</span>
-          )}
+          AI triage · AutoMod · Moderation · Community tools
         </div>
 
-        {/* Footer */}
-        <div
-          style={{
-            position: "absolute",
-            bottom: 48,
-            left: 48,
-            display: "flex",
-            alignItems: "center",
-            gap: 16,
-            color: "rgba(255,255,255,0.35)",
-            fontSize: 22,
-            zIndex: 1,
-          }}
-        >
-          <div
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: 4,
-              background: "#f0c840",
-              display: "flex",
-            }}
-          />
-          <span>Pokedex · Community Hub</span>
-        </div>
-
-        {/* Gold accent bar */}
         <div
           style={{
             position: "absolute",
