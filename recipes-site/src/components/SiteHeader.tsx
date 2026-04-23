@@ -56,6 +56,8 @@ export default function SiteHeader() {
 
         <button
           aria-label="Toggle menu"
+          aria-expanded={open}
+          aria-controls="site-mobile-nav"
           className="md:hidden p-2 text-gray-400 hover:text-gray-100"
           onClick={() => setOpen((v) => !v)}
         >
@@ -70,7 +72,11 @@ export default function SiteHeader() {
       </div>
 
       {open && (
-        <div className="md:hidden border-t border-border px-4 py-3 space-y-1 bg-bg-primary/95">
+        <nav
+          id="site-mobile-nav"
+          aria-label="Mobile"
+          className="md:hidden border-t border-border px-4 py-3 space-y-1 bg-bg-primary/95"
+        >
           {NAV.map((item) => {
             const active = !item.external && pathname === item.href;
             return (
@@ -95,7 +101,7 @@ export default function SiteHeader() {
           >
             Add to Discord
           </a>
-        </div>
+        </nav>
       )}
     </header>
   );
