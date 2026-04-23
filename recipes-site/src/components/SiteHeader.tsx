@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { INVITE_URL, DASHBOARD_URL, SITE_NAME } from "@/lib/constants";
+import DiscordIcon from "@/components/DiscordIcon";
 
 const NAV = [
   { href: "/recipes", label: "Recipes" },
@@ -48,9 +49,10 @@ export default function SiteHeader() {
             href={INVITE_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="ml-2 px-4 py-1.5 rounded-lg text-sm font-semibold bg-gradient-to-r from-gold to-gold-soft text-bg-primary hover:opacity-90 transition-opacity"
+            className="ml-2 inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-semibold bg-gradient-to-r from-gold to-gold-soft !text-[#0a0e17] hover:opacity-90 transition-opacity"
           >
-            Add to Discord
+            <DiscordIcon className="w-4 h-4" />
+            <span>Add to Discord</span>
           </a>
         </nav>
 
@@ -97,9 +99,10 @@ export default function SiteHeader() {
             href={INVITE_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="block text-center mt-2 px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-gold to-gold-soft text-bg-primary"
+            className="flex items-center justify-center gap-2 mt-2 px-4 py-2 rounded-lg text-sm font-semibold bg-gradient-to-r from-gold to-gold-soft !text-[#0a0e17]"
           >
-            Add to Discord
+            <DiscordIcon className="w-4 h-4" />
+            <span>Add to Discord</span>
           </a>
         </nav>
       )}

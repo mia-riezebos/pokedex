@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { INVITE_URL, DASHBOARD_URL } from "@/lib/constants";
+import DiscordIcon from "@/components/DiscordIcon";
 
 const FEATURES = [
   {
@@ -82,9 +83,10 @@ export default function LandingPage() {
             href={INVITE_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="px-6 py-3 rounded-xl text-sm font-semibold bg-gradient-to-r from-gold to-gold-soft text-bg-primary hover:opacity-90 transition-opacity shadow-lg shadow-gold/10"
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-semibold bg-gradient-to-r from-gold to-gold-soft !text-[#0a0e17] hover:opacity-90 transition-opacity shadow-lg shadow-gold/20"
           >
-            Add to Discord →
+            <DiscordIcon className="w-5 h-5" />
+            <span>Add to Discord</span>
           </a>
           <a
             href={DASHBOARD_URL}
@@ -182,9 +184,10 @@ export default function LandingPage() {
           href={INVITE_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-block mt-8 px-8 py-3 rounded-xl text-sm font-semibold bg-gradient-to-r from-gold to-gold-soft text-bg-primary hover:opacity-90 transition-opacity shadow-lg shadow-gold/10"
+          className="inline-flex items-center gap-2 mt-8 px-8 py-3 rounded-xl text-sm font-semibold bg-gradient-to-r from-gold to-gold-soft !text-[#0a0e17] hover:opacity-90 transition-opacity shadow-lg shadow-gold/20"
         >
-          Add Pokedex to Discord →
+          <DiscordIcon className="w-5 h-5" />
+          <span>Add Pokedex to Discord</span>
         </a>
       </section>
     </div>
