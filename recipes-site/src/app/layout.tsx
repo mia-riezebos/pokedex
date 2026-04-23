@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import SiteHeader from "@/components/SiteHeader";
+import SiteFooter from "@/components/SiteFooter";
 
 function resolveMetadataBase(): URL {
   const fallback = new URL("http://localhost:3001");
@@ -18,22 +20,22 @@ function resolveMetadataBase(): URL {
 
 export const metadata: Metadata = {
   metadataBase: resolveMetadataBase(),
-  title: "Community Recipes — Pokedex",
+  title: "Pokedex — AI-assisted Discord triage, moderation & community tools",
   description:
-    "Browse community-shared recipes, team builds, and strategies from the Pokedex Discord community.",
+    "Pokedex is a Discord bot for AI-powered issue triage, automated moderation, and community features like recipes and feedback.",
   openGraph: {
-    title: "Community Recipes — Pokedex",
+    title: "Pokedex — Discord bot",
     description:
-      "Browse community-shared recipes, team builds, and strategies from the Pokedex Discord community.",
+      "AI-powered issue triage, automated moderation, and community features for your Discord server.",
     type: "website",
-    siteName: "Pokedex Community Hub",
+    siteName: "Pokedex",
     url: "/",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Community Recipes — Pokedex",
+    title: "Pokedex — Discord bot",
     description:
-      "Browse community-shared recipes, team builds, and strategies from the Pokedex Discord community.",
+      "AI-powered issue triage, automated moderation, and community features for your Discord server.",
   },
 };
 
@@ -48,8 +50,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <div className="orb w-[400px] h-[400px] bg-[radial-gradient(circle,rgba(16,185,129,0.08),transparent_70%)] top-[40%] left-[50%] absolute" style={{ animationDelay: "-14s" }} />
         </div>
 
-        <div className="relative z-10">
-          {children}
+        <div className="relative z-10 flex flex-col min-h-screen">
+          <SiteHeader />
+          <main className="flex-1">{children}</main>
+          <SiteFooter />
         </div>
       </body>
     </html>
