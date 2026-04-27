@@ -133,8 +133,10 @@ async function getOpenIssues(limit = 25) {
 async function getIssueCounts() {
   const openSnap = await db.collection('issues').where('status', '==', 'open').get();
   const closedSnap = await db.collection('issues').where('status', '==', 'closed').get();
+  const resolvedSnap = await db.collection('issues').where('status', '==', 'resolved').get();
   const open = openSnap.size;
   const closed = closedSnap.size;
+  const resolved = resolvedSnap.size;
 
   // Count by priority
   const byPriority = {};
@@ -143,7 +145,7 @@ async function getIssueCounts() {
     byPriority[p] = (byPriority[p] || 0) + 1;
   });
 
-  return { open, closed, total: open + closed, byPriority };
+  return { open, closed, resolved, total: open + closed + resolved, byPriority };
 }
 
 async function getAllIssues(limit = 500) {
@@ -427,6 +429,57 @@ async function deleteRecipe(recipeId) {
   await db.collection('recipes').doc(recipeId).delete();
 }
 
+// --- Agent triage helpers ---
+
+async function setIssueLastEvaluatedAt(issueId, iso) {
+  await db.collection('issues').doc(issueId).update({ lastEvaluatedAt: iso });
+}
+
+/**
+ * Mark an issue as auto-resolved by the reporter.
+ * Sets status to 'resolved' (a distinct terminal state from 'closed').
+ * Note: existing dashboards/digests that filter on status will need to be
+ * updated to recognize 'resolved' — out of scope for this helper.
+ */
+async function updateIssueResolution(issueId, { resolvedBy, resolvedReason }) {
+  await db.collection('issues').doc(issueId).update({
+    status: 'resolved',
+    resolvedAt: new Date().toISOString(),
+    resolvedBy,
+    resolvedReason: resolvedReason || null,
+  });
+}
+
+async function searchOpenIssuesForAgent(_query, limit = 50) {
+  // Tool loads recent open issues; ranking happens in the tool via Jaccard.
+  // Firestore doesn't do text search natively; we return a working set.
+  const snapshot = await db.collection('issues')
+    .where('status', '==', 'open')
+    .orderBy('createdAt', 'desc')
+    .limit(limit)
+    .get();
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+async function getGapByKey(normalizedKey) {
+  const doc = await db.collection('capability_gaps').doc(normalizedKey).get();
+  if (!doc.exists) return null;
+  return { id: doc.id, ...doc.data() };
+}
+
+async function createGap(data) {
+  if (!data?.normalizedKey) throw new Error('createGap: normalizedKey is required');
+  await db.collection('capability_gaps').doc(data.normalizedKey).set({
+    ...data,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+  return data.normalizedKey;
+}
+
+async function updateGap(normalizedKey, fields) {
+  await db.collection('capability_gaps').doc(normalizedKey).update(fields);
+}
+
 // --- Feedback (public website) ---
 
 async function saveFeedback(feedbackData) {
@@ -492,4 +545,10 @@ module.exports = {
   deleteRecipe,
   saveFeedback,
   getPublishedFeedback,
+  setIssueLastEvaluatedAt,
+  updateIssueResolution,
+  searchOpenIssuesForAgent,
+  getGapByKey,
+  createGap,
+  updateGap,
 };

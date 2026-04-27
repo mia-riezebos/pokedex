@@ -1,8 +1,10 @@
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const { classifyIssue } = require('./openrouter');
+const agentTriage = require('./agentTriage');
+const capabilityGap = require('./capabilityGap');
 const firestore = require('./firestore');
 const triage = require('./triage');
-const { getConfig } = require('../config/config');
+const { getConfig, getOwnerId } = require('../config/config');
 const { findDuplicate, findDuplicateAI } = require('./duplicates');
 
 const PRIORITY_COLORS = {
@@ -13,13 +15,77 @@ const PRIORITY_COLORS = {
   unclassified: 0x808080,
 };
 
-async function processIssue(message, text) {
+function collectImageUrls(message) {
+  if (!message?.attachments?.size) return [];
+  const out = [];
+  for (const [, att] of message.attachments) {
+    if ((att.contentType || '').startsWith('image/')) {
+      out.push(att.url);
+    }
+  }
+  return out;
+}
+
+async function processIssue(message, text, opts = {}) {
   // Exact message duplicate check
   const isDupe = await firestore.isDuplicate(message.id);
   if (isDupe) return;
 
-  // Classify with AI
-  const classification = await classifyIssue(text);
+  // Classify via agent loop (tool-use + vision). Fall back to single-shot if disabled.
+  const imageUrls = collectImageUrls(message);
+  let classification;
+  if (getConfig('agent_enabled') !== false) {
+    classification = await agentTriage.triageIssue({
+      text,
+      images: imageUrls,
+      ctx: {
+        firestore,
+        guild: message.guild,
+        channelId: message.channel.id,
+        reporterId: message.author.id,
+        reporterName: message.author.username,
+      },
+      parentMessage: opts.parentMessage || null,
+      triggerHint: opts.trigger || null,
+    });
+  } else {
+    classification = await classifyIssue(text);
+    classification.target = 'poke_product';
+    classification.evidence = classification.evidence || { screenshot_text: null, related_issues: null, active_incident: null };
+  }
+
+  // --- Early-exit on chatter / question_to_bot / followup_on_existing ---
+  if (classification.mentionType === 'chatter') {
+    console.log(`[pipeline] mention classified as chatter, skipping. message ${message.id}`);
+    return;
+  }
+
+  if (classification.mentionType === 'question_to_bot') {
+    try {
+      await message.reply({
+        content: 'I do bug triage for poke.com — if you have a bug or suggestion, describe it and I\'ll log it. Try `/help` for commands.',
+        allowedMentions: { repliedUser: false },
+      });
+    } catch {}
+    return;
+  }
+
+  if (classification.mentionType === 'followup_on_existing'
+      && Array.isArray(classification.evidence?.related_issues)
+      && classification.evidence.related_issues.length > 0) {
+    const relatedId = classification.evidence.related_issues[0];
+    try {
+      await firestore.appendThreadContext(relatedId, `[From mention by ${message.author.username}]: ${text}`);
+      await message.reply({
+        content: `Linked to existing issue \`${relatedId}\`. Adding your note as context.`,
+        allowedMentions: { repliedUser: false },
+      });
+    } catch (err) {
+      console.error('followup_on_existing append failed:', err.message);
+    }
+    return;
+  }
+  // Otherwise treat as new_issue and fall through to the normal save path.
 
   // --- Semantic duplicate detection (Jaccard fast → AI accurate) ---
   try {
@@ -69,6 +135,10 @@ async function processIssue(message, text) {
     summary: classification.summary,
     reasoning: classification.reasoning,
     attachments: attachments.length > 0 ? attachments : null,
+    target: classification.target || 'poke_product',
+    evidence: classification.evidence || null,
+    agentMeta: classification.agentMeta || null,
+    lastEvaluatedAt: new Date().toISOString(),
   };
 
   if (classification.raw) {
@@ -93,6 +163,22 @@ async function processIssue(message, text) {
       await firestore.updateIssueTriageMessageId(issueId, triageMessageId);
     } catch {
       // Best effort
+    }
+  }
+
+  // Record capability gap if the agent surfaced one
+  if (classification.capability_gap && issueId !== 'unknown') {
+    try {
+      await capabilityGap.record({
+        gap: classification.capability_gap,
+        issueId,
+        guild: message.guild,
+        firestore,
+        ownerId: getOwnerId(),
+        channelName: getConfig('pokedex_self_channel') || 'pokedex-testing',
+      });
+    } catch (err) {
+      console.error('capability gap record failed:', err.message);
     }
   }
 
@@ -180,7 +266,26 @@ async function processIssueForced(message, text) {
   const isDupe = await firestore.isDuplicate(message.id);
   if (isDupe) return;
 
-  const classification = await classifyIssue(text);
+  // Classify via agent loop (tool-use + vision). Fall back to single-shot if disabled.
+  const imageUrls = collectImageUrls(message);
+  let classification;
+  if (getConfig('agent_enabled') !== false) {
+    classification = await agentTriage.triageIssue({
+      text,
+      images: imageUrls,
+      ctx: {
+        firestore,
+        guild: message.guild,
+        channelId: message.channel.id,
+        reporterId: message.author.id,
+        reporterName: message.author.username,
+      },
+    });
+  } else {
+    classification = await classifyIssue(text);
+    classification.target = 'poke_product';
+    classification.evidence = classification.evidence || { screenshot_text: null, related_issues: null, active_incident: null };
+  }
 
   const attachments = [];
   if (message.attachments?.size > 0) {
@@ -206,6 +311,10 @@ async function processIssueForced(message, text) {
     summary: classification.summary,
     reasoning: classification.reasoning,
     attachments: attachments.length > 0 ? attachments : null,
+    target: classification.target || 'poke_product',
+    evidence: classification.evidence || null,
+    agentMeta: classification.agentMeta || null,
+    lastEvaluatedAt: new Date().toISOString(),
   };
 
   if (classification.raw) issueData.rawAiResponse = classification.raw;
@@ -222,6 +331,22 @@ async function processIssueForced(message, text) {
 
   if (issueId !== 'unknown' && triageMessageId) {
     await firestore.updateIssueTriageMessageId(issueId, triageMessageId).catch(() => {});
+  }
+
+  // Record capability gap if the agent surfaced one
+  if (classification.capability_gap && issueId !== 'unknown') {
+    try {
+      await capabilityGap.record({
+        gap: classification.capability_gap,
+        issueId,
+        guild: message.guild,
+        firestore,
+        ownerId: getOwnerId(),
+        channelName: getConfig('pokedex_self_channel') || 'pokedex-testing',
+      });
+    } catch (err) {
+      console.error('capability gap record failed:', err.message);
+    }
   }
 }
 

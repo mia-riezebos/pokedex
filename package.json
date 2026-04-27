@@ -1,6 +1,6 @@
 {
   "name": "pokediscordcustomdiscordbot",
-  "version": "2.8.2",
+  "version": "2.9.0",
   "description": "",
   "main": "index.js",
   "directories": {
@@ -8,8 +8,8 @@
   },
   "scripts": {
     "start": "node src/index.js",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "node --test 'test/**/*.test.js'",
+    "test:legacy": "vitest run tests/"
   },
   "keywords": [],
   "author": "",
