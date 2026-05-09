@@ -34,3 +34,20 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# env files (local overrides — never commit secrets)
+.env
+.env.*
+.env.local
+.env.*.local
+
+# playwright / vitest output
+playwright-report/
+test-results/
+
+# vercel (project-level)
+.vercel/
+
+# supabase local state
+supabase/.branches/
+supabase/.temp/
