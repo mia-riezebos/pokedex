@@ -3,12 +3,12 @@ import path from 'node:path';
 
 export default defineConfig({
   test: {
-    globals: true,
-    setupFiles: ['./tests/setup.ts'],
     projects: [
       {
         test: {
           name: 'unit',
+          globals: true,
+          setupFiles: ['./tests/setup.ts'],
           environment: 'jsdom',
           include: ['tests/unit/**/*.test.{ts,tsx}'],
         },
@@ -16,6 +16,7 @@ export default defineConfig({
       {
         test: {
           name: 'db',
+          globals: true,
           environment: 'node',
           include: ['tests/db/**/*.test.ts'],
         },
