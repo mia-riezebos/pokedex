@@ -736,7 +736,7 @@ create table public.post_edits (
   id uuid primary key default gen_random_uuid(),
   post_id uuid not null references public.posts(id) on delete cascade,
   body_md text not null,
-  edited_by uuid not null references public.users(id) on delete set null,
+  edited_by uuid references public.users(id) on delete set null,
   edited_at timestamptz not null default now()
 );
 
@@ -785,7 +785,7 @@ create type public.report_status as enum ('open', 'resolved', 'dismissed');
 create table public.reports (
   id uuid primary key default gen_random_uuid(),
   post_id uuid not null references public.posts(id) on delete cascade,
-  reporter_id uuid not null references public.users(id) on delete set null,
+  reporter_id uuid references public.users(id) on delete set null,
   reason public.report_reason not null,
   note text,
   status public.report_status not null default 'open',
@@ -798,7 +798,7 @@ create index reports_open_idx on public.reports (created_at desc) where status =
 
 create table public.mod_log (
   id uuid primary key default gen_random_uuid(),
-  actor_id uuid not null references public.users(id) on delete set null,
+  actor_id uuid references public.users(id) on delete set null,
   action text not null,
   target_type text not null,
   target_id text not null,
@@ -812,7 +812,7 @@ create index mod_log_actor_idx on public.mod_log (actor_id, created_at desc);
 create table public.bans (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.users(id) on delete cascade,
-  by_user_id uuid not null references public.users(id) on delete set null,
+  by_user_id uuid references public.users(id) on delete set null,
   reason text not null,
   expires_at timestamptz,
   created_at timestamptz not null default now()
