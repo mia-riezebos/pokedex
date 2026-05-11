@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
+import type { Database } from '@/lib/types';
 
 const PUBLIC_PATH_PREFIXES = [
   '/login',
@@ -13,6 +14,7 @@ const PUBLIC_PATH_PREFIXES = [
 
 const ONBOARDING_BYPASS_PREFIXES = [
   '/onboarding',
+  '/banned',
   '/api',
   '/auth/callback',
   '/_next',
@@ -20,13 +22,13 @@ const ONBOARDING_BYPASS_PREFIXES = [
 ];
 
 function startsWithAny(path: string, prefixes: string[]): boolean {
-  return prefixes.some((p) => path === p || path.startsWith(p + '/') || path.startsWith(p));
+  return prefixes.some((p) => path === p || path.startsWith(p + '/'));
 }
 
 export async function middleware(req: NextRequest) {
   let res = NextResponse.next({ request: { headers: req.headers } });
 
-  const supabase = createServerClient(
+  const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
