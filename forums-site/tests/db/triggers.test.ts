@@ -35,6 +35,7 @@ describe('post triggers', () => {
         author_id: userId,
         body_md: 'one',
         body_html: '<p>one</p>',
+        post_number: 0, // trigger assigns real value before insert
       })
       .select()
       .single();
@@ -45,6 +46,7 @@ describe('post triggers', () => {
         author_id: userId,
         body_md: 'two',
         body_html: '<p>two</p>',
+        post_number: 0, // trigger assigns real value before insert
       })
       .select()
       .single();
@@ -55,6 +57,7 @@ describe('post triggers', () => {
         author_id: userBId,
         body_md: 'three',
         body_html: '<p>three</p>',
+        post_number: 0, // trigger assigns real value before insert
       })
       .select()
       .single();
@@ -85,6 +88,7 @@ describe('post triggers', () => {
         author_id: id,
         body_md: `m${i}`,
         body_html: `<p>${i}</p>`,
+        post_number: 0, // trigger assigns real value before insert
       });
     }
 
@@ -116,6 +120,7 @@ describe('post triggers', () => {
       author_id: userId,
       body_md: 'op',
       body_html: '<p>op</p>',
+      post_number: 0, // trigger assigns real value before insert
     });
 
     // Reply by user B should bump
@@ -124,6 +129,7 @@ describe('post triggers', () => {
       author_id: userBId,
       body_md: 'reply',
       body_html: '<p>reply</p>',
+      post_number: 0, // trigger assigns real value before insert
     });
 
     const { data: t } = await admin
@@ -153,6 +159,7 @@ describe('post triggers', () => {
       author_id: id,
       body_md: 'op',
       body_html: '<p>op</p>',
+      post_number: 0, // trigger assigns real value before insert
     });
     const { data: reply } = await admin
       .from('posts')
@@ -161,6 +168,7 @@ describe('post triggers', () => {
         author_id: id,
         body_md: 'reply',
         body_html: '<p>reply</p>',
+        post_number: 0, // trigger assigns real value before insert
       })
       .select()
       .single();
