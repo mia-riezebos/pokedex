@@ -4,6 +4,7 @@ import { RoleBadge } from '@/components/user/RoleBadge';
 import { PostBody } from './PostBody';
 import { PostActions } from './PostActions';
 import { ThanksButton } from './ThanksButton';
+import { QuoteButton } from './QuoteButton';
 import { relativeTime } from '@/lib/time';
 
 export interface PostCardData {
@@ -15,6 +16,7 @@ export interface PostCardData {
   edited_at: string | null;
   created_at: string;
   author_id: string;
+  thread_id: string;
   thanks_count: number;
   viewer_thanked: boolean;
   author: {
@@ -81,6 +83,11 @@ export function PostCard({
           {post.edited_at && <span> · edited {relativeTime(post.edited_at)}</span>}
         </div>
         <div className="flex items-center gap-3">
+          <QuoteButton
+            postId={post.id}
+            threadId={post.thread_id}
+            disabled={viewerId === null || post.is_deleted}
+          />
           <ThanksButton
             postId={post.id}
             initialCount={post.thanks_count}
