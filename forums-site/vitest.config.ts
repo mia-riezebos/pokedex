@@ -2,9 +2,15 @@ import { defineConfig } from 'vitest/config';
 import path from 'node:path';
 
 export default defineConfig({
+  resolve: {
+    alias: { '@': path.resolve(__dirname, '.') },
+  },
   test: {
     projects: [
       {
+        resolve: {
+          alias: { '@': path.resolve(__dirname, '.') },
+        },
         test: {
           name: 'unit',
           globals: true,
@@ -14,6 +20,9 @@ export default defineConfig({
         },
       },
       {
+        resolve: {
+          alias: { '@': path.resolve(__dirname, '.') },
+        },
         test: {
           name: 'db',
           globals: true,
@@ -22,8 +31,5 @@ export default defineConfig({
         },
       },
     ],
-  },
-  resolve: {
-    alias: { '@': path.resolve(__dirname, '.') },
   },
 });
