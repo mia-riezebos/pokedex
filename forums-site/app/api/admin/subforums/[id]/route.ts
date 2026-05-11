@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
+import { getCurrentUser } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 
@@ -27,22 +28,31 @@ export async function PATCH(
     return NextResponse.json({ error: 'Invalid id' }, { status: 400 });
   }
 
-  const supabase = createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) {
+  const me = await getCurrentUser();
+  if (!me) {
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
-
-  const { data: me } = await supabase.from('users').select('role').eq('id', user.id).maybeSingle();
-  if (!me || me.role !== 'admin') {
+  if (me.role !== 'admin') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
+  const supabase = createClient();
 
-  const { error } = await supabase
+  const { data, error } = await supabase
     .from('subforums')
     .update({ is_locked: parsed.data.is_locked })
-    .eq('id', id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+    .eq('id', id)
+    .select('id')
+    .single();
+  if (error) {
+    // PGRST116 = no rows from .single() → treat as not found
+    if (error.code === 'PGRST116') {
+      return NextResponse.json({ error: 'Subforum not found' }, { status: 404 });
+    }
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
+  if (!data) {
+    return NextResponse.json({ error: 'Subforum not found' }, { status: 404 });
+  }
 
   return NextResponse.json({ ok: true });
 }

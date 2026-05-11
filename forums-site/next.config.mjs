@@ -18,6 +18,11 @@ const csp = [
 ].join('; ');
 
 const nextConfig = {
+  experimental: {
+    outputFileTracingIncludes: {
+      '/changelog': ['./CHANGELOG.md'],
+    },
+  },
   async headers() {
     return [
       {

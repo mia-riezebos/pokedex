@@ -4,7 +4,7 @@ import { Container } from '@/components/chrome/Container';
 import { Markdown } from '@/components/ui/Markdown';
 
 export const dynamic = 'force-static';
-export const revalidate = 60;
+// revalidate removed — changelog only changes via deploy
 
 export default function ChangelogPage() {
   const filePath = path.join(process.cwd(), 'CHANGELOG.md');

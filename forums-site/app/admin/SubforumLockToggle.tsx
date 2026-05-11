@@ -7,9 +7,11 @@ export function SubforumLockToggle({ id, isLocked: initial }: { id: number; isLo
   const router = useRouter();
   const [isLocked, setIsLocked] = useState(initial);
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
   async function toggle() {
     setBusy(true);
+    setErr(null);
     const next = !isLocked;
     setIsLocked(next);
     try {
@@ -20,24 +22,30 @@ export function SubforumLockToggle({ id, isLocked: initial }: { id: number; isLo
       });
       if (!res.ok) {
         setIsLocked(!next);
+        const json = (await res.json().catch(() => ({}))) as { error?: string };
+        setErr(json.error ?? 'Toggle failed');
       } else {
         router.refresh();
       }
     } catch {
       setIsLocked(!next);
+      setErr('Network error');
     } finally {
       setBusy(false);
     }
   }
 
   return (
-    <button
-      type="button"
-      onClick={toggle}
-      disabled={busy}
-      className="shrink-0 text-xs px-3 py-1 rounded border border-[var(--border)] hover:bg-[var(--bg-elev-2)] disabled:opacity-50"
-    >
-      {isLocked ? 'Unlock' : 'Lock'}
-    </button>
+    <div className="shrink-0 flex flex-col items-end gap-1">
+      <button
+        type="button"
+        onClick={toggle}
+        disabled={busy}
+        className="text-xs px-3 py-1 rounded border border-[var(--border)] hover:bg-[var(--bg-elev-2)] disabled:opacity-50"
+      >
+        {isLocked ? 'Unlock' : 'Lock'}
+      </button>
+      {err && <span className="text-[10px] text-[var(--danger)]">{err}</span>}
+    </div>
   );
 }
