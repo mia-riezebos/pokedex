@@ -2,7 +2,7 @@ create type public.user_role as enum ('user', 'mod', 'admin');
 
 create table public.users (
   id uuid primary key references auth.users(id) on delete cascade,
-  username citext unique not null check (username ~ '^[a-z0-9_]{3,20}$'),
+  username citext unique not null check (username::text ~ '^[a-z0-9_]{3,20}$'),
   display_name text,
   avatar_url text,
   bio text,
