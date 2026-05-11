@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { createClient } from '@/lib/supabase/browser';
 import { Button } from '@/components/ui/Button';
@@ -9,6 +10,7 @@ import { FormError } from '@/components/ui/FormError';
 
 export default function SignupPage() {
   const supabase = createClient();
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [err, setErr] = useState<string | null>(null);
@@ -19,13 +21,19 @@ export default function SignupPage() {
     e.preventDefault();
     setBusy(true);
     setErr(null);
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email, password,
       options: { emailRedirectTo: `${location.origin}/auth/callback?next=/onboarding` },
     });
     setBusy(false);
-    if (error) setErr(error.message);
-    else setDone(true);
+    if (error) { setErr(error.message); return; }
+    // When local email confirmations are disabled, Supabase returns a session immediately.
+    // Redirect straight to onboarding so the middleware onboarding-gate can fire.
+    if (data.session) {
+      router.push('/onboarding');
+      return;
+    }
+    setDone(true);
   }
 
   if (done) {
