@@ -493,10 +493,12 @@ git commit -m "feat(forums): supabase client wrappers"
 
 Each migration is its own SQL file. Run `npm run db:reset` between tasks to test idempotency. After all migrations apply cleanly, regenerate types.
 
-### Task 2.1: Migration — extensions + helpers
+### Task 2.1: Migration — extensions
 
 **Files:**
 - Create: `forums-site/supabase/migrations/20260508000001_extensions.sql`
+
+> **Plan correction (post-implementation):** The original plan bundled `current_user_active()` and `current_user_role()` SQL functions into this migration. They cannot be created here because they reference `public.users`, which doesn't exist until Task 2.2's migration runs. Both helpers are now defined at the END of `20260508000002_users.sql` (Task 2.2). RLS policies in Task 2.8 still reference them — no change needed there.
 
 - [ ] **Step 1: Write the migration**
 
@@ -504,35 +506,6 @@ Each migration is its own SQL file. Run `npm run db:reset` between tasks to test
 create extension if not exists citext;
 create extension if not exists pg_trgm;
 create extension if not exists pgcrypto;
-
--- Helper: returns true if the current authenticated user is not banned.
--- Used by every write RLS policy.
-create or replace function public.current_user_active()
-returns boolean
-language sql
-security definer
-stable
-set search_path = public
-as $$
-  select coalesce(
-    (select not is_banned from public.users where id = auth.uid()),
-    false
-  );
-$$;
-
--- Helper: returns the role of the current user, or 'anon' if not signed in.
-create or replace function public.current_user_role()
-returns text
-language sql
-security definer
-stable
-set search_path = public
-as $$
-  select coalesce(
-    (select role from public.users where id = auth.uid()),
-    'anon'
-  );
-$$;
 ```
 
 - [ ] **Step 2: Apply locally**
@@ -546,7 +519,7 @@ npm run db:reset
 
 ```bash
 git add forums-site/supabase/migrations/20260508000001_extensions.sql
-git commit -m "db(forums): extensions + auth helpers"
+git commit -m "db(forums): extensions"
 ```
 
 ---
@@ -599,6 +572,34 @@ $$;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_auth_user();
+
+-- Auth helpers (deferred from Task 2.1 — they reference public.users so must come after table create).
+-- Used by every write RLS policy in Task 2.8.
+create or replace function public.current_user_active()
+returns boolean
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select coalesce(
+    (select not is_banned from public.users where id = auth.uid()),
+    false
+  );
+$$;
+
+create or replace function public.current_user_role()
+returns text
+language sql
+security definer
+stable
+set search_path = public
+as $$
+  select coalesce(
+    (select role::text from public.users where id = auth.uid()),
+    'anon'
+  );
+$$;
 ```
 
 - [ ] **Step 2: Apply + verify**
@@ -612,7 +613,7 @@ npm run db:reset
 
 ```bash
 git add forums-site/supabase/migrations/20260508000002_users.sql
-git commit -m "db(forums): users table + auth signup trigger"
+git commit -m "db(forums): users table + auth signup trigger + auth helpers"
 ```
 
 ---
