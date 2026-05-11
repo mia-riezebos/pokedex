@@ -19,6 +19,9 @@ export function UserMenu({ username, avatarUrl }: { username: string; avatarUrl:
         <Avatar userId={username} url={avatarUrl} size={28} />
         <span className="text-sm">{username}</span>
       </Link>
+      <Link href="/settings" className="text-xs text-[var(--fg-muted)] hover:text-[var(--fg)]">
+        Settings
+      </Link>
       <button
         type="button"
         onClick={signOut}
