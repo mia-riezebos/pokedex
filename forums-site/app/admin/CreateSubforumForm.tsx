@@ -31,7 +31,7 @@ export function CreateSubforumForm({
       return;
     }
     if (!SLUG_RE.test(slug)) {
-      setErr('Slug must be lowercase letters/numbers/dashes.');
+      setErr('Slug must be 2+ chars, lowercase letters/numbers/dashes, starting and ending with a letter or number.');
       return;
     }
     setBusy(true);
@@ -47,9 +47,9 @@ export function CreateSubforumForm({
           position: Number(position) || 0,
         }),
       });
-      const json = (await res.json()) as { error?: string };
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        setErr(json.error ?? 'Failed');
+        setErr(json.error ?? `Failed (HTTP ${res.status})`);
         return;
       }
       setName('');
@@ -57,6 +57,8 @@ export function CreateSubforumForm({
       setDescription('');
       setPosition('0');
       router.refresh();
+    } catch {
+      setErr('Network error — please try again.');
     } finally {
       setBusy(false);
     }

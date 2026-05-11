@@ -20,7 +20,7 @@ export function CreateCategoryForm() {
     e.preventDefault();
     setErr(null);
     if (!SLUG_RE.test(slug)) {
-      setErr('Slug must be lowercase letters/numbers/dashes (e.g. general-discussion).');
+      setErr('Slug must be 2+ chars, lowercase letters/numbers/dashes, starting and ending with a letter or number (e.g. general-discussion).');
       return;
     }
     setBusy(true);
@@ -30,15 +30,17 @@ export function CreateCategoryForm() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ name, slug, position: Number(position) || 0 }),
       });
-      const json = (await res.json()) as { error?: string };
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        setErr(json.error ?? 'Failed');
+        setErr(json.error ?? `Failed (HTTP ${res.status})`);
         return;
       }
       setName('');
       setSlug('');
       setPosition('0');
       router.refresh();
+    } catch {
+      setErr('Network error — please try again.');
     } finally {
       setBusy(false);
     }
