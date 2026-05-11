@@ -64,6 +64,7 @@ export default async function SearchPage({
 
   let hits: Hit[] = [];
   let count = 0;
+  let hasMore = false;
 
   if (tsQuery) {
     const supabase = createClient();
@@ -94,6 +95,13 @@ export default async function SearchPage({
         .limit(LIMIT),
     ]);
 
+    if (threadsRes.error) {
+      console.error('[search] threads query failed:', threadsRes.error.message);
+    }
+    if (postsRes.error) {
+      console.error('[search] posts query failed:', postsRes.error.message);
+    }
+
     const threadHits: ThreadHit[] = ((threadsRes.data ?? []) as unknown as Omit<ThreadHit, 'kind'>[])
       .map((t) => ({ ...t, kind: 'thread' as const }));
     const postHits: PostHit[] = ((postsRes.data ?? []) as unknown as Omit<PostHit, 'kind'>[])
@@ -102,7 +110,8 @@ export default async function SearchPage({
     const all: Hit[] = [...threadHits, ...postHits];
     all.sort((a, b) => b.created_at.localeCompare(a.created_at));
     hits = all.slice(0, LIMIT);
-    count = threadHits.length + postHits.length;
+    hasMore = all.length > LIMIT;
+    count = hits.length;
   }
 
   return (
@@ -126,7 +135,7 @@ export default async function SearchPage({
             <p className="text-xs font-mono text-[var(--fg-muted)]">
               {count === 0
                 ? 'No results.'
-                : `${count} hit${count === 1 ? '' : 's'} for "${rawQuery}"${count > LIMIT ? ` (showing newest ${LIMIT})` : ''}`}
+                : `${count} result${count === 1 ? '' : 's'} for "${rawQuery.slice(0, 80)}${rawQuery.length > 80 ? '…' : ''}"${hasMore ? ' (more available — refine your query)' : ''}`}
             </p>
 
             <ul className="space-y-3">

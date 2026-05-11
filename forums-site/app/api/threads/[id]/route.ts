@@ -35,6 +35,9 @@ export async function PATCH(
   if (me.role !== 'mod' && me.role !== 'admin') {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
+  if (me.is_banned) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const supabase = createClient();
 
