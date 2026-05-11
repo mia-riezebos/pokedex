@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server';
 import { Container } from '@/components/chrome/Container';
 import { PostCard, type PostCardData } from '@/components/post/PostCard';
 import { getCurrentUser } from '@/lib/auth';
+import { ReplyForm } from './reply';
 
 const PAGE_SIZE = 20;
 export const dynamic = 'force-dynamic';
@@ -81,6 +82,16 @@ export default async function ThreadPage({
               </Link>
             ))}
           </div>
+        )}
+
+        {!thread.is_locked && me && <ReplyForm threadId={thread.id} />}
+        {!me && !thread.is_locked && (
+          <p className="text-sm text-[var(--fg-muted)] text-center py-4">
+            <Link href={`/login?next=/t/${thread.id}`} className="text-[var(--accent)]">
+              Sign in
+            </Link>{' '}
+            to reply.
+          </p>
         )}
 
         {thread.is_locked && (
