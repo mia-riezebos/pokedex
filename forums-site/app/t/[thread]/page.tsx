@@ -35,7 +35,7 @@ export default async function ThreadPage({
   const { data: posts } = await supabase
     .from('posts')
     .select(
-      `id, post_number, body_md, is_deleted, is_hidden, edited_at, created_at,
+      `id, post_number, body_md, is_deleted, is_hidden, edited_at, created_at, author_id,
        author:users!posts_author_id_fkey(username, role, avatar_url, post_count, created_at, signature_md)`,
     )
     .eq('thread_id', thread.id)
@@ -64,7 +64,7 @@ export default async function ThreadPage({
 
         <div className="space-y-4">
           {((posts ?? []) as unknown as PostCardData[]).map((p) => (
-            <PostCard key={p.id} post={p} viewerIsMod={viewerIsMod} />
+            <PostCard key={p.id} post={p} viewerIsMod={viewerIsMod} viewerId={me?.id ?? null} />
           ))}
         </div>
 

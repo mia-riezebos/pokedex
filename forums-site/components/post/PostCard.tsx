@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { Avatar } from '@/components/user/Avatar';
 import { RoleBadge } from '@/components/user/RoleBadge';
 import { PostBody } from './PostBody';
+import { PostActions } from './PostActions';
 import { relativeTime } from '@/lib/time';
 
 export interface PostCardData {
@@ -12,6 +13,7 @@ export interface PostCardData {
   is_hidden: boolean;
   edited_at: string | null;
   created_at: string;
+  author_id: string;
   author: {
     username: string;
     role: 'user' | 'mod' | 'admin';
@@ -25,9 +27,11 @@ export interface PostCardData {
 export function PostCard({
   post,
   viewerIsMod = false,
+  viewerId = null,
 }: {
   post: PostCardData;
   viewerIsMod?: boolean;
+  viewerId?: string | null;
 }) {
   const hidden = (post.is_deleted || post.is_hidden) && !viewerIsMod;
   return (
@@ -73,6 +77,9 @@ export function PostCard({
           <span> · {relativeTime(post.created_at)}</span>
           {post.edited_at && <span> · edited {relativeTime(post.edited_at)}</span>}
         </div>
+        {viewerId === post.author_id && !post.is_deleted && (
+          <PostActions postId={post.id} initialBody={post.body_md} />
+        )}
       </div>
     </article>
   );
