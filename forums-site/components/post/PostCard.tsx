@@ -3,6 +3,7 @@ import { Avatar } from '@/components/user/Avatar';
 import { RoleBadge } from '@/components/user/RoleBadge';
 import { PostBody } from './PostBody';
 import { PostActions } from './PostActions';
+import { ThanksButton } from './ThanksButton';
 import { relativeTime } from '@/lib/time';
 
 export interface PostCardData {
@@ -14,6 +15,8 @@ export interface PostCardData {
   edited_at: string | null;
   created_at: string;
   author_id: string;
+  thanks_count: number;
+  viewer_thanked: boolean;
   author: {
     username: string;
     role: 'user' | 'mod' | 'admin';
@@ -69,7 +72,7 @@ export function PostCard({
           )}
         </div>
       </div>
-      <div className="border-t border-[var(--border)] px-4 py-2 flex items-center justify-between">
+      <div className="border-t border-[var(--border)] px-4 py-2 flex items-center justify-between gap-3">
         <div className="font-mono text-[11px] text-[var(--fg-muted)]">
           <Link href={`#post-${post.post_number}`} className="hover:text-[var(--fg)]">
             #post-{post.post_number}
@@ -77,9 +80,17 @@ export function PostCard({
           <span> · {relativeTime(post.created_at)}</span>
           {post.edited_at && <span> · edited {relativeTime(post.edited_at)}</span>}
         </div>
-        {viewerId === post.author_id && !post.is_deleted && (
-          <PostActions postId={post.id} initialBody={post.body_md} />
-        )}
+        <div className="flex items-center gap-3">
+          <ThanksButton
+            postId={post.id}
+            initialCount={post.thanks_count}
+            initialThanked={post.viewer_thanked}
+            canThank={viewerId !== null && viewerId !== post.author_id}
+          />
+          {viewerId === post.author_id && !post.is_deleted && (
+            <PostActions postId={post.id} initialBody={post.body_md} />
+          )}
+        </div>
       </div>
     </article>
   );

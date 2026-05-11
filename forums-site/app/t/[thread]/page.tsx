@@ -36,11 +36,30 @@ export default async function ThreadPage({
     .from('posts')
     .select(
       `id, post_number, body_md, is_deleted, is_hidden, edited_at, created_at, author_id,
-       author:users!posts_author_id_fkey(username, role, avatar_url, post_count, created_at, signature_md)`,
+       author:users!posts_author_id_fkey(username, role, avatar_url, post_count, created_at, signature_md),
+       thanks_count:thanks(count)`,
     )
     .eq('thread_id', thread.id)
     .order('post_number')
     .range(from, to);
+
+  const postIds = (posts ?? []).map((p) => p.id);
+  let thankedSet = new Set<string>();
+  if (me && postIds.length > 0) {
+    const { data: viewerThanks } = await supabase
+      .from('thanks')
+      .select('post_id')
+      .eq('user_id', me.id)
+      .in('post_id', postIds);
+    thankedSet = new Set((viewerThanks ?? []).map((t) => t.post_id));
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const enrichedPosts = (posts ?? []).map((p: any) => ({
+    ...p,
+    thanks_count: Array.isArray(p.thanks_count) && p.thanks_count[0]?.count ? Number(p.thanks_count[0].count) : 0,
+    viewer_thanked: thankedSet.has(p.id),
+  }));
 
   const totalPages = Math.max(1, Math.ceil(thread.post_count / PAGE_SIZE));
   const subforum = thread.subforum as unknown as { name: string; slug: string } | null;
@@ -63,7 +82,7 @@ export default async function ThreadPage({
         </div>
 
         <div className="space-y-4">
-          {((posts ?? []) as unknown as PostCardData[]).map((p) => (
+          {(enrichedPosts as unknown as PostCardData[]).map((p) => (
             <PostCard key={p.id} post={p} viewerIsMod={viewerIsMod} viewerId={me?.id ?? null} />
           ))}
         </div>
