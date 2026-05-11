@@ -7,11 +7,13 @@ export function ThanksButton({
   initialCount,
   initialThanked,
   canThank,
+  disabledReason = 'Cannot thank',
 }: {
   postId: string;
   initialCount: number;
   initialThanked: boolean;
   canThank: boolean;
+  disabledReason?: string;
 }) {
   const [count, setCount] = useState(initialCount);
   const [thanked, setThanked] = useState(initialThanked);
@@ -21,26 +23,33 @@ export function ThanksButton({
     if (!canThank || busy) return;
     setBusy(true);
 
-    // Optimistic update
     const wasThanked = thanked;
+    const previousCount = count;
+    // Optimistic update
     setThanked(!wasThanked);
     setCount(count + (wasThanked ? -1 : 1));
 
-    const res = await fetch(`/api/posts/${postId}/thanks`, {
-      method: wasThanked ? 'DELETE' : 'POST',
-    });
-
-    if (!res.ok) {
-      // Revert optimistic update
+    try {
+      const res = await fetch(`/api/posts/${postId}/thanks`, {
+        method: wasThanked ? 'DELETE' : 'POST',
+      });
+      if (!res.ok) {
+        // Server rejected — revert
+        setThanked(wasThanked);
+        setCount(previousCount);
+      }
+    } catch {
+      // Network error — revert
       setThanked(wasThanked);
-      setCount(count);
+      setCount(previousCount);
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   }
 
   const label = thanked ? '♥' : '♡';
   const title = !canThank
-    ? 'Sign in to thank'
+    ? disabledReason
     : thanked
       ? 'Remove thanks'
       : 'Thanks';

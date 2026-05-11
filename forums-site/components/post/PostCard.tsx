@@ -33,10 +33,12 @@ export function PostCard({
   post,
   viewerIsMod = false,
   viewerId = null,
+  threadIsLocked = false,
 }: {
   post: PostCardData;
   viewerIsMod?: boolean;
   viewerId?: string | null;
+  threadIsLocked?: boolean;
 }) {
   const hidden = (post.is_deleted || post.is_hidden) && !viewerIsMod;
   return (
@@ -86,13 +88,20 @@ export function PostCard({
           <QuoteButton
             postId={post.id}
             threadId={post.thread_id}
-            disabled={viewerId === null || post.is_deleted || post.is_hidden}
+            disabled={viewerId === null || post.is_deleted || post.is_hidden || threadIsLocked}
           />
           <ThanksButton
             postId={post.id}
             initialCount={post.thanks_count}
             initialThanked={post.viewer_thanked}
             canThank={viewerId !== null && viewerId !== post.author_id}
+            disabledReason={
+              viewerId === null
+                ? 'Sign in to thank'
+                : viewerId === post.author_id
+                  ? "Can't thank your own post"
+                  : 'Cannot thank'
+            }
           />
           {viewerId === post.author_id && !post.is_deleted && (
             <PostActions postId={post.id} initialBody={post.body_md} />

@@ -54,8 +54,12 @@ export default async function ThreadPage({
     thankedSet = new Set((viewerThanks ?? []).map((t) => t.post_id));
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const enrichedPosts = (posts ?? []).map((p: any) => ({
+  type RawPostRow = Omit<PostCardData, 'thanks_count' | 'viewer_thanked'> & {
+    thanks_count: { count: number }[] | null;
+  };
+
+  const rawPosts = (posts ?? []) as unknown as RawPostRow[];
+  const enrichedPosts: PostCardData[] = rawPosts.map((p) => ({
     ...p,
     thanks_count:
       Array.isArray(p.thanks_count) && p.thanks_count[0] != null
@@ -107,8 +111,14 @@ export default async function ThreadPage({
         </div>
 
         <div className="space-y-4">
-          {(enrichedPosts as unknown as PostCardData[]).map((p) => (
-            <PostCard key={p.id} post={p} viewerIsMod={viewerIsMod} viewerId={me?.id ?? null} />
+          {enrichedPosts.map((p) => (
+            <PostCard
+              key={p.id}
+              post={p}
+              viewerIsMod={viewerIsMod}
+              viewerId={me?.id ?? null}
+              threadIsLocked={thread.is_locked}
+            />
           ))}
         </div>
 

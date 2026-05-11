@@ -55,16 +55,21 @@ export async function middleware(req: NextRequest, evt: NextFetchEvent) {
 
   if (!profile) return res;
 
-  // Bump last_seen_at if older than 60s. Use waitUntil so Edge runtime
-  // keeps the work alive after the response is flushed.
-  const bumpPromise = Promise.resolve(
-    supabase
-      .from('users')
-      .update({ last_seen_at: new Date().toISOString() })
-      .eq('id', user.id)
-      .lt('last_seen_at', new Date(Date.now() - 60_000).toISOString()),
-  ).then(() => undefined);
-  evt.waitUntil(bumpPromise);
+  // Bump last_seen_at if older than 60s. Skip for banned users (RLS blocks update anyway).
+  if (!profile.is_banned) {
+    const bumpPromise = Promise.resolve(
+      supabase
+        .from('users')
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq('id', user.id)
+        .lt('last_seen_at', new Date(Date.now() - 60_000).toISOString()),
+    )
+      .then(() => undefined)
+      .catch((err) => {
+        console.warn('[middleware] last_seen_at bump failed:', err);
+      });
+    evt.waitUntil(bumpPromise);
+  }
 
   // Banned: redirect to /banned for any non-public path
   if (profile.is_banned && path !== '/banned' && !startsWithAny(path, PUBLIC_PATH_PREFIXES)) {
