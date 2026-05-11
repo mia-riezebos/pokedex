@@ -41,7 +41,7 @@ forums-site/                 (new sibling to recipes-site/)
 └─ Deployed on Vercel (free Hobby plan, poke-forums.vercel.app)
 
 Supabase project (independent of any Pokedex services):
-├─ Auth — Discord, Google, Apple, Email/password (verified)
+├─ Auth — Discord, Email/password (verified)
 ├─ Postgres — schema in §3
 ├─ Row-Level Security — primary authorization mechanism
 ├─ Realtime — used for online-users presence and new-post indicators
@@ -124,7 +124,7 @@ All tables live in Supabase Postgres under the `public` schema unless noted. Ful
 ## 4. Auth flow
 
 ### 4.1 Providers
-All four routed through Supabase Auth: Discord OAuth, Google OAuth, Apple Sign-in, Email + password (verification required before posting).
+All routed through Supabase Auth: Discord OAuth, Email + password (verification required before posting). Google and Apple sign-in were in the original spec but dropped from v1 scope — owner is a Poke Discord mod so Discord is the natural primary path; email covers everyone else.
 
 ### 4.2 First-login flow (any provider)
 1. Provider redirects to `/auth/callback`. Supabase upserts `auth.users`.

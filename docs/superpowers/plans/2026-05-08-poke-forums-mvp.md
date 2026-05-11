@@ -1399,10 +1399,9 @@ git commit -m "test(forums): triggers — post numbers + probation clear"
 **No code changes — instructions for the engineer.**
 
 - [ ] **Step 1: Discord** — at https://discord.com/developers/applications, create app, OAuth2 → Add redirect: `<dev-project-url>/auth/v1/callback`. Copy Client ID + Secret.
-- [ ] **Step 2: Google** — Cloud Console → OAuth credentials → Web app → Authorized redirect URIs: `<dev-project-url>/auth/v1/callback`. Copy Client ID + Secret.
-- [ ] **Step 3: Apple** — Apple Developer → Service ID → enable Sign in with Apple → Return URL: `<dev-project-url>/auth/v1/callback`. Generate key, download p8.
-- [ ] **Step 4: Supabase Dashboard** — for the dev project, **Authentication → Providers**:
-  - Enable Discord, Google, Apple, Email.
+- [ ] **Step 2: Supabase Dashboard** — for the dev project, **Authentication → Providers**:
+  - Enable Discord, Email.
+  - (Google + Apple deferred — owner is a Poke Discord mod; Discord is the natural primary path.)
   - Paste each provider's credentials.
   - Email provider: enable "Confirm email".
 - [ ] **Step 5: Add Site URL + Redirect URLs** — Authentication → URL Configuration:
@@ -1557,7 +1556,7 @@ export default function LoginPage() {
     else router.push('/');
   }
 
-  async function oauth(provider: 'discord' | 'google' | 'apple') {
+  async function oauth(provider: 'discord') {
     const redirectTo = `${location.origin}/auth/callback`;
     await supabase.auth.signInWithOAuth({ provider, options: { redirectTo } });
   }
@@ -1569,12 +1568,6 @@ export default function LoginPage() {
       <div className="space-y-2">
         <Button variant="secondary" className="w-full" onClick={() => oauth('discord')}>
           Continue with Discord
-        </Button>
-        <Button variant="secondary" className="w-full" onClick={() => oauth('google')}>
-          Continue with Google
-        </Button>
-        <Button variant="secondary" className="w-full" onClick={() => oauth('apple')}>
-          Continue with Apple
         </Button>
       </div>
 
@@ -3880,7 +3873,7 @@ gh pr create --title "feat: Poke Forums MVP (Plan A)" --body "$(cat <<'EOF'
 - Reports, mod tools, admin panel, full anti-spam, online-users, mobile/a11y polish → Plan C.
 
 ## Test plan
-- [ ] Sign up via email + Discord + Google + Apple
+- [ ] Sign up via email + Discord
 - [ ] Create thread / reply / edit / soft-delete
 - [ ] Verify XSS-safe markdown
 - [ ] Verify ban gate (manually flip `is_banned`)
