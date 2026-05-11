@@ -14,7 +14,14 @@ export async function Header() {
           </Link>
           <div className="flex items-center gap-3">
             {user ? (
-              <UserMenu username={user.username} avatarUrl={user.avatar_url} />
+              <div className="flex items-center gap-3">
+                {user.role === 'admin' && (
+                  <Link href="/admin" className="text-xs font-mono text-[var(--warn)] hover:text-[var(--fg)]">
+                    [admin]
+                  </Link>
+                )}
+                <UserMenu username={user.username} avatarUrl={user.avatar_url} />
+              </div>
             ) : (
               <>
                 <Link href="/login" className="text-sm text-[var(--fg-muted)] hover:text-[var(--fg)]">
