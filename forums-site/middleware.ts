@@ -55,6 +55,13 @@ export async function middleware(req: NextRequest) {
 
   if (!profile) return res;
 
+  // Bump last_seen_at if older than 60s. Fire-and-forget (don't block middleware on the write).
+  void supabase
+    .from('users')
+    .update({ last_seen_at: new Date().toISOString() })
+    .eq('id', user.id)
+    .lt('last_seen_at', new Date(Date.now() - 60_000).toISOString());
+
   // Banned: redirect to /banned for any non-public path
   if (profile.is_banned && path !== '/banned' && !startsWithAny(path, PUBLIC_PATH_PREFIXES)) {
     return NextResponse.redirect(new URL('/banned', req.url));
