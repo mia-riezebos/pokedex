@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { renderMarkdown } from '@/lib/markdown';
 import { slugify } from '@/lib/slug';
 import { limits } from '@/lib/rate-limit';
@@ -71,7 +72,8 @@ export async function POST(req: Request) {
   });
   if (postErr) {
     // Best-effort cleanup (no transaction across these inserts).
-    await supabase.from('threads').delete().eq('id', thread.id);
+    const admin = createAdminClient();
+    await admin.from('threads').delete().eq('id', thread.id);
     return NextResponse.json({ error: postErr.message }, { status: 400 });
   }
 

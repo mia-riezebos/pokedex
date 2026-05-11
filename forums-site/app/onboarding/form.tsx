@@ -23,6 +23,10 @@ export function OnboardingForm() {
       setErr('Use 3–20 lowercase letters, numbers, or underscores.');
       return;
     }
+    if (/^user_[0-9a-f]{12}$/.test(username)) {
+      setErr('That username pattern is reserved. Pick something else.');
+      return;
+    }
     setBusy(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {

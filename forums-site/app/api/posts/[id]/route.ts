@@ -36,15 +36,11 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  // Snapshot the pre-edit state to post_edits BEFORE updating posts
-  await supabase.from('post_edits').insert({
-    post_id: params.id,
-    body_md: existing.body_md,
-    edited_by: user.id,
-  });
-
+  // Render new body
   const body_html = await renderMarkdown(parsed.data.body_md);
-  const { error } = await supabase
+
+  // Try the update first
+  const { error: updateErr } = await supabase
     .from('posts')
     .update({
       body_md: parsed.data.body_md,
@@ -53,7 +49,19 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       edited_by: user.id,
     })
     .eq('id', params.id);
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+  if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 400 });
+
+  // Now snapshot the PRE-edit state (existing.body_md captured above) to audit log.
+  // If this insert fails, the edit still went through; just log the inconsistency.
+  const { error: snapshotErr } = await supabase.from('post_edits').insert({
+    post_id: params.id,
+    body_md: existing.body_md,
+    edited_by: user.id,
+  });
+  if (snapshotErr) {
+    console.error('[posts PATCH] failed to write post_edits snapshot:', snapshotErr.message);
+    // Don't fail the request — the edit succeeded.
+  }
 
   return NextResponse.json({ ok: true });
 }

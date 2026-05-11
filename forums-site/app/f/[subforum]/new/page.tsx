@@ -23,7 +23,7 @@ export default async function NewThreadPage({ params }: { params: { subforum: st
     <Container>
       <div className="py-6 space-y-4">
         <h1 className="text-xl font-semibold">New thread in {subforum.name}</h1>
-        <NewThreadForm subforumId={subforum.id} subforumSlug={subforum.slug} />
+        <NewThreadForm subforumId={subforum.id} />
       </div>
     </Container>
   );

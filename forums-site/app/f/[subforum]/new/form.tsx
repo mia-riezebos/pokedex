@@ -6,7 +6,6 @@ export function NewThreadForm({
   subforumId,
 }: {
   subforumId: number;
-  subforumSlug: string;
 }) {
   return (
     <Composer

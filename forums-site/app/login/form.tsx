@@ -25,6 +25,9 @@ export function LoginForm() {
   );
   const [busy, setBusy] = useState(false);
 
+  const rawNext = params.get('next');
+  const next = rawNext && rawNext.startsWith('/') && !rawNext.startsWith('//') ? rawNext : '/';
+
   async function emailLogin(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -32,13 +35,13 @@ export function LoginForm() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setBusy(false);
     if (error) setErr(error.message);
-    else router.push('/');
+    else router.push(next);
   }
 
   async function discordOAuth() {
     setBusy(true);
     setErr(null);
-    const redirectTo = `${location.origin}/auth/callback`;
+    const redirectTo = `${location.origin}/auth/callback${rawNext ? `?next=${encodeURIComponent(next)}` : ''}`;
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'discord',
       options: { redirectTo },
