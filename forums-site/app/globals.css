@@ -3,25 +3,37 @@
 @tailwind utilities;
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #0a0a0c;
+  --bg-elev-1: #111114;
+  --bg-elev-2: #17171c;
+  --border: #222228;
+  --fg: #e6e6e8;
+  --fg-muted: #8a8a93;
+  --fg-subtle: #5a5a63;
+  --accent: #a78bfa;
+  --accent-strong: #7c3aed;
+  --accent-glow: rgba(167, 139, 250, 0.15);
+  --success: #4ade80;
+  --warn: #fbbf24;
+  --danger: #f87171;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html, body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
-}
+.font-mono { font-family: var(--font-mono), ui-monospace, monospace; }
 
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
+a { color: var(--accent); }
+a:hover { color: var(--accent-strong); }
+
+::selection { background: var(--accent-glow); color: var(--fg); }
+
+.title-rule {
+  height: 1px;
+  background: linear-gradient(to right, rgba(167, 139, 250, 0.4), transparent);
 }
