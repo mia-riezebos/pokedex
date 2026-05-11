@@ -19,6 +19,7 @@ export function ThreadModActions({
   const [err, setErr] = useState<string | null>(null);
 
   async function toggle(field: 'is_pinned' | 'is_locked', next: boolean) {
+    if (busy !== null) return;
     setErr(null);
     const which = field === 'is_pinned' ? 'pin' : 'lock';
     setBusy(which);
@@ -57,7 +58,7 @@ export function ThreadModActions({
         <button
           type="button"
           onClick={() => toggle('is_pinned', !pinned)}
-          disabled={busy === 'pin'}
+          disabled={busy !== null}
           className="text-xs px-2 py-1 rounded border border-[var(--border)] hover:bg-[var(--bg-elev-2)] disabled:opacity-50"
         >
           {pinned ? 'Unpin' : 'Pin'}
@@ -65,7 +66,7 @@ export function ThreadModActions({
         <button
           type="button"
           onClick={() => toggle('is_locked', !locked)}
-          disabled={busy === 'lock'}
+          disabled={busy !== null}
           className="text-xs px-2 py-1 rounded border border-[var(--border)] hover:bg-[var(--bg-elev-2)] disabled:opacity-50"
         >
           {locked ? 'Unlock' : 'Lock'}

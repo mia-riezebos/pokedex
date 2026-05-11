@@ -36,6 +36,7 @@ interface PostHit {
 type Hit = ThreadHit | PostHit;
 
 const LIMIT = 25;
+const FETCH_LIMIT = LIMIT + 1; // fetch one extra to detect "more available"
 const SNIPPET_LEN = 200;
 
 function buildTsQuery(input: string): string | null {
@@ -80,7 +81,7 @@ export default async function SearchPage({
         .eq('is_deleted', false)
         .textSearch('tsv', tsQuery, { config: 'simple' })
         .order('created_at', { ascending: false })
-        .limit(LIMIT),
+        .limit(FETCH_LIMIT),
       supabase
         .from('posts')
         .select(
@@ -92,7 +93,7 @@ export default async function SearchPage({
         .eq('is_hidden', false)
         .textSearch('tsv', tsQuery, { config: 'simple' })
         .order('created_at', { ascending: false })
-        .limit(LIMIT),
+        .limit(FETCH_LIMIT),
     ]);
 
     if (threadsRes.error) {
@@ -107,10 +108,17 @@ export default async function SearchPage({
     const postHits: PostHit[] = ((postsRes.data ?? []) as unknown as Omit<PostHit, 'kind'>[])
       .map((p) => ({ ...p, kind: 'post' as const }));
 
-    const all: Hit[] = [...threadHits, ...postHits];
+    // If either source returned LIMIT+1 rows, there are definitely more in that table.
+    // We slice each back to LIMIT before merging so the combined slice is well-formed.
+    const threadHasMore = threadHits.length > LIMIT;
+    const postHasMore = postHits.length > LIMIT;
+    const truncatedThreads = threadHits.slice(0, LIMIT);
+    const truncatedPosts = postHits.slice(0, LIMIT);
+
+    const all: Hit[] = [...truncatedThreads, ...truncatedPosts];
     all.sort((a, b) => b.created_at.localeCompare(a.created_at));
     hits = all.slice(0, LIMIT);
-    hasMore = all.length > LIMIT;
+    hasMore = threadHasMore || postHasMore || all.length > LIMIT;
     count = hits.length;
   }
 

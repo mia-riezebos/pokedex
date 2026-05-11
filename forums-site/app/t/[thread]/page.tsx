@@ -110,8 +110,8 @@ export default async function ThreadPage({
                 </p>
               )}
               <h1 className="text-xl font-semibold mt-1">
-                {thread.is_pinned && <span className="mr-1" aria-label="pinned">📌</span>}
-                {thread.is_locked && <span className="mr-1" aria-label="locked">🔒</span>}
+                {thread.is_pinned && <span role="img" aria-label="pinned" className="mr-1">📌</span>}
+                {thread.is_locked && <span role="img" aria-label="locked" className="mr-1">🔒</span>}
                 {thread.title}
               </h1>
             </div>

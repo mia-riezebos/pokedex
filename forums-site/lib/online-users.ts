@@ -7,11 +7,15 @@ async function fetchOnlineUsersCount(): Promise<number> {
   // depend on per-request state. Counting non-banned users is not sensitive.
   const supabase = createAdminClient();
   const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-  const { count } = await supabase
+  const { count, error } = await supabase
     .from('users')
     .select('id', { count: 'exact', head: true })
     .gte('last_seen_at', fiveMinAgo)
     .eq('is_banned', false);
+  if (error) {
+    console.error('[online-users] count query failed:', error.message);
+    return 0;
+  }
   return count ?? 0;
 }
 
