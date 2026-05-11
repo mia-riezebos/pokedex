@@ -36,16 +36,26 @@ export function LoginForm() {
   }
 
   async function discordOAuth() {
+    setBusy(true);
+    setErr(null);
     const redirectTo = `${location.origin}/auth/callback`;
-    await supabase.auth.signInWithOAuth({ provider: 'discord', options: { redirectTo } });
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'discord',
+      options: { redirectTo },
+    });
+    if (error) {
+      setBusy(false);
+      setErr('Could not start Discord sign-in. Try again.');
+    }
+    // On success, supabase navigates the browser away; no need to setBusy(false).
   }
 
   return (
     <main className="max-w-sm mx-auto py-16 space-y-6">
       <h1 className="text-2xl font-semibold">Sign in to Poke Forums</h1>
 
-      <Button variant="secondary" className="w-full" onClick={discordOAuth}>
-        Continue with Discord
+      <Button variant="secondary" className="w-full" onClick={discordOAuth} disabled={busy}>
+        {busy ? 'Redirecting…' : 'Continue with Discord'}
       </Button>
 
       <div className="text-center text-xs text-[var(--fg-muted)]">or with email</div>
