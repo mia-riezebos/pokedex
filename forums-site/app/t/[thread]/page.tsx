@@ -5,6 +5,7 @@ import { Container } from '@/components/chrome/Container';
 import { PostCard, type PostCardData } from '@/components/post/PostCard';
 import { getCurrentUser } from '@/lib/auth';
 import { ReplyForm } from './reply';
+import { ThreadModActions } from '@/components/thread/ThreadModActions';
 
 const PAGE_SIZE = 20;
 export const dynamic = 'force-dynamic';
@@ -23,7 +24,7 @@ export default async function ThreadPage({
   const { data: thread } = await supabase
     .from('threads')
     .select(
-      'id, title, is_locked, is_deleted, post_count, subforum:subforums(name, slug)',
+      'id, title, is_pinned, is_locked, is_deleted, post_count, subforum:subforums(name, slug)',
     )
     .eq('id', params.thread)
     .maybeSingle();
@@ -98,15 +99,30 @@ export default async function ThreadPage({
     <Container>
       <div className="py-6 space-y-4">
         <div>
-          {subforum && (
-            <p className="text-xs text-[var(--fg-muted)]">
-              in{' '}
-              <Link href={`/f/${subforum.slug}`} className="text-[var(--accent)]">
-                {subforum.name}
-              </Link>
-            </p>
-          )}
-          <h1 className="text-xl font-semibold mt-1">{thread.title}</h1>
+          <div className="flex items-start justify-between gap-4">
+            <div className="min-w-0">
+              {subforum && (
+                <p className="text-xs text-[var(--fg-muted)]">
+                  in{' '}
+                  <Link href={`/f/${subforum.slug}`} className="text-[var(--accent)]">
+                    {subforum.name}
+                  </Link>
+                </p>
+              )}
+              <h1 className="text-xl font-semibold mt-1">
+                {thread.is_pinned && <span className="mr-1" aria-label="pinned">📌</span>}
+                {thread.is_locked && <span className="mr-1" aria-label="locked">🔒</span>}
+                {thread.title}
+              </h1>
+            </div>
+            {viewerIsMod && (
+              <ThreadModActions
+                threadId={thread.id}
+                initialPinned={thread.is_pinned}
+                initialLocked={thread.is_locked}
+              />
+            )}
+          </div>
           <div className="title-rule mt-2" />
         </div>
 
