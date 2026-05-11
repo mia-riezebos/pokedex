@@ -2,7 +2,7 @@ create type public.user_role as enum ('user', 'mod', 'admin');
 
 create table public.users (
   id uuid primary key references auth.users(id) on delete cascade,
-  username citext unique not null,
+  username citext unique not null check (username ~ '^[a-z0-9_]{3,20}$'),
   display_name text,
   avatar_url text,
   bio text,
@@ -26,11 +26,24 @@ security definer
 set search_path = public
 as $$
 declare
-  short_id text := substr(replace(new.id::text, '-', ''), 1, 8);
+  hex36 text := replace(new.id::text, '-', '');
+  candidate text;
+  attempt int := 0;
 begin
-  insert into public.users (id, username)
-  values (new.id, 'user_' || short_id)
-  on conflict (id) do nothing;
+  -- Try up to 4 different 12-char windows from the UUID hex (positions 1, 5, 9, 13).
+  -- Collision probability across all 4 windows is astronomical; if all fail, raise.
+  loop
+    candidate := 'user_' || substr(hex36, 1 + attempt * 4, 12);
+    begin
+      insert into public.users (id, username)
+      values (new.id, candidate)
+      on conflict (id) do nothing;
+      exit;
+    exception when unique_violation then
+      attempt := attempt + 1;
+      if attempt > 3 then raise; end if;
+    end;
+  end loop;
   return new;
 end;
 $$;
