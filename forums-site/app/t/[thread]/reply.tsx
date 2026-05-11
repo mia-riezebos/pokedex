@@ -3,16 +3,28 @@
 import { useRouter } from 'next/navigation';
 import { Composer } from '@/components/post/Composer';
 
-export function ReplyForm({ threadId }: { threadId: string }) {
+export function ReplyForm({
+  threadId,
+  initialBody = '',
+  replyToPostId = null,
+}: {
+  threadId: string;
+  initialBody?: string;
+  replyToPostId?: string | null;
+}) {
   const router = useRouter();
   return (
     <Composer
+      initialBody={initialBody}
       submitLabel="Post reply"
       onSubmit={async ({ body }) => {
         const res = await fetch(`/api/threads/${threadId}/posts`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ body_md: body }),
+          body: JSON.stringify({
+            body_md: body,
+            ...(replyToPostId ? { reply_to_post_id: replyToPostId } : {}),
+          }),
         });
         const json = (await res.json()) as {
           post?: { id: string; post_number: number };

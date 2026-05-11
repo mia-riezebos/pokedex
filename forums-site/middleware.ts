@@ -1,5 +1,5 @@
 import { createServerClient } from '@supabase/ssr';
-import { NextResponse, type NextRequest } from 'next/server';
+import { NextResponse, type NextRequest, type NextFetchEvent } from 'next/server';
 import type { Database } from '@/lib/types';
 
 const PUBLIC_PATH_PREFIXES = [
@@ -25,7 +25,7 @@ function startsWithAny(path: string, prefixes: string[]): boolean {
   return prefixes.some((p) => path === p || path.startsWith(p + '/'));
 }
 
-export async function middleware(req: NextRequest) {
+export async function middleware(req: NextRequest, evt: NextFetchEvent) {
   let res = NextResponse.next({ request: { headers: req.headers } });
 
   const supabase = createServerClient<Database>(
@@ -54,6 +54,22 @@ export async function middleware(req: NextRequest) {
     .maybeSingle();
 
   if (!profile) return res;
+
+  // Bump last_seen_at if older than 60s. Skip for banned users (RLS blocks update anyway).
+  if (!profile.is_banned) {
+    const bumpPromise = Promise.resolve(
+      supabase
+        .from('users')
+        .update({ last_seen_at: new Date().toISOString() })
+        .eq('id', user.id)
+        .lt('last_seen_at', new Date(Date.now() - 60_000).toISOString()),
+    )
+      .then(() => undefined)
+      .catch((err) => {
+        console.warn('[middleware] last_seen_at bump failed:', err);
+      });
+    evt.waitUntil(bumpPromise);
+  }
 
   // Banned: redirect to /banned for any non-public path
   if (profile.is_banned && path !== '/banned' && !startsWithAny(path, PUBLIC_PATH_PREFIXES)) {

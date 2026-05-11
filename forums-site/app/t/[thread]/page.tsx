@@ -14,7 +14,7 @@ export default async function ThreadPage({
   searchParams,
 }: {
   params: { thread: string };
-  searchParams: { page?: string };
+  searchParams: { page?: string; quote?: string };
 }) {
   const supabase = createClient();
   const me = await getCurrentUser();
@@ -35,12 +35,60 @@ export default async function ThreadPage({
   const { data: posts } = await supabase
     .from('posts')
     .select(
-      `id, post_number, body_md, is_deleted, is_hidden, edited_at, created_at, author_id,
-       author:users!posts_author_id_fkey(username, role, avatar_url, post_count, created_at, signature_md)`,
+      `id, post_number, body_md, is_deleted, is_hidden, edited_at, created_at, author_id, thread_id,
+       author:users!posts_author_id_fkey(username, role, avatar_url, post_count, created_at, signature_md),
+       thanks_count:thanks(count)`,
     )
     .eq('thread_id', thread.id)
     .order('post_number')
     .range(from, to);
+
+  const postIds = (posts ?? []).map((p) => p.id);
+  let thankedSet = new Set<string>();
+  if (me && postIds.length > 0) {
+    const { data: viewerThanks } = await supabase
+      .from('thanks')
+      .select('post_id')
+      .eq('user_id', me.id)
+      .in('post_id', postIds);
+    thankedSet = new Set((viewerThanks ?? []).map((t) => t.post_id));
+  }
+
+  type RawPostRow = Omit<PostCardData, 'thanks_count' | 'viewer_thanked'> & {
+    thanks_count: { count: number }[] | null;
+  };
+
+  const rawPosts = (posts ?? []) as unknown as RawPostRow[];
+  const enrichedPosts: PostCardData[] = rawPosts.map((p) => ({
+    ...p,
+    thanks_count:
+      Array.isArray(p.thanks_count) && p.thanks_count[0] != null
+        ? Number(p.thanks_count[0].count)
+        : 0,
+    viewer_thanked: thankedSet.has(p.id),
+  }));
+
+  let initialReplyBody = '';
+  let replyToPostId: string | null = null;
+  if (searchParams.quote && me && !thread.is_locked) {
+    // Fetch the quoted post for prefill. Must be in this thread + not deleted/hidden.
+    const { data: quoted } = await supabase
+      .from('posts')
+      .select('id, body_md, is_deleted, is_hidden, author:users!posts_author_id_fkey(username)')
+      .eq('id', searchParams.quote)
+      .eq('thread_id', thread.id)
+      .maybeSingle();
+
+    if (quoted && !quoted.is_deleted && !quoted.is_hidden) {
+      const author = (quoted.author as unknown as { username: string } | null)?.username ?? '?';
+      const quotedBody = quoted.body_md
+        .split('\n')
+        .map((line) => `> ${line}`)
+        .join('\n');
+      initialReplyBody = `> @${author} said:\n${quotedBody}\n\n`;
+      replyToPostId = quoted.id;
+    }
+  }
 
   const totalPages = Math.max(1, Math.ceil(thread.post_count / PAGE_SIZE));
   const subforum = thread.subforum as unknown as { name: string; slug: string } | null;
@@ -63,8 +111,14 @@ export default async function ThreadPage({
         </div>
 
         <div className="space-y-4">
-          {((posts ?? []) as unknown as PostCardData[]).map((p) => (
-            <PostCard key={p.id} post={p} viewerIsMod={viewerIsMod} viewerId={me?.id ?? null} />
+          {enrichedPosts.map((p) => (
+            <PostCard
+              key={p.id}
+              post={p}
+              viewerIsMod={viewerIsMod}
+              viewerId={me?.id ?? null}
+              threadIsLocked={thread.is_locked}
+            />
           ))}
         </div>
 
@@ -84,7 +138,15 @@ export default async function ThreadPage({
           </div>
         )}
 
-        {!thread.is_locked && me && <ReplyForm threadId={thread.id} />}
+        {!thread.is_locked && me && (
+          <div id="reply" className="scroll-mt-20">
+            <ReplyForm
+              threadId={thread.id}
+              initialBody={initialReplyBody}
+              replyToPostId={replyToPostId}
+            />
+          </div>
+        )}
         {!me && !thread.is_locked && (
           <p className="text-sm text-[var(--fg-muted)] text-center py-4">
             <Link href={`/login?next=/t/${thread.id}`} className="text-[var(--accent)]">
