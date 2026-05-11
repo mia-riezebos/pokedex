@@ -89,8 +89,8 @@ export default async function SubforumPage({
             <li key={t.id} className="p-4 flex items-center justify-between gap-4">
               <div className="min-w-0">
                 <Link href={`/t/${t.id}`} className="font-medium hover:underline">
-                  {t.is_pinned && <span className="mr-1" aria-label="pinned">📌</span>}
-                  {t.is_locked && <span className="mr-1" aria-label="locked">🔒</span>}
+                  {t.is_pinned && <span role="img" aria-label="pinned" className="mr-1">📌</span>}
+                  {t.is_locked && <span role="img" aria-label="locked" className="mr-1">🔒</span>}
                   {t.title}
                 </Link>
                 {t.author && (

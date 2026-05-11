@@ -12,7 +12,10 @@ export async function Header() {
           <Link href="/" className="font-semibold text-[var(--fg)]">
             Poke Forums <span className="font-mono text-xs text-[var(--fg-muted)]">{'// unofficial'}</span>
           </Link>
-          <div className="flex items-center gap-3">
+          <Link href="/search" className="text-sm text-[var(--fg-muted)] hover:text-[var(--fg)]">
+            Search
+          </Link>
+          <div className="flex items-center gap-3 ml-auto">
             {user ? (
               <div className="flex items-center gap-3">
                 {user.role === 'admin' && (
