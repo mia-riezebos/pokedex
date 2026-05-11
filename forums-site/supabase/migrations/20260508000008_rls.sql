@@ -152,16 +152,26 @@ create policy posts_insert_self on public.posts for insert
     auth.uid() = author_id
     and public.current_user_active()
     and exists (
-      select 1 from public.threads t
+      select 1
+      from public.threads t
+      join public.subforums s on s.id = t.subforum_id
       where t.id = thread_id
         and t.is_deleted = false
         and t.is_locked = false
+        and s.is_locked = false
     )
   );
 
 create policy posts_update_self on public.posts for update
   using (auth.uid() = author_id and public.current_user_active())
-  with check (auth.uid() = author_id);
+  with check (
+    auth.uid() = author_id
+    -- Self-update can only modify body_md, body_html, edited_at, edited_by, is_deleted (soft-delete own).
+    -- Freeze structural columns:
+    and thread_id = (select thread_id from public.posts where id = posts.id)
+    and post_number = (select post_number from public.posts where id = posts.id)
+    and is_hidden = (select is_hidden from public.posts where id = posts.id)
+  );
 
 create policy posts_update_mod on public.posts for update
   using (public.current_user_role() in ('mod', 'admin'));
@@ -170,7 +180,12 @@ create policy posts_update_mod on public.posts for update
 
 create policy post_edits_select_all on public.post_edits for select using (true);
 create policy post_edits_insert_self on public.post_edits for insert
-  with check (auth.uid() = edited_by);
+  with check (
+    auth.uid() = edited_by
+    and exists (
+      select 1 from public.posts p where p.id = post_id and p.author_id = auth.uid()
+    )
+  );
 
 -- 7. THANKS: read all; insert/delete self
 
@@ -208,10 +223,8 @@ create policy mod_log_select_mod on public.mod_log for select
 create policy mod_log_insert_mod on public.mod_log for insert
   with check (public.current_user_role() in ('mod', 'admin'));
 
--- 12. BANS: read by mods+; insert/update by mods+
+-- 12. BANS: read/insert/update by mods+ (FOR ALL covers SELECT, so no separate select policy needed)
 
-create policy bans_select_mod on public.bans for select
-  using (public.current_user_role() in ('mod', 'admin'));
 create policy bans_modify_mod on public.bans for all
   using (public.current_user_role() in ('mod', 'admin'))
   with check (public.current_user_role() in ('mod', 'admin'));
