@@ -86,7 +86,7 @@ export function PostCard({
           <QuoteButton
             postId={post.id}
             threadId={post.thread_id}
-            disabled={viewerId === null || post.is_deleted}
+            disabled={viewerId === null || post.is_deleted || post.is_hidden}
           />
           <ThanksButton
             postId={post.id}

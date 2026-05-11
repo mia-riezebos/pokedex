@@ -9,6 +9,8 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: [
               "default-src 'self'",
+              // 'unsafe-inline'/'unsafe-eval' on script-src is accepted Next.js 14 debt
+              // (Next uses inline hydration scripts). Strict nonce-based CSP is a future refactor.
               "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' blob: data: https:",

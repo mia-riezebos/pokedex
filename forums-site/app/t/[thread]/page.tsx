@@ -57,7 +57,10 @@ export default async function ThreadPage({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const enrichedPosts = (posts ?? []).map((p: any) => ({
     ...p,
-    thanks_count: Array.isArray(p.thanks_count) && p.thanks_count[0]?.count ? Number(p.thanks_count[0].count) : 0,
+    thanks_count:
+      Array.isArray(p.thanks_count) && p.thanks_count[0] != null
+        ? Number(p.thanks_count[0].count)
+        : 0,
     viewer_thanked: thankedSet.has(p.id),
   }));
 
@@ -126,7 +129,7 @@ export default async function ThreadPage({
         )}
 
         {!thread.is_locked && me && (
-          <div id="reply" className="scroll-mt-4">
+          <div id="reply" className="scroll-mt-20">
             <ReplyForm
               threadId={thread.id}
               initialBody={initialReplyBody}

@@ -10,6 +10,19 @@ export async function POST(_req: Request, { params }: { params: { id: string } }
     return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
   }
 
+  // Block self-thanks (UI already hides the button; this is server-side enforcement)
+  const { data: post } = await supabase
+    .from('posts')
+    .select('author_id')
+    .eq('id', params.id)
+    .maybeSingle();
+  if (!post) {
+    return NextResponse.json({ error: 'Post not found' }, { status: 404 });
+  }
+  if (post.author_id === user.id) {
+    return NextResponse.json({ error: 'Cannot thank your own post' }, { status: 400 });
+  }
+
   const { error } = await supabase
     .from('thanks')
     .insert({ post_id: params.id, user_id: user.id });
