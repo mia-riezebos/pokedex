@@ -5,6 +5,7 @@ import { Container } from '@/components/chrome/Container';
 import { Avatar } from '@/components/user/Avatar';
 import { RoleBadge } from '@/components/user/RoleBadge';
 import { relativeTime } from '@/lib/time';
+import { Markdown } from '@/components/ui/Markdown';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,7 +58,11 @@ export default async function ProfilePage({ params }: { params: { username: stri
           </div>
         </div>
         <div>
-          {user.bio && <p className="mb-6">{user.bio}</p>}
+          {user.bio && (
+            <div className="mb-6">
+              <Markdown source={user.bio} />
+            </div>
+          )}
           <h2 className="text-sm font-semibold mb-2">Recent posts</h2>
           <ul className="space-y-1">
             {recentRows.map((p) => (

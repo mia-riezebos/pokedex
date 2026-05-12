@@ -69,6 +69,24 @@ export default async function ThreadPage({
     viewer_thanked: thankedSet.has(p.id),
   }));
 
+  // Update thread_reads for logged-in users so /new knows we've seen this.
+  if (me) {
+    const { error: readsErr } = await supabase
+      .from('thread_reads')
+      .upsert(
+        {
+          user_id: me.id,
+          thread_id: thread.id,
+          last_read_post_number: thread.post_count,
+          last_read_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,thread_id' },
+      );
+    if (readsErr) {
+      console.error('[thread] thread_reads upsert failed:', readsErr.message);
+    }
+  }
+
   let initialReplyBody = '';
   let replyToPostId: string | null = null;
   if (searchParams.quote && me && !thread.is_locked) {
