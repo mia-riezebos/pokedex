@@ -24,6 +24,9 @@ export async function Header() {
                     [admin]
                   </Link>
                 )}
+                <Link href="/new" className="text-sm text-[var(--fg-muted)] hover:text-[var(--fg)]">
+                  New
+                </Link>
                 <NotificationsBell />
                 <UserMenu username={user.username} avatarUrl={user.avatar_url} />
               </div>
