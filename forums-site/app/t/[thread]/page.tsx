@@ -71,8 +71,7 @@ export default async function ThreadPage({
 
   // Update thread_reads for logged-in users so /new knows we've seen this.
   if (me) {
-    // Fire-and-forget — failures here don't matter, the page renders either way.
-    void supabase
+    const { error: readsErr } = await supabase
       .from('thread_reads')
       .upsert(
         {
@@ -82,10 +81,10 @@ export default async function ThreadPage({
           last_read_at: new Date().toISOString(),
         },
         { onConflict: 'user_id,thread_id' },
-      )
-      .then(({ error }) => {
-        if (error) console.error('[thread] thread_reads upsert failed:', error.message);
-      });
+      );
+    if (readsErr) {
+      console.error('[thread] thread_reads upsert failed:', readsErr.message);
+    }
   }
 
   let initialReplyBody = '';

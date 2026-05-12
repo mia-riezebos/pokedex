@@ -17,7 +17,6 @@ interface NotificationData {
     id: string;
     post_number: number;
     thread_id: string;
-    body_md: string;
     threads: { title: string } | null;
   } | null;
   source_user: { username: string; role: 'user' | 'mod' | 'admin'; avatar_url: string | null } | null;
@@ -39,7 +38,7 @@ export default async function NotificationsPage() {
     .from('notifications')
     .select(
       `id, type, read_at, created_at,
-       source_post:posts!source_post_id(id, post_number, thread_id, body_md, threads(title)),
+       source_post:posts!source_post_id(id, post_number, thread_id, threads(title)),
        source_user:users!source_user_id(username, role, avatar_url)`,
     )
     .eq('user_id', me.id)
@@ -47,7 +46,13 @@ export default async function NotificationsPage() {
     .limit(100);
 
   const rows = (data ?? []) as unknown as NotificationData[];
-  const unreadCount = rows.filter((r) => r.read_at == null).length;
+
+  const { count: trueUnreadCount } = await supabase
+    .from('notifications')
+    .select('id', { count: 'exact', head: true })
+    .eq('user_id', me.id)
+    .is('read_at', null);
+  const unreadCount = trueUnreadCount ?? 0;
 
   return (
     <Container>

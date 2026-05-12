@@ -12,7 +12,6 @@ interface NotificationData {
     id: string;
     post_number: number;
     thread_id: string;
-    body_md: string;
     threads: { title: string } | null;
   } | null;
   source_user: { username: string; role: string; avatar_url: string | null } | null;
@@ -53,12 +52,18 @@ export function NotificationsBell() {
   async function markAllRead() {
     setLoading(true);
     try {
-      await fetch('/api/notifications', {
+      const res = await fetch('/api/notifications', {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ mark_all_read: true }),
       });
+      if (!res.ok) {
+        console.error('[notifications-bell] mark-all-read failed:', res.status);
+        // Still refresh in case some succeeded
+      }
       await refresh();
+    } catch (err) {
+      console.error('[notifications-bell] mark-all-read network error:', err);
     } finally {
       setLoading(false);
     }

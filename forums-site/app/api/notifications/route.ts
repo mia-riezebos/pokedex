@@ -19,7 +19,7 @@ export async function GET(req: Request) {
     .from('notifications')
     .select(
       `id, type, read_at, created_at,
-       source_post:posts!source_post_id(id, post_number, thread_id, body_md, threads(title)),
+       source_post:posts!source_post_id(id, post_number, thread_id, threads(title)),
        source_user:users!source_user_id(username, role, avatar_url)`,
     )
     .eq('user_id', user.id)
@@ -36,11 +36,15 @@ export async function GET(req: Request) {
   }
 
   // Also count unread total
-  const { count } = await supabase
+  const { count, error: countErr } = await supabase
     .from('notifications')
     .select('id', { count: 'exact', head: true })
     .eq('user_id', user.id)
     .is('read_at', null);
+  if (countErr) {
+    console.error('[notifications] unread count failed:', countErr.message);
+    return NextResponse.json({ error: 'Failed to fetch unread count' }, { status: 500 });
+  }
 
   return NextResponse.json({ notifications: data ?? [], unread_count: count ?? 0 });
 }

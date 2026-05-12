@@ -28,16 +28,6 @@ export default async function NewPage() {
 
   const supabase = createClient();
 
-  // Fetch user's read map
-  const { data: reads } = await supabase
-    .from('thread_reads')
-    .select('thread_id, last_read_at')
-    .eq('user_id', me.id);
-  const readMap = new Map<string, string>();
-  for (const r of reads ?? []) {
-    readMap.set(r.thread_id, r.last_read_at);
-  }
-
   // Fetch top-N recent non-deleted threads, skipping user's own
   const { data: threadsData } = await supabase
     .from('threads')
@@ -52,6 +42,20 @@ export default async function NewPage() {
     .limit(RECENT_LIMIT);
 
   const rows = (threadsData ?? []) as unknown as ThreadRow[];
+  const threadIds = rows.map((t) => t.id);
+
+  // Only fetch read markers for these candidate threads
+  const readMap = new Map<string, string>();
+  if (threadIds.length > 0) {
+    const { data: reads } = await supabase
+      .from('thread_reads')
+      .select('thread_id, last_read_at')
+      .eq('user_id', me.id)
+      .in('thread_id', threadIds);
+    for (const r of reads ?? []) {
+      readMap.set(r.thread_id, r.last_read_at);
+    }
+  }
 
   const unreadThreads = rows.filter((t) => {
     const lastRead = readMap.get(t.id);
