@@ -7,6 +7,7 @@ import { ThanksButton } from './ThanksButton';
 import { QuoteButton } from './QuoteButton';
 import { ReportButton } from './ReportButton';
 import { relativeTime } from '@/lib/time';
+import { Markdown } from '@/components/ui/Markdown';
 
 export interface PostCardData {
   id: string;
@@ -72,7 +73,7 @@ export function PostCard({
           )}
           {post.author.signature_md && !hidden && (
             <div className="mt-6 pt-3 border-t border-[var(--border)] text-xs text-[var(--fg-muted)]">
-              {post.author.signature_md}
+              <Markdown source={post.author.signature_md} />
             </div>
           )}
         </div>
