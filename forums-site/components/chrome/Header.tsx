@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { getCurrentUser } from '@/lib/auth';
 import { Container } from './Container';
 import { UserMenu } from './UserMenu';
+import { NotificationsBell } from './NotificationsBell';
 
 export async function Header() {
   const user = await getCurrentUser();
@@ -23,6 +24,7 @@ export async function Header() {
                     [admin]
                   </Link>
                 )}
+                <NotificationsBell />
                 <UserMenu username={user.username} avatarUrl={user.avatar_url} />
               </div>
             ) : (
