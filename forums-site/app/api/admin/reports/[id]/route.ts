@@ -48,13 +48,16 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
       .eq('id', report.post_id);
     if (postErr) return NextResponse.json({ error: postErr.message }, { status: 400 });
 
-    await supabase.from('mod_log').insert({
+    const { error: hideLogErr } = await supabase.from('mod_log').insert({
       actor_id: me.id,
       action: 'hide_post',
       target_type: 'post',
       target_id: report.post_id,
       metadata: { via_report: report.id },
     });
+    if (hideLogErr) {
+      console.error('[reports] hide_post mod_log insert failed:', hideLogErr.message);
+    }
   }
 
   // Set status: hide and resolve both move to 'resolved', dismiss to 'dismissed'
@@ -65,13 +68,16 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     .eq('id', params.id);
   if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 400 });
 
-  await supabase.from('mod_log').insert({
+  const { error: resolveLogErr } = await supabase.from('mod_log').insert({
     actor_id: me.id,
     action: parsed.data.action === 'dismiss' ? 'dismiss_report' : 'resolve_report',
     target_type: 'report',
     target_id: report.id,
     metadata: { post_id: report.post_id },
   });
+  if (resolveLogErr) {
+    console.error('[reports] resolve mod_log insert failed:', resolveLogErr.message);
+  }
 
   return NextResponse.json({ ok: true });
 }

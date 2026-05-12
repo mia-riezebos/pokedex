@@ -50,13 +50,16 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     .eq('id', params.id);
   if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
-  await supabase.from('mod_log').insert({
+  const { error: logErr } = await supabase.from('mod_log').insert({
     actor_id: me.id,
     action: parsed.data.role === 'mod' ? 'promote_mod' : 'demote_user',
     target_type: 'user',
     target_id: params.id,
     metadata: { from: target.role, to: parsed.data.role, username: target.username },
   });
+  if (logErr) {
+    console.error('[role] mod_log insert failed:', logErr.message);
+  }
 
   return NextResponse.json({ ok: true });
 }

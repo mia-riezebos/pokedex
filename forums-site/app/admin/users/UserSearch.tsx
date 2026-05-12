@@ -17,7 +17,7 @@ export function UserSearch({ initial }: { initial: string }) {
       }}
       className="flex gap-2 max-w-md"
     >
-      <Input placeholder="Search by username" value={q} onChange={(e) => setQ(e.target.value)} />
+      <Input placeholder="Search by username" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search users by username" />
       <Button type="submit">Search</Button>
     </form>
   );
