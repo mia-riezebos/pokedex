@@ -5,27 +5,19 @@ import { useRouter } from 'next/navigation';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 
-export function SearchForm({ initial }: { initial: string }) {
+export function UserSearch({ initial }: { initial: string }) {
   const router = useRouter();
   const [q, setQ] = useState(initial);
-
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
         const trimmed = q.trim();
-        if (!trimmed) return;
-        router.push(`/search?q=${encodeURIComponent(trimmed)}`);
+        router.push(trimmed ? `/admin/users?q=${encodeURIComponent(trimmed)}` : '/admin/users');
       }}
-      className="flex gap-2"
+      className="flex gap-2 max-w-md"
     >
-      <Input
-        placeholder="Search threads + posts…"
-        aria-label="search"
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        autoFocus
-      />
+      <Input placeholder="Search by username" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search users by username" />
       <Button type="submit">Search</Button>
     </form>
   );

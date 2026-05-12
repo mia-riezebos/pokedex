@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { getCurrentUser } from '@/lib/auth';
@@ -46,6 +47,11 @@ export default async function AdminPage() {
         <div>
           <h1 className="text-2xl font-semibold">Admin</h1>
           <div className="title-rule mt-2" />
+          <div className="flex gap-3 text-sm mt-2">
+            <Link href="/admin" className="text-[var(--accent)]">Structure</Link>
+            <Link href="/admin/users" className="text-[var(--fg-muted)] hover:text-[var(--fg)]">Users</Link>
+            <Link href="/admin/reports" className="text-[var(--fg-muted)] hover:text-[var(--fg)]">Reports</Link>
+          </div>
           <p className="text-sm text-[var(--fg-muted)] mt-2">
             Manage categories and subforums. Renames, deletes, and reordering will come in a later release.
           </p>

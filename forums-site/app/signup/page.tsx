@@ -50,10 +50,11 @@ export default function SignupPage() {
       <h1 className="text-2xl font-semibold">Create your account</h1>
 
       <form onSubmit={submit} className="space-y-3">
-        <Input type="email" placeholder="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        <Input type="email" placeholder="email" aria-label="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
         <Input
           type="password"
           placeholder="password (min 8)"
+          aria-label="password"
           minLength={8}
           value={password}
           onChange={(e) => setPassword(e.target.value)}

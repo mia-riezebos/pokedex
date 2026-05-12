@@ -55,6 +55,7 @@ export function OnboardingForm() {
         value={username}
         onChange={(e) => setUsername(e.target.value.toLowerCase())}
         placeholder="username"
+        aria-label="username"
         autoFocus
         minLength={3}
         maxLength={20}

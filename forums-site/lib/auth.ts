@@ -7,7 +7,7 @@ export async function getCurrentUser() {
   if (!user) return null;
   const { data: profile } = await supabase
     .from('users')
-    .select('id, username, role, is_banned, is_probationary, avatar_url, display_name')
+    .select('id, username, role, is_banned, is_probationary, avatar_url, display_name, bio, signature_md')
     .eq('id', user.id)
     .single();
   return profile ? { ...profile, email: user.email } : null;

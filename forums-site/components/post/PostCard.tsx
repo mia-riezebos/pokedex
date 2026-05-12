@@ -5,6 +5,7 @@ import { PostBody } from './PostBody';
 import { PostActions } from './PostActions';
 import { ThanksButton } from './ThanksButton';
 import { QuoteButton } from './QuoteButton';
+import { ReportButton } from './ReportButton';
 import { relativeTime } from '@/lib/time';
 
 export interface PostCardData {
@@ -89,6 +90,10 @@ export function PostCard({
             postId={post.id}
             threadId={post.thread_id}
             disabled={viewerId === null || post.is_deleted || post.is_hidden || threadIsLocked}
+          />
+          <ReportButton
+            postId={post.id}
+            disabled={viewerId === null || viewerId === post.author_id || post.is_deleted || post.is_hidden}
           />
           <ThanksButton
             postId={post.id}

@@ -64,8 +64,8 @@ export function LoginForm() {
       <div className="text-center text-xs text-[var(--fg-muted)]">or with email</div>
 
       <form onSubmit={emailLogin} className="space-y-3">
-        <Input type="email" placeholder="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
-        <Input type="password" placeholder="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        <Input type="email" placeholder="email" aria-label="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
+        <Input type="password" placeholder="password" aria-label="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
         <FormError message={err} />
         <Button type="submit" className="w-full" disabled={busy}>
           {busy ? 'Signing in…' : 'Sign in'}
