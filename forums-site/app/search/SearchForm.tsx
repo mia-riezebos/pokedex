@@ -21,6 +21,7 @@ export function SearchForm({ initial }: { initial: string }) {
     >
       <Input
         placeholder="Search threads + posts…"
+        aria-label="search"
         value={q}
         onChange={(e) => setQ(e.target.value)}
         autoFocus

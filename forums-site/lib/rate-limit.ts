@@ -54,4 +54,8 @@ export const limits = {
     const l = get('signup', 5, '1 h');
     return l ? l.limit(`ip:${ip}`) : OK;
   },
+  preview: async (userId: string) => {
+    const l = get('preview', 30, '1 m');
+    return l ? l.limit(`u:${userId}`) : OK;
+  },
 };
