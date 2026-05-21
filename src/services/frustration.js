@@ -15,7 +15,8 @@ const PHRASES = [
 ];
 
 function isShouting(text) {
-  // A "sentence" of >=3 letters that is entirely uppercase, with >=2 words.
+  // True only for multi-word all-caps shouting. Requires >=6 letters and >=2
+  // words so short all-caps tokens (e.g. "OK", "AI", "WHY") don't trip it.
   const letters = text.replace(/[^a-zA-Z]/g, '');
   if (letters.length < 6) return false;
   const upper = text.replace(/[^A-Z]/g, '').length;
