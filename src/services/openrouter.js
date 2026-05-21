@@ -193,7 +193,7 @@ Return ONLY valid JSON:
 
     if (!response.ok) {
       console.error(`Context evaluator API error: ${response.status}`);
-      return { complete: false, missing: [], responseMode: 'ignore', shouldReply: false, reply: null, triageUpdate: null, reclassify: false, resolved: false, resolvedReason: null };
+      return { ...normalizeEvaluation({}), responseMode: 'ignore', shouldReply: false };
     }
 
     const data = await response.json();
@@ -203,22 +203,38 @@ Return ONLY valid JSON:
     }
 
     const parsed = JSON.parse(content);
-    return {
-      complete: !!parsed.complete,
-      missing: Array.isArray(parsed.missing) ? parsed.missing : [],
-      responseMode: ['ignore', 'react', 'reply'].includes(parsed.responseMode) ? parsed.responseMode : 'react',
-      // Keep `shouldReply` as derived alias for forum-path callers until Task 15 unifies them.
-      shouldReply: parsed.responseMode === 'reply',
-      reply: typeof parsed.reply === 'string' ? parsed.reply : null,
-      triageUpdate: typeof parsed.triageUpdate === 'string' ? parsed.triageUpdate : null,
-      reclassify: !!parsed.reclassify,
-      resolved: !!parsed.resolved,
-      resolvedReason: typeof parsed.resolvedReason === 'string' ? parsed.resolvedReason : null,
-    };
+    return normalizeEvaluation(parsed);
   } catch (err) {
     console.error('Context evaluator failed:', err.message);
-    return { complete: false, missing: [], responseMode: 'ignore', shouldReply: false, reply: null, triageUpdate: null, reclassify: false, resolved: false, resolvedReason: null };
+    return { ...normalizeEvaluation({}), responseMode: 'ignore', shouldReply: false };
   }
+}
+
+function normalizeEvaluation(parsed = {}) {
+  const cf = (parsed && typeof parsed.contextFields === 'object' && !Array.isArray(parsed.contextFields) && parsed.contextFields) || {};
+  const str = (v) => (typeof v === 'string' && v.trim() ? v : null);
+  return {
+    complete: !!parsed.complete,
+    missing: Array.isArray(parsed.missing) ? parsed.missing : [],
+    responseMode: ['ignore', 'react', 'reply'].includes(parsed.responseMode) ? parsed.responseMode : 'react',
+    // Keep `shouldReply` as derived alias for forum-path callers until Task 15 unifies them.
+    shouldReply: parsed.responseMode === 'reply',
+    reply: typeof parsed.reply === 'string' ? parsed.reply : null,
+    triageUpdate: typeof parsed.triageUpdate === 'string' ? parsed.triageUpdate : null,
+    reclassify: !!parsed.reclassify,
+    resolved: !!parsed.resolved,
+    resolvedReason: typeof parsed.resolvedReason === 'string' ? parsed.resolvedReason : null,
+    askedQuestion: !!parsed.askedQuestion,
+    shouldFile: !!parsed.shouldFile,
+    contextFields: {
+      expected: str(cf.expected),
+      actual: str(cf.actual),
+      feature: str(cf.feature),
+      frequency: str(cf.frequency),
+    },
+    distinctBugs: Array.isArray(parsed.distinctBugs) ? parsed.distinctBugs : [],
+    receipt: (parsed && typeof parsed.receipt === 'object' && !Array.isArray(parsed.receipt) && parsed.receipt) || null,
+  };
 }
 
 async function callWithTools({ messages, tools, images = [], model: overrideModel, maxTokens = 2000 }) {
@@ -277,4 +293,4 @@ async function callWithTools({ messages, tools, images = [], model: overrideMode
   };
 }
 
-module.exports = { classifyIssue, evaluateIssueContext, callWithTools };
+module.exports = { classifyIssue, evaluateIssueContext, callWithTools, normalizeEvaluation };
