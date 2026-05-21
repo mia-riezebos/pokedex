@@ -2,6 +2,13 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.9.1',
+    date: '2026-05-21',
+    changes: [
+      'Fixed the **Approve** button on MCP-reported issues — it was failing with "Failed to process MCP issue." and never moving the report into triage. Decline was unaffected.',
+    ],
+  },
+  {
     version: '2.9.0',
     date: '2026-04-27',
     changes: [

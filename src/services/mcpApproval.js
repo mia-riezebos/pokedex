@@ -188,19 +188,27 @@ async function deletePendingMessages(channel, issue) {
   }
 }
 
+// Build the message payload for an approved MCP issue posted into triage.
+// `buildTriageButtons` already returns an array of action rows, so it must be
+// passed straight through as `components` — wrapping it in another array
+// nests an array where Discord expects an action row and the send() throws.
+function buildApprovedTriagePayload(issue, issueId, username) {
+  const embed = buildIssueEmbed(issue, issueId);
+  embed.addFields({ name: '✅ Approved', value: `by ${username} — <t:${Math.floor(Date.now() / 1000)}:R>` });
+
+  return {
+    embeds: [embed],
+    components: buildTriageButtons(issueId),
+  };
+}
+
 async function postApprovedIssueToTriage(guild, issue, issueId, username) {
   const triageChannel = findTriageChannel(guild);
   if (!triageChannel) {
     return { ok: false, error: 'Triage channel not found. Approval was not completed.' };
   }
 
-  const embed = buildIssueEmbed(issue, issueId);
-  embed.addFields({ name: '✅ Approved', value: `by ${username} — <t:${Math.floor(Date.now() / 1000)}:R>` });
-
-  const message = await triageChannel.send({
-    embeds: [embed],
-    components: [buildTriageButtons(issueId)],
-  });
+  const message = await triageChannel.send(buildApprovedTriagePayload(issue, issueId, username));
 
   await firestore.updateIssueTriageMessageId(issueId, message.id);
   await firestore.updateIssueTriageChannelId(issueId, triageChannel.id);
@@ -252,4 +260,5 @@ module.exports = {
   decidePendingIssue,
   processPendingDecision,
   syncPendingWebhookMessage,
+  buildApprovedTriagePayload,
 };
