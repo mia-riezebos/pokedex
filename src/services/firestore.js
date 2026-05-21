@@ -25,7 +25,8 @@ async function allocateIssueNumber(database = db) {
   const ref = database.collection('counters').doc('issues');
   return database.runTransaction(async (tx) => {
     const snap = await tx.get(ref);
-    const next = ((snap.exists && snap.data().next) || 0) + 1;
+    const current = snap.exists ? (snap.data().next ?? 0) : 0;
+    const next = current + 1;
     tx.set(ref, { next });
     return next;
   });
