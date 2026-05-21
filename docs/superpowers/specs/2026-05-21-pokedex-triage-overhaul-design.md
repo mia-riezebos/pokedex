@@ -152,14 +152,19 @@ round-trip.
 - The transcript sent to the model tags every line: `[OP] …`, `[MOD] …`,
   `[OTHER] …`, `[BOT] …`, `[EXCLUDED] …`.
 - Turn counter, frustration, and sufficiency checks consider **OP messages only**.
+- **Anyone may chime in.** The thread is never locked or restricted — mods,
+  other users, and bystanders can post freely. Author-awareness only governs what
+  the bot *treats as bug info* and *responds to*; it does not gate who can speak.
 - The bot does **not** respond to non-OP messages. `thread.js` gates: run the
   reply/ask path only when the triggering message is from the OP. Exception: if a
   **MOD @-mentions** the bot, it may answer a meta question ("what have you
   collected so far?") but never asks the mod questions and never treats the mod's
   text as bug info.
-- Replaces today's behavior where every thread message is appended and evaluated
-  flat. (Non-OP messages are still stored for the record but tagged, and excluded
-  from the signal checks.)
+- Non-OP messages are still stored for the record and shown to the model with
+  their `[MOD]`/`[OTHER]` tag (so it has situational awareness), but they never
+  count toward turn/frustration/sufficiency checks and never become ticket
+  content. This replaces today's behavior where every thread message is appended
+  and evaluated flat as if the OP had said it.
 
 ### 6. `/exclude` + context-menu command
 **Single-message exclusion** uses a Discord **message context-menu command**
