@@ -44,4 +44,13 @@ describe('buildConversationHistory + buildTranscript', () => {
     const hist = buildConversationHistory(messages);
     assert.equal(hist.length, 5);
   });
+
+  test('buildTranscript falls back to BOT/OTHER when role is absent', () => {
+    const t = buildTranscript([
+      { isBot: true, content: 'bot line' },
+      { isBot: false, content: 'human line' },
+    ]);
+    assert.match(t, /\[BOT\] bot line/);
+    assert.match(t, /\[OTHER\] human line/);
+  });
 });

@@ -78,7 +78,7 @@ function buildConversationHistory(messages, issue = {}) {
 }
 
 function buildTranscript(history) {
-  return history.map(h => `[${h.role}] ${h.content}`).join('\n');
+  return history.map(h => `[${h.role || (h.isBot ? 'BOT' : 'OTHER')}] ${h.content}`).join('\n');
 }
 
 function collectNewImageUrls(messages, sinceIso) {
