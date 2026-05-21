@@ -2,6 +2,7 @@ const { evaluateIssueContext } = require('./openrouter');
 const { classifyIssue } = require('./openrouter');
 const firestore = require('./firestore');
 const { buildIssueEmbed, findTriageChannel, postIssueEmbed } = require('./triage');
+const { resolveAuthorRole } = require('./authorRole');
 
 async function evaluateContext(issue, conversationHistory, extraHint) {
   return evaluateIssueContext(issue, conversationHistory, extraHint);
@@ -60,14 +61,24 @@ async function updateContextBadge(guild, issue, issueId) {
   }
 }
 
-function buildConversationHistory(messages) {
-  return messages.map(m => ({
-    author: m.author?.username || 'unknown',
-    isBot: m.author?.bot || false,
-    content: m.content || '',
-    attachments: [...(m.attachments?.values() || [])].map(a => ({ url: a.url, name: a.name })),
-    createdAt: m.createdAt?.toISOString() || new Date().toISOString(),
-  }));
+function buildConversationHistory(messages, issue = {}) {
+  const excludedIds = new Set(issue.excludedMessageIds || []);
+  const excludedUsers = new Set(issue.excludeModeUserIds || []);
+  return messages
+    .filter(m => !excludedIds.has(m.id) && !excludedUsers.has(m.author?.id))
+    .map(m => ({
+      id: m.id,
+      role: resolveAuthorRole(m, issue),
+      author: m.author?.username || 'unknown',
+      isBot: m.author?.bot || false,
+      content: m.content || '',
+      attachments: [...(m.attachments?.values() || [])].map(a => ({ url: a.url, name: a.name })),
+      createdAt: m.createdAt?.toISOString() || new Date().toISOString(),
+    }));
+}
+
+function buildTranscript(history) {
+  return history.map(h => `[${h.role}] ${h.content}`).join('\n');
 }
 
 function collectNewImageUrls(messages, sinceIso) {
@@ -179,4 +190,4 @@ async function maybeMoveTriageEmbedAcrossChannels(guild, oldIssue, newClassifica
   }
 }
 
-module.exports = { evaluateContext, processEvaluation, updateContextBadge, buildConversationHistory, collectNewImageUrls, processConversationResponse, maybeMoveTriageEmbedAcrossChannels };
+module.exports = { evaluateContext, processEvaluation, updateContextBadge, buildConversationHistory, buildTranscript, collectNewImageUrls, processConversationResponse, maybeMoveTriageEmbedAcrossChannels };

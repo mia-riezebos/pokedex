@@ -122,7 +122,7 @@ async function evaluateIssueContext(issue, conversationHistory, extraHint) {
   const model = getConfig('model');
 
   const transcript = conversationHistory
-    .map(m => `[${m.isBot ? 'Pokedex' : m.author}]: ${m.content}`)
+    .map(m => `[${m.role || (m.isBot ? 'BOT' : 'OTHER')}] ${m.content}`)
     .join('\n');
 
   const contextChecklist = {
