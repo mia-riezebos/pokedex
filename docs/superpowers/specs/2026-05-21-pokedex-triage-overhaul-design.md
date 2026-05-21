@@ -214,9 +214,12 @@ keeps the first bug.
 
 ### Sequential counter (#1234)
 `firestore.allocateIssueNumber()` runs a transaction on `counters/issues` and
-returns the next int. Called at creation in every path: `pipeline.js` (mention),
-`forum.js`, `pokedexbug.js`, `autoscrape.js`, **and** the MCP package
-(`pokedex-mcp/src/handlers.ts` — `handleReportBug`, `handleSuggestFeature`). The
+returns the next int. All bot-side issue creation funnels through
+`firestore.saveIssue`, so the number is allocated there once (covering the
+mention, forum, and `/pokedexbug` paths). The MCP package
+(`pokedex-mcp/src/handlers.ts` — `handleReportBug`, `handleSuggestFeature`)
+writes to Firestore directly and gets its own matching helper sharing the same
+`counters/issues` doc. The
 triage embed footer and receipts show `#<number>`; issues created before this
 change have no `number` and fall back to showing their Firestore ID. The MCP
 package gets a matching helper, a version bump, and test updates.
@@ -235,7 +238,7 @@ package gets a matching helper, a version bump, and test updates.
 | `src/commands/excludeContext.js` | **New.** Message context-menu command. |
 | `src/index.js` | Register the two new commands; route the context-menu interaction; mod @-mention meta path. |
 | `src/commands/help.js` | Document `/exclude`. |
-| Creation paths: `pipeline.js`, `forum.js`, `pokedexbug.js`, `autoscrape.js` | Allocate `number` at creation. |
+| `src/services/firestore.js` (`saveIssue`) | Allocate `number` at creation — single chokepoint for mention/forum/`/pokedexbug`. |
 | `pokedex-mcp/src/handlers.ts` + `discord.ts` | Allocate `number`; show it in webhook embed. |
 | `CHANGELOG.md`, `src/commands/changelog.js`, `package.json` | 2.10.0 (minor). MCP `package.json` bump. |
 
