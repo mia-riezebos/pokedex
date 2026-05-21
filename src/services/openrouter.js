@@ -211,6 +211,7 @@ Return ONLY valid JSON:
 }
 
 function normalizeEvaluation(parsed = {}) {
+  parsed = parsed || {};
   const cf = (parsed && typeof parsed.contextFields === 'object' && !Array.isArray(parsed.contextFields) && parsed.contextFields) || {};
   const str = (v) => (typeof v === 'string' && v.trim() ? v : null);
   return {

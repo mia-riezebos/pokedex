@@ -38,4 +38,11 @@ describe('normalizeEvaluation', () => {
     assert.deepEqual(e.distinctBugs, []);
     assert.equal(e.responseMode, 'react');
   });
+
+  test('rejects array inputs for object fields and tolerates null', () => {
+    const e = normalizeEvaluation({ contextFields: [], receipt: [] });
+    assert.deepEqual(e.contextFields, { expected: null, actual: null, feature: null, frequency: null });
+    assert.equal(e.receipt, null);
+    assert.doesNotThrow(() => normalizeEvaluation(null));
+  });
 });
