@@ -21,9 +21,21 @@ async function isDuplicate(messageId) {
   return !snapshot.empty;
 }
 
+async function allocateIssueNumber(database = db) {
+  const ref = database.collection('counters').doc('issues');
+  return database.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const next = ((snap.exists && snap.data().next) || 0) + 1;
+    tx.set(ref, { next });
+    return next;
+  });
+}
+
 async function saveIssue(issueData) {
+  const number = await allocateIssueNumber();
   const docRef = await db.collection('issues').add({
     ...issueData,
+    number,
     status: 'open',
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
@@ -510,6 +522,7 @@ async function getPublishedFeedback(limit = 200) {
 module.exports = {
   init,
   isDuplicate,
+  allocateIssueNumber,
   saveIssue,
   getIssuesSince,
   getAllConfigOverrides,
