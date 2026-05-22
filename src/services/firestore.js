@@ -493,6 +493,18 @@ async function updateGap(normalizedKey, fields) {
   await db.collection('capability_gaps').doc(normalizedKey).update(fields);
 }
 
+// --- Context-evaluator helpers ---
+
+async function incrementQuestionTurns(issueId) {
+  await db.collection('issues').doc(issueId).update({
+    questionTurns: admin.firestore.FieldValue.increment(1),
+  });
+}
+
+async function setIdentityDisclosed(issueId) {
+  await db.collection('issues').doc(issueId).update({ identityDisclosed: true });
+}
+
 // --- Feedback (public website) ---
 
 async function saveFeedback(feedbackData) {
@@ -565,4 +577,6 @@ module.exports = {
   getGapByKey,
   createGap,
   updateGap,
+  incrementQuestionTurns,
+  setIdentityDisclosed,
 };

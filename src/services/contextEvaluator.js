@@ -3,6 +3,7 @@ const { classifyIssue } = require('./openrouter');
 const firestore = require('./firestore');
 const { buildIssueEmbed, findTriageChannel, postIssueEmbed } = require('./triage');
 const { resolveAuthorRole } = require('./authorRole');
+const { buildReceipt } = require('./receipt');
 
 async function evaluateContext(issue, conversationHistory, extraHint) {
   return evaluateIssueContext(issue, conversationHistory, extraHint);
@@ -190,4 +191,112 @@ async function maybeMoveTriageEmbedAcrossChannels(guild, oldIssue, newClassifica
   }
 }
 
-module.exports = { evaluateContext, processEvaluation, updateContextBadge, buildConversationHistory, buildTranscript, collectNewImageUrls, processConversationResponse, maybeMoveTriageEmbedAcrossChannels };
+/**
+ * Pure planning function: given an issue and an evaluation, compute what child
+ * issues need to be created and what receipt text to show.  The caller
+ * (`fileIssue`) is responsible for allocating real issue numbers for children;
+ * this function uses sequential placeholder arithmetic (primary+1, primary+2, …)
+ * so the receipt can be unit-tested without I/O.
+ *
+ * @param {Object} opts
+ * @param {Object} opts.issue       - issue document (must have .number, .summary)
+ * @param {Object} opts.evaluation  - evaluator output (contextFields, distinctBugs)
+ * @returns {{ children: Object[], numbers: number[], receipt: string, fields: Object }}
+ */
+function buildFilePlan({ issue, evaluation }) {
+  const bugs = Array.isArray(evaluation.distinctBugs) ? evaluation.distinctBugs : [];
+  const primaryNumber = issue.number;
+
+  // All bugs beyond the first become child issues (split from the primary).
+  const children = bugs.slice(1).map(b => ({
+    summary: b.summary,
+    text: `${b.summary}`,
+    reporterId: issue.reporterId,
+    reporterName: issue.reporterName,
+    target: issue.target,
+    splitFromIssueId: issue.id,
+    contextComplete: true,
+    contextFields: {
+      expected: b.expected || null,
+      actual: b.actual || null,
+      feature: b.feature || null,
+      frequency: b.frequency || null,
+    },
+  }));
+
+  // Placeholder numbers for receipt rendering (real numbers allocated in fileIssue).
+  const numbers = [primaryNumber, ...children.map((_c, i) => primaryNumber + 1 + i)]
+    .filter(n => typeof n === 'number');
+
+  const cf = evaluation.contextFields || {};
+  const fields = {
+    summary: issue.summary || (bugs[0] && bugs[0].summary),
+    expected: cf.expected,
+    actual: cf.actual,
+    scope: [cf.frequency, cf.feature].filter(Boolean).join(' / '),
+  };
+
+  return {
+    children,
+    numbers,
+    receipt: buildReceipt(numbers.length ? numbers : [primaryNumber], fields),
+    fields,
+  };
+}
+
+/**
+ * Side-effectful: file an issue (idempotent), create child issues for any
+ * extra distinct bugs, post a receipt in the thread, and refresh the triage embed.
+ *
+ * @param {Object} guild
+ * @param {Object} issue       - full issue document
+ * @param {string} issueId
+ * @param {Object} evaluation  - evaluator output
+ * @param {Object} deps        - injectable dependencies for testing
+ * @param {Object} [deps.firestore]   - firestore service override
+ * @param {Object} [deps.thread]      - Discord thread channel (with .send())
+ */
+async function fileIssue(guild, issue, issueId, evaluation, deps = {}) {
+  const fs = deps.firestore || firestore;
+
+  // Idempotency guard.
+  if (issue.filedAt) return { ok: true, skipped: true };
+
+  const plan = buildFilePlan({ issue, evaluation });
+
+  // Allocate real issue numbers for child issues.
+  const realNumbers = [issue.number];
+  for (const child of plan.children) {
+    const childId = await fs.saveIssue(child);
+    const childDoc = await fs.getIssueById(childId);
+    if (childDoc && typeof childDoc.number === 'number') {
+      realNumbers.push(childDoc.number);
+    }
+  }
+
+  // Re-render receipt with actual numbers.
+  const receipt = buildReceipt(realNumbers.filter(n => typeof n === 'number'), plan.fields);
+
+  // Post receipt in the Discord thread.
+  if (deps.thread && typeof deps.thread.send === 'function') {
+    await deps.thread.send({ content: receipt }).catch(() => {});
+  }
+
+  // Mark the primary issue as filed.
+  await fs.updateIssueFields(issueId, {
+    contextComplete: true,
+    contextFields: evaluation.contextFields,
+    filedAt: new Date().toISOString(),
+  });
+
+  // Refresh the triage embed with the context-complete badge.
+  try {
+    await updateContextBadge(guild, { ...issue, contextComplete: true }, issueId);
+  } catch {
+    // Non-fatal — embed may have been deleted.
+  }
+
+  return { ok: true, receipt };
+}
+
+module.exports = { evaluateContext, processEvaluation, updateContextBadge, buildConversationHistory, buildTranscript, collectNewImageUrls, processConversationResponse, maybeMoveTriageEmbedAcrossChannels, buildFilePlan, fileIssue };
