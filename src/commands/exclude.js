@@ -12,12 +12,9 @@ const firestore = require('../services/firestore');
  * @returns {string[]}
  */
 function computeLastExclusions(messages, n, { isMod, runnerId }) {
-  if (isMod) {
-    return messages.slice(-n).map(m => m.id);
-  }
-  // Non-mods: take the last N of their own messages only
-  const own = messages.filter(m => m.authorId === runnerId);
-  return own.slice(-n).map(m => m.id);
+  const lastN = messages.slice(-n);
+  const eligible = isMod ? lastN : lastN.filter(m => m.authorId === runnerId);
+  return eligible.map(m => m.id);
 }
 
 const data = new SlashCommandBuilder()

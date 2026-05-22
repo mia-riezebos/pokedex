@@ -13,6 +13,6 @@ describe('computeLastExclusions', () => {
     assert.deepEqual(computeLastExclusions(msgs, 2, { isMod: true, runnerId: 'mod1' }), ['3', '4']);
   });
   test('OP can only exclude their own among the last N', () => {
-    assert.deepEqual(computeLastExclusions(msgs, 3, { isMod: false, runnerId: 'op1' }), ['1', '3']);
+    assert.deepEqual(computeLastExclusions(msgs, 3, { isMod: false, runnerId: 'op1' }), ['3']);
   });
 });
