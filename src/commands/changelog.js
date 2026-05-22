@@ -2,6 +2,18 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.10.0',
+    date: '2026-05-22',
+    changes: [
+      'New **`/exclude`** command + right-click **Exclude from Pokedex** — keep mod/bystander messages out of a report\'s context (`last N`, `on`, `off`, `status`, `clear`)',
+      'Every issue now gets a **sequential ticket number** (`#1234`), including MCP reports — shown in triage and the closing receipt',
+      'Pokedex now **says it\'s a bot up front**, asks **at most 3 one-at-a-time questions**, and **files early** when it has enough or senses frustration',
+      'Triage is **author-aware** — only the original reporter\'s messages count as bug info; anyone can still chime in, and Pokedex ignores mod chatter unless @-mentioned',
+      'Reports with **two distinct bugs** are now split into separate tickets, each with its own number',
+      'Every filed report ends with a **structured receipt** so the reporter knows what the team will see',
+    ],
+  },
+  {
     version: '2.9.0',
     date: '2026-04-27',
     changes: [
