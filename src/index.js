@@ -386,7 +386,7 @@ async function handleButtonInteraction(interaction) {
         allMessages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
 
         const { evaluateContext, buildConversationHistory } = require('./services/contextEvaluator');
-        const history = buildConversationHistory(allMessages);
+        const history = buildConversationHistory(allMessages, issue);
         const evaluation = await evaluateContext(issue, history, 'A developer needs more information on this issue.');
 
         if (evaluation.shouldReply && evaluation.reply) {

@@ -42,6 +42,8 @@ async function runThreadDecision({ role, issue, issueId, frustration, evaluation
       await deps.fileIssue(deps.guild, issue, issueId, evaluation, { thread: { send: deps.fileSend || deps.send }, firestore: deps.firestore });
       return decision;
     case 'ask':
+      // Bookkeeping only: the visible identity line is produced by the LLM prompt
+      // (it discloses when no [BOT] line exists yet). This flag is for audit/dashboards.
       if (!issue.identityDisclosed) { await deps.firestore.setIdentityDisclosed(issueId); }
       if (decision.incrementTurn) await deps.firestore.incrementQuestionTurns(issueId);
       if (evaluation.reply) await deps.send(evaluation.reply);
