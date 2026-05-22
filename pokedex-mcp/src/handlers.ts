@@ -38,6 +38,20 @@ import { postToDiscordWebhook, postContextToDiscord } from "./discord.js";
 // which correctly accounts for `.default()` values.
 type InferInput<Shape extends ZodRawShape> = z.output<ZodObject<Shape>>;
 
+// Allocate the next sequential issue number using a Firestore transaction on
+// the shared `counters/issues` doc. The same doc is used by the bot side so
+// numbers are globally unique across both creation paths.
+async function allocateIssueNumber(db: admin.firestore.Firestore): Promise<number> {
+  const ref = db.collection("counters").doc("issues");
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const current = snap.exists ? ((snap.data() as { next?: number }).next ?? 0) : 0;
+    const next = current + 1;
+    tx.set(ref, { next });
+    return next;
+  });
+}
+
 // The shape the MCP SDK expects a tool handler to return.
 export type MCPToolResult = {
   content: Array<{ type: "text"; text: string }>;
@@ -73,6 +87,7 @@ export async function handleReportBug(
   }
 
   const db = getDb();
+  const number = await allocateIssueNumber(db);
 
   const issueData: Record<string, unknown> = {
     messageId: `mcp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -87,6 +102,7 @@ export async function handleReportBug(
     reasoning: "Reported via Pokedex MCP agent integration",
     status: "pending",
     source: "mcp",
+    number,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   };
 
@@ -135,6 +151,7 @@ export async function handleSuggestFeature(
   }
 
   const db = getDb();
+  const number = await allocateIssueNumber(db);
 
   const issueData: Record<string, unknown> = {
     messageId: `mcp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -149,6 +166,7 @@ export async function handleSuggestFeature(
     reasoning: "Feature request submitted via Pokedex MCP agent integration",
     status: "pending",
     source: "mcp",
+    number,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   };
 

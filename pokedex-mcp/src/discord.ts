@@ -74,7 +74,7 @@ export async function postToDiscordWebhook(issue: Record<string, unknown>, issue
       { name: "Source", value: "MCP Agent", inline: true },
       { name: "Description", value: (issue.text as string)?.slice(0, 1024) || "(no description)" },
     ],
-    footer: { text: `Issue ID: ${issueId} | via Pokedex MCP` },
+    footer: { text: issue.number ? `Ticket #${issue.number} | Issue ID: ${issueId} | via Pokedex MCP` : `Issue ID: ${issueId} | via Pokedex MCP` },
     timestamp: new Date().toISOString(),
     ...(issue.screenshotUrl ? { image: { url: issue.screenshotUrl as string } } : {}),
   };

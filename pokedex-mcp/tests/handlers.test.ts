@@ -18,6 +18,8 @@ const { mockState } = vi.hoisted(() => {
     docUpdateCalls: [] as Record<string, unknown>[],
     collectionCalls: [] as string[],
     docIdCalls: [] as string[],
+    // Stubbed return value for runTransaction (the allocated issue number).
+    transactionAllocatedNumber: 100,
     reset() {
       this.addResult = { id: "generated-id" };
       this.addShouldThrow = null;
@@ -28,6 +30,7 @@ const { mockState } = vi.hoisted(() => {
       this.docUpdateCalls = [];
       this.collectionCalls = [];
       this.docIdCalls = [];
+      this.transactionAllocatedNumber = 100;
     },
   };
   return { mockState };
@@ -79,10 +82,22 @@ vi.mock("firebase-admin", () => {
     return col;
   };
 
+  // Minimal transaction object passed to the fn — only tx.get and tx.set are needed.
+  const fakeTx = {
+    get: async (_ref: unknown) => ({
+      exists: true,
+      data: () => ({ next: mockState.transactionAllocatedNumber - 1 }),
+    }),
+    set: (_ref: unknown, _data: unknown) => {},
+  };
+
   const fakeFirestore = {
     collection: (name: string) => {
       mockState.collectionCalls.push(name);
       return makeCollection();
+    },
+    runTransaction: async (fn: (tx: typeof fakeTx) => Promise<unknown>) => {
+      return fn(fakeTx);
     },
   };
 
@@ -115,7 +130,7 @@ const { discordMocks } = vi.hoisted(() => ({
 vi.mock("../src/discord.js", () => discordMocks);
 
 // Import after mocks are set up.
-import { handleReportBug, handleCheckIssue, handleUpdateIssue } from "../src/handlers.js";
+import { handleReportBug, handleSuggestFeature, handleCheckIssue, handleUpdateIssue } from "../src/handlers.js";
 import { resetRateLimits } from "../src/rateLimit.js";
 
 function parseResult(result: { content: Array<{ type: "text"; text: string }> }) {
@@ -152,7 +167,8 @@ describe("handleReportBug", () => {
     expect(body.status).toBe("created");
     expect(body.priority).toBe("high");
     expect(body.category).toBe("bug");
-    expect(mockState.collectionCalls).toEqual(["issues"]);
+    // allocateIssueNumber hits "counters" first, then the issue is written to "issues"
+    expect(mockState.collectionCalls).toEqual(["counters", "issues"]);
     expect(mockState.lastAddData).toMatchObject({
       reporterName: "alice",
       reporterId: "user-123",
@@ -162,6 +178,7 @@ describe("handleReportBug", () => {
       status: "pending",
       channelId: "mcp",
       createdAt: "MOCK_SERVER_TIMESTAMP",
+      number: mockState.transactionAllocatedNumber,
     });
     expect(discordMocks.postToDiscordWebhook).toHaveBeenCalledTimes(1);
   });
@@ -216,6 +233,41 @@ describe("handleReportBug", () => {
     }
     const over = await handleReportBug(validInput);
     expect(parseResult(over)).toEqual({ error: "Rate limit exceeded. Try again later." });
+  });
+});
+
+// ---------- handleSuggestFeature ----------
+
+describe("handleSuggestFeature", () => {
+  const validInput = {
+    title: "Add dark mode support to the dashboard",
+    description: "Many users prefer dark mode for extended sessions. It would reduce eye strain significantly.",
+    reporter_name: "bob",
+    reporter_id: "user-456",
+  };
+
+  it("writes to Firestore with a sequential number and returns the new issue id on the happy path", async () => {
+    mockState.addResult = { id: "feat-999" };
+    mockState.transactionAllocatedNumber = 100;
+
+    const result = await handleSuggestFeature(validInput);
+    const body = parseResult(result);
+
+    expect(body.issueId).toBe("feat-999");
+    expect(body.status).toBe("created");
+    expect(body.category).toBe("feature_request");
+    expect(mockState.lastAddData).toMatchObject({
+      reporterName: "bob",
+      reporterId: "user-456",
+      priority: "low",
+      category: "feature_request",
+      source: "mcp",
+      status: "pending",
+      channelId: "mcp",
+      createdAt: "MOCK_SERVER_TIMESTAMP",
+      number: mockState.transactionAllocatedNumber,
+    });
+    expect(discordMocks.postToDiscordWebhook).toHaveBeenCalledTimes(1);
   });
 });
 
