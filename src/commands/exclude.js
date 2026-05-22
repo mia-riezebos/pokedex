@@ -43,12 +43,13 @@ const data = new SlashCommandBuilder()
       .setDescription('Clear all exclusions in this thread (mods only)'));
 
 async function execute(interaction) {
+  await interaction.deferReply({ ephemeral: true });
   try {
     const thread = interaction.channel;
     const issue = thread?.isThread?.() ? await firestore.getIssueByThreadId(thread.id) : null;
 
     if (!issue) {
-      await interaction.reply({ content: 'Run this inside a Pokedex issue thread.', ephemeral: true });
+      await interaction.editReply({ content: 'Run this inside a Pokedex issue thread.' });
       return;
     }
 
@@ -65,24 +66,24 @@ async function execute(interaction) {
       const ids = computeLastExclusions(mapped, count, { isMod, runnerId: interaction.user.id });
 
       if (ids.length === 0) {
-        await interaction.reply({ content: 'No eligible messages found to exclude.', ephemeral: true });
+        await interaction.editReply({ content: 'No eligible messages found to exclude.' });
         return;
       }
 
       await firestore.addExcludedMessageIds(issue.id, ids);
-      await interaction.reply({ content: `Excluded ${ids.length} message${ids.length === 1 ? '' : 's'} from Pokedex context.`, ephemeral: true });
+      await interaction.editReply({ content: `Excluded ${ids.length} message${ids.length === 1 ? '' : 's'} from Pokedex context.` });
       return;
     }
 
     if (sub === 'on') {
       await firestore.setExcludeMode(issue.id, interaction.user.id, true);
-      await interaction.reply({ content: 'Your messages will now be excluded from Pokedex context in this thread. Run `/exclude off` to stop.', ephemeral: true });
+      await interaction.editReply({ content: 'Your messages will now be excluded from Pokedex context in this thread. Run `/exclude off` to stop.' });
       return;
     }
 
     if (sub === 'off') {
       await firestore.setExcludeMode(issue.id, interaction.user.id, false);
-      await interaction.reply({ content: 'Your messages are no longer being excluded from Pokedex context.', ephemeral: true });
+      await interaction.editReply({ content: 'Your messages are no longer being excluded from Pokedex context.' });
       return;
     }
 
@@ -92,26 +93,27 @@ async function execute(interaction) {
       const excludedUsers = Array.isArray(fresh?.excludeModeUserIds) && fresh.excludeModeUserIds.length > 0
         ? fresh.excludeModeUserIds.map(id => `<@${id}>`).join(', ')
         : 'none';
-      await interaction.reply({
+      await interaction.editReply({
         content: `**Excluded messages:** ${excludedCount}\n**Exclude-mode users:** ${excludedUsers}`,
-        ephemeral: true,
       });
       return;
     }
 
     if (sub === 'clear') {
       if (!isMod) {
-        await interaction.reply({ content: 'Only mods can clear exclusions.', ephemeral: true });
+        await interaction.editReply({ content: 'Only mods can clear exclusions.' });
         return;
       }
       await firestore.clearExclusions(issue.id);
-      await interaction.reply({ content: 'All exclusions cleared for this thread.', ephemeral: true });
+      await interaction.editReply({ content: 'All exclusions cleared for this thread.' });
       return;
     }
   } catch (err) {
-    console.error('[exclude] Error:', err);
-    if (!interaction.replied && !interaction.deferred) {
-      await interaction.reply({ content: 'Something went wrong. Please try again.', ephemeral: true });
+    console.error('exclude command failed:', err);
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply({ content: 'Failed to update exclusions.' }).catch(() => {});
+    } else {
+      await interaction.reply({ content: 'Failed to update exclusions.', ephemeral: true }).catch(() => {});
     }
   }
 }
