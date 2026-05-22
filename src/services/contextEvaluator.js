@@ -210,7 +210,7 @@ function buildFilePlan({ issue, evaluation }) {
   // All bugs beyond the first become child issues (split from the primary).
   const children = bugs.slice(1).map(b => ({
     summary: b.summary,
-    text: `${b.summary}`,
+    text: b.summary,
     reporterId: issue.reporterId,
     reporterName: issue.reporterName,
     target: issue.target,
@@ -269,9 +269,10 @@ async function fileIssue(guild, issue, issueId, evaluation, deps = {}) {
   for (const child of plan.children) {
     const childId = await fs.saveIssue(child);
     const childDoc = await fs.getIssueById(childId);
-    if (childDoc && typeof childDoc.number === 'number') {
-      realNumbers.push(childDoc.number);
+    if (!childDoc || typeof childDoc.number !== 'number') {
+      console.warn(`fileIssue: child issue ${childId} created but its number could not be read back; it will be missing from the receipt`);
     }
+    realNumbers.push(childDoc && childDoc.number);
   }
 
   // Re-render receipt with actual numbers.
@@ -279,7 +280,7 @@ async function fileIssue(guild, issue, issueId, evaluation, deps = {}) {
 
   // Post receipt in the Discord thread.
   if (deps.thread && typeof deps.thread.send === 'function') {
-    await deps.thread.send({ content: receipt }).catch(() => {});
+    await deps.thread.send({ content: receipt }).catch(err => console.error('fileIssue: failed to post receipt to thread:', err.message));
   }
 
   // Mark the primary issue as filed.
