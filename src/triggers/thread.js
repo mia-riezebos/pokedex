@@ -3,6 +3,9 @@ const { classifyIssue } = require('../services/openrouter');
 const triage = require('../services/triage');
 const { getConfig } = require('../config/config');
 const { evaluateContext, processEvaluation, buildConversationHistory, processConversationResponse } = require('../services/contextEvaluator');
+const { decideThreadAction } = require('../services/threadDecision');
+const { detectFrustration } = require('../services/frustration');
+const { resolveAuthorRole } = require('../services/authorRole');
 
 // Debounce map — wait a bit in case the user sends multiple messages quickly
 const pendingUpdates = new Map();
@@ -30,6 +33,28 @@ function shouldAutoResolve(evaluation, messageAuthorId, reporterId) {
   if (!evaluation?.resolved) return false;
   if (messageAuthorId !== reporterId) return false;
   return true;
+}
+
+async function runThreadDecision({ role, issue, issueId, frustration, evaluation, deps }) {
+  const decision = decideThreadAction({ role, issue, frustration, evaluation });
+  switch (decision.action) {
+    case 'file':
+      await deps.fileIssue(deps.guild, issue, issueId, evaluation, { thread: { send: deps.send }, firestore: deps.firestore });
+      return decision;
+    case 'ask':
+      if (!issue.identityDisclosed) { await deps.firestore.setIdentityDisclosed(issueId); }
+      if (decision.incrementTurn) await deps.firestore.incrementQuestionTurns(issueId);
+      if (evaluation.reply) await deps.send(evaluation.reply);
+      return decision;
+    case 'reply':
+      if (evaluation.reply) await deps.send(evaluation.reply);
+      return decision;
+    case 'react':
+      await deps.react('✅');
+      return decision;
+    default:
+      return decision; // 'silent'
+  }
 }
 
 async function handleThreadMessage(message) {
@@ -77,7 +102,7 @@ async function handleThreadMessage(message) {
       allMessages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
 
       const { buildConversationHistory, collectNewImageUrls } = require('../services/contextEvaluator');
-      const history = buildConversationHistory(allMessages);
+      const history = buildConversationHistory(allMessages, updatedIssue);
       const newImages = collectNewImageUrls(allMessages, updatedIssue.lastEvaluatedAt);
 
       // Vision pre-pass: if there are new screenshots since last evaluation,
@@ -107,6 +132,8 @@ async function handleThreadMessage(message) {
         visionSummary ? `[Extracted from new screenshots]:\n${visionSummary}` : undefined
       );
 
+      const role = resolveAuthorRole(message, updatedIssue);
+      const frustration = role === 'OP' ? detectFrustration(message.content) : { frustrated: false };
       const isResolving = shouldAutoResolve(evaluation, message.author.id, updatedIssue.reporterId);
 
       if (!isResolving) {
@@ -114,10 +141,32 @@ async function handleThreadMessage(message) {
         await require('../services/contextEvaluator').processEvaluation(message.guild, updatedIssue, updatedIssue.id, evaluation);
       }
 
-      // Unified auto-resolve + responseMode handling via shared helper
-      await processConversationResponse(message, updatedIssue, updatedIssue.id, evaluation, {
-        canReply: () => canBotReplyInThread(threadId),
-      });
+      if (isResolving) {
+        // Auto-resolve path: processConversationResponse owns this flow.
+        await processConversationResponse(message, updatedIssue, updatedIssue.id, evaluation, {
+          canReply: () => canBotReplyInThread(threadId),
+        });
+      } else {
+        // Author-aware decision-driven path.
+        await runThreadDecision({
+          role,
+          issue: updatedIssue,
+          issueId: updatedIssue.id,
+          frustration,
+          evaluation,
+          deps: {
+            guild: message.guild,
+            firestore,
+            fileIssue: require('../services/contextEvaluator').fileIssue,
+            send: async (c) => {
+              // Rate-limit bot replies/questions to the thread.
+              if (!canBotReplyInThread(threadId)) return;
+              await message.channel.send(typeof c === 'string' ? { content: c } : c);
+            },
+            react: async (e) => { try { await message.react(e); } catch {} },
+          },
+        });
+      }
 
       // Bump lastEvaluatedAt so next invocation only fetches newer images.
       try { await firestore.setIssueLastEvaluatedAt(updatedIssue.id, new Date().toISOString()); } catch {}
@@ -129,4 +178,4 @@ async function handleThreadMessage(message) {
   return true; // Signal that this was an issue thread — don't create a new issue
 }
 
-module.exports = { handleThreadMessage, canBotReplyInThread, _reset, shouldAutoResolve };
+module.exports = { handleThreadMessage, canBotReplyInThread, _reset, shouldAutoResolve, runThreadDecision };
