@@ -39,7 +39,7 @@ async function runThreadDecision({ role, issue, issueId, frustration, evaluation
   const decision = decideThreadAction({ role, issue, frustration, evaluation });
   switch (decision.action) {
     case 'file':
-      await deps.fileIssue(deps.guild, issue, issueId, evaluation, { thread: { send: deps.send }, firestore: deps.firestore });
+      await deps.fileIssue(deps.guild, issue, issueId, evaluation, { thread: { send: deps.fileSend || deps.send }, firestore: deps.firestore });
       return decision;
     case 'ask':
       if (!issue.identityDisclosed) { await deps.firestore.setIdentityDisclosed(issueId); }
@@ -161,6 +161,9 @@ async function handleThreadMessage(message) {
             send: async (c) => {
               // Rate-limit bot replies/questions to the thread.
               if (!canBotReplyInThread(threadId)) return;
+              await message.channel.send(typeof c === 'string' ? { content: c } : c);
+            },
+            fileSend: async (c) => {
               await message.channel.send(typeof c === 'string' ? { content: c } : c);
             },
             react: async (e) => { try { await message.react(e); } catch {} },
