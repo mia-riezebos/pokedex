@@ -493,6 +493,26 @@ async function updateGap(normalizedKey, fields) {
   await db.collection('capability_gaps').doc(normalizedKey).update(fields);
 }
 
+// --- Per-thread exclusion helpers ---
+
+async function addExcludedMessageIds(issueId, ids) {
+  await db.collection('issues').doc(issueId).update({
+    excludedMessageIds: admin.firestore.FieldValue.arrayUnion(...ids),
+  });
+}
+
+async function setExcludeMode(issueId, userId, on) {
+  await db.collection('issues').doc(issueId).update({
+    excludeModeUserIds: on
+      ? admin.firestore.FieldValue.arrayUnion(userId)
+      : admin.firestore.FieldValue.arrayRemove(userId),
+  });
+}
+
+async function clearExclusions(issueId) {
+  await db.collection('issues').doc(issueId).update({ excludedMessageIds: [], excludeModeUserIds: [] });
+}
+
 // --- Context-evaluator helpers ---
 
 async function incrementQuestionTurns(issueId) {
@@ -579,4 +599,7 @@ module.exports = {
   updateGap,
   incrementQuestionTurns,
   setIdentityDisclosed,
+  addExcludedMessageIds,
+  setExcludeMode,
+  clearExclusions,
 };
