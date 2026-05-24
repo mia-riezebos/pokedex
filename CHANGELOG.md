@@ -9,7 +9,7 @@
 - Multi-bug splitting — distinct bugs in one thread become separate tickets.
 
 ### Changed
-- Triage conversation is now author-aware: only the original reporter's messages count as bug info; anyone may still chime in, and the bot stays silent toward non-reporters unless a mod @-mentions it.
+- Triage conversation is now author-aware: only the original reporter's messages count as bug info; anyone may still chime in, and the bot stays silent toward non-reporters (mods, bystanders) so their chatter doesn't pollute the ticket.
 - Pokedex identifies itself as a bot on its first message, asks at most three one-at-a-time questions, never asks the user to self-diagnose, and exits to file the report on frustration signals.
 
 ### Internal
