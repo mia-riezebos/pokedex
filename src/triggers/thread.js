@@ -11,6 +11,8 @@ const { resolveAuthorRole } = require('../services/authorRole');
 const pendingUpdates = new Map();
 const DEBOUNCE_MS = 5000;
 
+const IDENTITY_DISCLOSURE = "I'm pokedex, an automated bot that collects bug details for the engineering team. I'm not support — I'll ask 1–3 quick questions, then file your report. A human follows up from there.";
+
 // Rate-limit state: per-thread reply timestamps
 const replyHistory = new Map(); // threadId -> [timestamps]
 
@@ -39,6 +41,11 @@ async function runThreadDecision({ role, issue, issueId, frustration, evaluation
   const decision = decideThreadAction({ role, issue, frustration, evaluation });
   switch (decision.action) {
     case 'file':
+      if (!issue.identityDisclosed) {
+        await deps.firestore.setIdentityDisclosed(issueId);
+        const fileSender = deps.fileSend || deps.send;
+        if (fileSender) await fileSender(IDENTITY_DISCLOSURE);
+      }
       await deps.fileIssue(deps.guild, issue, issueId, evaluation, { thread: { send: deps.fileSend || deps.send }, firestore: deps.firestore });
       return decision;
     case 'ask':
@@ -89,6 +96,12 @@ async function handleThreadMessage(message) {
     try {
       const updatedIssue = await firestore.getIssueByThreadId(threadId);
       if (!updatedIssue) return;
+
+      // Triage signals (turn cap, frustration, sufficiency, reclassify, triageUpdate)
+      // are driven by OP messages only. Non-OP chatter is still recorded in the
+      // thread context (already appended above) but doesn't trigger an LLM call.
+      const triggerRole = resolveAuthorRole(message, updatedIssue);
+      if (triggerRole !== 'OP') return;
 
       // Gather recent thread messages (cap 500).
       const allMessages = [];
@@ -183,4 +196,4 @@ async function handleThreadMessage(message) {
   return true; // Signal that this was an issue thread — don't create a new issue
 }
 
-module.exports = { handleThreadMessage, canBotReplyInThread, _reset, shouldAutoResolve, runThreadDecision };
+module.exports = { handleThreadMessage, canBotReplyInThread, _reset, shouldAutoResolve, runThreadDecision, IDENTITY_DISCLOSURE };

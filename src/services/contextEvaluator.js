@@ -273,6 +273,14 @@ async function fileIssue(guild, issue, issueId, evaluation, deps = {}) {
       console.warn(`fileIssue: child issue ${childId} created but its number could not be read back; it will be missing from the receipt`);
     }
     realNumbers.push(childDoc && childDoc.number);
+    // Post a triage embed for the child so split tickets are visible to triage.
+    try {
+      const childForEmbed = childDoc || child;
+      const childMsgId = await postIssueEmbed(guild, childForEmbed, childId);
+      if (childMsgId) await fs.updateIssueTriageMessageId(childId, childMsgId);
+    } catch (err) {
+      console.error(`fileIssue: failed to post triage embed for child ${childId}:`, err.message);
+    }
   }
 
   // Re-render receipt with actual numbers.

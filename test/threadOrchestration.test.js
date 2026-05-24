@@ -55,4 +55,22 @@ describe('runThreadDecision', () => {
     assert.equal(d.calls.filed, 0);
     assert.equal(d.calls.incremented, 0);
   });
+
+  test('file path discloses identity and posts receipt when not yet disclosed', async () => {
+    const d = deps();
+    d.fileSend = async (c) => { d.calls.sent.push(c); };
+    await runThreadDecision({
+      role: 'OP',
+      issue: { questionTurns: 0, identityDisclosed: false },
+      issueId: 'i1',
+      frustration: { frustrated: true, signal: 'ridiculous' },
+      evaluation: { responseMode: 'reply', reply: '', askedQuestion: false, contextFields: {}, distinctBugs: [] },
+      deps: d,
+    });
+    assert.equal(d.calls.disclosed, 1, 'identityDisclosed flag set');
+    assert.equal(d.calls.filed, 1, 'fileIssue invoked');
+    // disclosure line was posted via fileSend before filing
+    const { IDENTITY_DISCLOSURE } = require('../src/triggers/thread');
+    assert.ok(d.calls.sent.some(s => String(s).includes("automated bot")), 'identity line sent');
+  });
 });
