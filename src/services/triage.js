@@ -73,7 +73,7 @@ function buildIssueEmbed(issue, issueId) {
       { name: 'Reporter', value: issue.reporterName || 'unknown', inline: true },
       { name: 'Reasoning', value: issue.reasoning || '(no reasoning provided)' },
     )
-    .setFooter({ text: `Issue ID: ${issueId}` })
+    .setFooter({ text: issue.number ? `Ticket #${issue.number} | Issue ID: ${issueId}` : `Issue ID: ${issueId}` })
     .setTimestamp();
 
   if (issue.assigneeName) {

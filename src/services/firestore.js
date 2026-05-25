@@ -21,9 +21,22 @@ async function isDuplicate(messageId) {
   return !snapshot.empty;
 }
 
+async function allocateIssueNumber(database = db) {
+  const ref = database.collection('counters').doc('issues');
+  return database.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const current = snap.exists ? (snap.data().next ?? 0) : 0;
+    const next = current + 1;
+    tx.set(ref, { next });
+    return next;
+  });
+}
+
 async function saveIssue(issueData) {
+  const number = await allocateIssueNumber();
   const docRef = await db.collection('issues').add({
     ...issueData,
+    number,
     status: 'open',
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
@@ -480,6 +493,38 @@ async function updateGap(normalizedKey, fields) {
   await db.collection('capability_gaps').doc(normalizedKey).update(fields);
 }
 
+// --- Per-thread exclusion helpers ---
+
+async function addExcludedMessageIds(issueId, ids) {
+  await db.collection('issues').doc(issueId).update({
+    excludedMessageIds: admin.firestore.FieldValue.arrayUnion(...ids),
+  });
+}
+
+async function setExcludeMode(issueId, userId, on) {
+  await db.collection('issues').doc(issueId).update({
+    excludeModeUserIds: on
+      ? admin.firestore.FieldValue.arrayUnion(userId)
+      : admin.firestore.FieldValue.arrayRemove(userId),
+  });
+}
+
+async function clearExclusions(issueId) {
+  await db.collection('issues').doc(issueId).update({ excludedMessageIds: [], excludeModeUserIds: [] });
+}
+
+// --- Context-evaluator helpers ---
+
+async function incrementQuestionTurns(issueId) {
+  await db.collection('issues').doc(issueId).update({
+    questionTurns: admin.firestore.FieldValue.increment(1),
+  });
+}
+
+async function setIdentityDisclosed(issueId) {
+  await db.collection('issues').doc(issueId).update({ identityDisclosed: true });
+}
+
 // --- Feedback (public website) ---
 
 async function saveFeedback(feedbackData) {
@@ -510,6 +555,7 @@ async function getPublishedFeedback(limit = 200) {
 module.exports = {
   init,
   isDuplicate,
+  allocateIssueNumber,
   saveIssue,
   getIssuesSince,
   getAllConfigOverrides,
@@ -551,4 +597,9 @@ module.exports = {
   getGapByKey,
   createGap,
   updateGap,
+  incrementQuestionTurns,
+  setIdentityDisclosed,
+  addExcludedMessageIds,
+  setExcludeMode,
+  clearExclusions,
 };

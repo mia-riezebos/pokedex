@@ -2,11 +2,46 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.10.1',
+    date: '2026-05-25',
+    headline: 'Fixed a broken Approve button on MCP reports.',
+    sections: {
+      fixed: [
+        'Fixed the **Approve** button on MCP-reported issues — it was failing with "Failed to process MCP issue." and never moving the report into triage. Decline was unaffected.',
+      ],
+    },
+  },
+  {
+    version: '2.10.0',
+    date: '2026-05-22',
+    headline: 'Smarter, calmer bug triage.',
+    sections: {
+      new: [
+        'New **`/exclude`** command (`last N`, `on`, `off`, `status`, `clear`) and right-click **Exclude from Pokedex** message action — keep mod or bystander chatter out of a report\'s context',
+        'Every issue now gets a **sequential ticket number** (`#1234`), including MCP-reported ones — shown in triage embeds and the closing receipt',
+        'Reports with **two distinct bugs** are now **split into separate tickets**, each with its own number and triage embed',
+        'Every filed report ends with a **structured receipt** so the reporter knows what the team will see',
+      ],
+      changed: [
+        'Pokedex now **says it\'s a bot up front**, asks **at most 3 one-at-a-time questions**, and **files early** when it has enough info or senses frustration',
+        'Triage is **author-aware** — only the original reporter\'s messages count as bug info; anyone can still chime in, and Pokedex stays silent toward non-reporters',
+        'Pokedex no longer runs the AI on non-reporter messages, cutting wasted cost and stopping bystander chatter from rewriting the triage embed',
+      ],
+      internal: [
+        'Code-enforced question-turn counter, regex frustration classifier, structured sufficiency extraction',
+        'Sequential-counter Firestore transaction shared between the bot and the MCP package',
+      ],
+    },
+  },
+  {
     version: '2.9.1',
     date: '2026-05-21',
-    changes: [
-      'Fixed the **Approve** button on MCP-reported issues — it was failing with "Failed to process MCP issue." and never moving the report into triage. Decline was unaffected.',
-    ],
+    headline: 'Fixed a broken Approve button on MCP reports.',
+    sections: {
+      fixed: [
+        'Fixed the **Approve** button on MCP-reported issues — it was failing with "Failed to process MCP issue." and never moving the report into triage. Decline was unaffected.',
+      ],
+    },
   },
   {
     version: '2.9.0',
@@ -390,6 +425,86 @@ const CHANGELOG = [
 
 const TOTAL_PAGES = CHANGELOG.length;
 
+const MONTH_NAMES = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+];
+
+const FIELD_LIMIT = 1024;
+
+/**
+ * Truncate a string to at most `limit` characters. If truncation occurs,
+ * the last line is replaced with a single `…` character so the result is
+ * clearly incomplete but still well-formed.
+ */
+function truncateField(text, limit = FIELD_LIMIT) {
+  if (text.length <= limit) return text;
+  // Walk backwards through lines, dropping them until we fit.
+  const lines = text.split('\n');
+  while (lines.length > 0 && lines.join('\n').length + 1 > limit) {
+    lines.pop();
+  }
+  // Replace the last kept line with an ellipsis indicator.
+  if (lines.length > 0) {
+    lines[lines.length - 1] = '…';
+  } else {
+    return '…';
+  }
+  const result = lines.join('\n');
+  // Safety guard — should never happen, but ensure we never exceed the limit.
+  return result.length <= limit ? result : '…';
+}
+
+/**
+ * Pure helper that normalises a CHANGELOG entry into the shape the embed
+ * builder expects.
+ *
+ * @param {object} entry  A CHANGELOG entry (new sections shape or legacy changes array).
+ * @returns {{ version: string, dateStr: string, headline: string|null, sectionFields: Array<{name: string, value: string}> }}
+ */
+function normalizeEntry(entry) {
+  // Parse dateStr
+  let dateStr = entry.date || '';
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(entry.date || '');
+  if (match) {
+    const year = parseInt(match[1], 10);
+    const month = parseInt(match[2], 10); // 1-based
+    const monthName = MONTH_NAMES[month - 1] || '';
+    if (monthName) {
+      dateStr = `${monthName} ${year}`;
+    }
+  }
+
+  const headline = entry.headline || null;
+
+  const sectionFields = [];
+
+  const s = entry.sections;
+  if (s && typeof s === 'object') {
+    const sectionDefs = [
+      { key: 'new', label: '✨ New' },
+      { key: 'changed', label: '🔧 Changed' },
+      { key: 'fixed', label: '🐛 Fixed' },
+      { key: 'internal', label: '🛠️ Internal' },
+    ];
+    for (const { key, label } of sectionDefs) {
+      const items = s[key];
+      if (Array.isArray(items) && items.length > 0) {
+        const raw = items.map(c => `• ${c}`).join('\n');
+        sectionFields.push({ name: label, value: truncateField(raw) });
+      }
+    }
+  }
+
+  // Fall back to legacy `changes` array when no sections were emitted
+  if (sectionFields.length === 0 && Array.isArray(entry.changes) && entry.changes.length > 0) {
+    const raw = entry.changes.map(c => `• ${c}`).join('\n');
+    sectionFields.push({ name: '📝 What changed', value: truncateField(raw) });
+  }
+
+  return { version: entry.version, dateStr, headline, sectionFields };
+}
+
 const commandData = new SlashCommandBuilder()
   .setName('changelog')
   .setDescription('See what\'s new in Pokedex')
@@ -403,32 +518,28 @@ function buildChangelogPage(page) {
   const entry = CHANGELOG[page];
   if (!entry) return null;
 
+  const { version, dateStr, headline, sectionFields } = normalizeEntry(entry);
+
   const embed = new EmbedBuilder()
-    .setTitle(`Pokedex Changelog — v${entry.version}`)
+    .setTitle(`v${version} · ${dateStr}`)
     .setColor(0x5865f2);
 
-  const FIELD_LIMIT = 1024;
-  const bullets = entry.changes.map(c => `• ${c}`);
-  const chunks = [];
-  let current = '';
+  if (headline) {
+    embed.setDescription(`**${headline}**`);
+  }
 
-  for (const bullet of bullets) {
-    const candidate = current ? current + '\n' + bullet : bullet;
-    if (candidate.length > FIELD_LIMIT) {
-      if (current) chunks.push(current);
-      current = bullet;
+  // Legacy entries may produce multi-chunk fields when bullets overflow 1024
+  // chars. We handle that here by splitting only legacy (📝 What changed)
+  // fields at bullet boundaries, mirroring the old behaviour.
+  for (const field of sectionFields) {
+    if (field.value.length <= FIELD_LIMIT) {
+      embed.addFields({ name: field.name, value: field.value });
     } else {
-      current = candidate;
+      // Shouldn't normally reach here since normalizeEntry truncates, but
+      // guard anyway.
+      embed.addFields({ name: field.name, value: field.value.slice(0, FIELD_LIMIT) });
     }
   }
-  if (current) chunks.push(current);
-
-  chunks.forEach((chunk, i) => {
-    embed.addFields({
-      name: i === 0 ? entry.date : '\u200b',
-      value: chunk,
-    });
-  });
 
   embed.setFooter({ text: `Page ${page + 1} of ${TOTAL_PAGES} • Pokedex v${CHANGELOG[0].version}` });
   return embed;
@@ -489,4 +600,4 @@ async function handleChangelogButton(interaction) {
   await interaction.update({ embeds: [embed], components: [buttons] });
 }
 
-module.exports = { data: commandData, execute, handleChangelogButton };
+module.exports = { data: commandData, execute, handleChangelogButton, normalizeEntry };

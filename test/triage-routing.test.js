@@ -43,4 +43,15 @@ describe('triage-routing', () => {
     const out = findTriageChannel(guild);
     assert.equal(out?.name, 'eng-triage');
   });
+
+  test('issue embed footer shows #number when present', () => {
+    const { buildIssueEmbed } = require('../src/services/triage');
+    const embed = buildIssueEmbed({ summary: 's', priority: 'low', category: 'bug', reporterName: 'a', reasoning: 'r', number: 42 }, 'doc123');
+    assert.match(embed.toJSON().footer.text, /#42/);
+  });
+  test('issue embed footer falls back to issue id without a number', () => {
+    const { buildIssueEmbed } = require('../src/services/triage');
+    const embed = buildIssueEmbed({ summary: 's', priority: 'low', category: 'bug', reporterName: 'a', reasoning: 'r' }, 'doc123');
+    assert.match(embed.toJSON().footer.text, /doc123/);
+  });
 });
