@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.10.1] - 2026-05-25
+
+### Fixed
+- MCP **Approve** button now works. Approving a pending MCP-reported issue threw "Failed to process MCP issue." because the triage message was sent with double-nested `components` (`[buildTriageButtons()]` instead of `buildTriageButtons()`); Discord couldn't serialize it. Decline was unaffected because it never posts to triage.
+
 ## [2.10.0] - 2026-05-22
 
 ### Added
