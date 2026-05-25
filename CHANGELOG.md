@@ -1,5 +1,20 @@
 # Changelog
 
+## [2.10.0] - 2026-05-22
+
+### Added
+- `/exclude` command (`last N`, `on`, `off`, `status`, `clear`) and a right-click **Exclude from Pokedex** message action — keep mod/bystander chatter out of a report's context.
+- Sequential ticket numbers (`#1234`) on every issue, including MCP-reported ones; shown in triage embeds and the closing receipt.
+- Structured closing receipt so the reporter knows a ticket was filed and what the team will see.
+- Multi-bug splitting — distinct bugs in one thread become separate tickets.
+
+### Changed
+- Triage conversation is now author-aware: only the original reporter's messages count as bug info; anyone may still chime in, and the bot stays silent toward non-reporters (mods, bystanders) so their chatter doesn't pollute the ticket.
+- Pokedex identifies itself as a bot on its first message, asks at most three one-at-a-time questions, never asks the user to self-diagnose, and exits to file the report on frustration signals.
+
+### Internal
+- Code-enforced question-turn counter, regex frustration classifier, structured sufficiency extraction, and a sequential-counter Firestore transaction.
+
 ## [2.9.0] - 2026-04-25
 
 ### Added

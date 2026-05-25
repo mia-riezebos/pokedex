@@ -35,6 +35,8 @@ const CATEGORIES = {
       '**@Pokedex** — mention with a description',
       '**React 🐛** — flag a message as a bug',
       '**React 💡** — submit a suggestion',
+      '`/exclude last <n>|on|off|status|clear` — keep messages out of Pokedex\'s context',
+      'Right-click a message → Apps → **Exclude from Pokedex** — exclude one message',
     ],
   },
   mod: {
