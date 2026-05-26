@@ -56,6 +56,24 @@ describe('runThreadDecision', () => {
     assert.equal(d.calls.incremented, 0);
   });
 
+  test('file via turn-cap sends the /addcontext notice before filing', async () => {
+    const d = deps();
+    d.fileSend = async (c) => { d.calls.sent.push(c); };
+    await runThreadDecision({
+      role: 'OP',
+      issue: { questionTurns: 3, identityDisclosed: true },
+      issueId: 'i1',
+      frustration: { frustrated: false },
+      evaluation: { responseMode: 'reply', reply: '', askedQuestion: false, contextFields: {}, distinctBugs: [] },
+      deps: d,
+    });
+    assert.equal(d.calls.filed, 1);
+    assert.ok(
+      d.calls.sent.some(s => String(s).includes('/addcontext')),
+      'expected the turn-cap notice (mentioning /addcontext) to be sent',
+    );
+  });
+
   test('file path discloses identity and posts receipt when not yet disclosed', async () => {
     const d = deps();
     d.fileSend = async (c) => { d.calls.sent.push(c); };

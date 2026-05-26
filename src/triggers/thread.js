@@ -6,6 +6,7 @@ const { evaluateContext, processEvaluation, buildConversationHistory, processCon
 const { decideThreadAction } = require('../services/threadDecision');
 const { detectFrustration } = require('../services/frustration');
 const { resolveAuthorRole } = require('../services/authorRole');
+const { buildTurnCapNotice } = require('../services/receipt');
 
 // Debounce map — wait a bit in case the user sends multiple messages quickly
 const pendingUpdates = new Map();
@@ -40,14 +41,22 @@ function shouldAutoResolve(evaluation, messageAuthorId, reporterId) {
 async function runThreadDecision({ role, issue, issueId, frustration, evaluation, deps }) {
   const decision = decideThreadAction({ role, issue, frustration, evaluation });
   switch (decision.action) {
-    case 'file':
+    case 'file': {
+      const fileSender = deps.fileSend || deps.send;
       if (!issue.identityDisclosed) {
         await deps.firestore.setIdentityDisclosed(issueId);
-        const fileSender = deps.fileSend || deps.send;
         if (fileSender) await fileSender(IDENTITY_DISCLOSURE);
       }
-      await deps.fileIssue(deps.guild, issue, issueId, evaluation, { thread: { send: deps.fileSend || deps.send }, firestore: deps.firestore });
+      // Tell the reporter the question loop is over and where to add more later.
+      // Only fires when the loop stopped because we hit the question cap — other
+      // file reasons (sufficient info, frustration, model decision) get the
+      // structured receipt by itself.
+      if (decision.reason === 'turn-cap' && fileSender) {
+        await fileSender(buildTurnCapNotice());
+      }
+      await deps.fileIssue(deps.guild, issue, issueId, evaluation, { thread: { send: fileSender }, firestore: deps.firestore });
       return decision;
+    }
     case 'ask':
       // Bookkeeping only: the visible identity line is produced by the LLM prompt
       // (it discloses when no [BOT] line exists yet). This flag is for audit/dashboards.

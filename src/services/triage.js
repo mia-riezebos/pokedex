@@ -53,7 +53,10 @@ function buildIssueEmbed(issue, issueId) {
   const isSelf = issue?.target === 'pokedex_bot';
   const priority = issue.priority || 'unclassified';
   const color = isSelf ? 0x8b5cf6 : (PRIORITY_COLORS[priority] ?? 0x808080);
-  const titlePrefix = isSelf ? '[Pokedex self] ' : '';
+  const selfPrefix = isSelf ? '[Pokedex self] ' : '';
+  // isFinite excludes NaN/Infinity/string — only real ticket numbers get the prefix.
+  const hasNumber = Number.isFinite(issue.number);
+  const numberPrefix = hasNumber ? `#${issue.number} — ` : '';
 
   const hasOriginalMessageLink = issue.guildId
     && issue.channelId
@@ -65,7 +68,7 @@ function buildIssueEmbed(issue, issueId) {
     : null;
 
   const embed = new EmbedBuilder()
-    .setTitle(`${titlePrefix}${issue.summary || '(no summary)'}`)
+    .setTitle(`${numberPrefix}${selfPrefix}${issue.summary || '(no summary)'}`)
     .setColor(color)
     .addFields(
       { name: 'Priority', value: priority, inline: true },
@@ -73,7 +76,7 @@ function buildIssueEmbed(issue, issueId) {
       { name: 'Reporter', value: issue.reporterName || 'unknown', inline: true },
       { name: 'Reasoning', value: issue.reasoning || '(no reasoning provided)' },
     )
-    .setFooter({ text: issue.number ? `Ticket #${issue.number} | Issue ID: ${issueId}` : `Issue ID: ${issueId}` })
+    .setFooter({ text: hasNumber ? `Ticket #${issue.number} | Issue ID: ${issueId}` : `Issue ID: ${issueId}` })
     .setTimestamp();
 
   if (issue.assigneeName) {
@@ -106,6 +109,22 @@ function buildIssueEmbed(issue, issueId) {
     embed.addFields({ name: '✅ Context Complete', value: 'Enough info for a developer to investigate' });
   } else if (issue.source === 'forum' && issue.contextComplete !== true) {
     embed.addFields({ name: '⏳ Gathering Context', value: 'Pokedex is talking to the reporter' });
+  }
+
+  if (Array.isArray(issue.additionalContext) && issue.additionalContext.length > 0) {
+    // Defensive: drop null/undefined entries (Firestore round-trips can leave holes).
+    const entries = issue.additionalContext.filter(e => e && typeof e === 'object');
+    if (entries.length > 0) {
+      // Show most recent first so the latest addition is always at the top.
+      const lines = [...entries].reverse().map(entry => {
+        const who = entry.authorName ? `**${entry.authorName}**` : '_someone_';
+        const text = String(entry.text || '').trim();
+        return `${who}: ${text}`;
+      });
+      let value = lines.join('\n');
+      if (value.length > 1024) value = `${value.slice(0, 1021)}…`;
+      embed.addFields({ name: '📝 Additional Context', value });
+    }
   }
 
   return embed;

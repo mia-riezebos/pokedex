@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.11.0] - 2026-05-25
+
+### Added
+- `/addcontext <text>` slash command and right-click **Add to Pokedex context** message action — add extra info to a filed report after Pokedex stops asking. Both append to the issue's `additionalContext` and refresh the triage embed in place.
+- `/backfill-numbers` admin slash command — assigns ticket #s to open issues that don't have one yet (using the same sequential counter) and re-renders their triage embeds.
+
+### Changed
+- Triage embed title now leads with the ticket # (`#1234 — <summary>`). Issue ID stays in the footer untouched, so existing links and lookups still work.
+- When Pokedex hits the 3-question cap, it now sends an explicit notice ("That's all the questions I'll ask — filing your report now. If you remember more later, run `/addcontext`…") before posting the closing receipt.
+
+### Internal
+- New `additionalContext: [{ text, authorId, authorName, addedAt, sourceMessageId }]` field on issue documents, rendered as a `📝 Additional Context` field in the triage embed (most-recent first, capped at 1024 chars).
+- `appendAdditionalContext` uses Firestore `arrayUnion` so two concurrent `/addcontext` calls cannot lose each other's writes.
+- Backfill uses a transactional set-if-missing that cannot overwrite a number assigned by a concurrent `saveIssue`. Race-lost candidates are counted as skipped, not assigned.
+- Triage-embed refresh now prefers `issue.triageChannelId` over channel-by-name lookup, so edits don't silently fail when the configured triage channel changes or the `pokedex_bot` fallback channel was used.
+- `addContextMessage` (right-click) now `deferReply`s up front so the interaction can survive normal latency on Firestore + Discord round-trips.
+- Defensive guards in `buildIssueEmbed`: skips null entries inside `additionalContext`, uses `Number.isFinite` so `NaN`/strings never produce `#NaN —` prefixes.
+- `numberList([])` returns `(no number)` instead of leaking `, and undefined` into receipts.
+- Extracted pure helpers: `buildTurnCapNotice` (receipt.js), `normalizeAdditionalContextText` / `buildTriageRefreshPayload` / `resolveTriageChannel` (addContext.js), and `backfillMissingIssueNumbers` (issueNumberBackfill.js). **221 node:test tests, all passing.**
+
 ## [2.10.1] - 2026-05-25
 
 ### Fixed

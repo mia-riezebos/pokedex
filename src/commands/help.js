@@ -37,6 +37,9 @@ const CATEGORIES = {
       '**React 💡** — submit a suggestion',
       '`/exclude last <n>|on|off|status|clear` — keep messages out of Pokedex\'s context',
       'Right-click a message → Apps → **Exclude from Pokedex** — exclude one message',
+      '`/addcontext <text>` — add extra context to a filed report (run in the thread)',
+      'Right-click a message → Apps → **Add to Pokedex context** — promote a message into the report',
+      '`/backfill-numbers` — admin: assign ticket #s to older open issues',
     ],
   },
   mod: {

@@ -2,6 +2,9 @@ const NA = '(not provided)';
 
 function numberList(numbers) {
   const tags = numbers.map(n => `#${n}`);
+  // Defensive: empty input would otherwise produce ", and undefined" — leak it
+  // straight into the user-facing receipt. Surface the unusual state plainly.
+  if (tags.length === 0) return '(no number)';
   if (tags.length === 1) return tags[0];
   if (tags.length === 2) return `${tags[0]} and ${tags[1]}`;
   return `${tags.slice(0, -1).join(', ')}, and ${tags[tags.length - 1]}`;
@@ -21,4 +24,14 @@ function buildReceipt(numbers, fields = {}) {
   ].join('\n');
 }
 
-module.exports = { buildReceipt, numberList };
+// Sent when the bot stops asking because it hit MAX_QUESTION_TURNS. Tells the
+// reporter that question-time is over and points them at /addcontext for
+// anything they remember afterward.
+function buildTurnCapNotice() {
+  return [
+    "That's all the questions I'll ask — filing your report now.",
+    'If you remember more later, run `/addcontext` in this thread (or right-click a message → **Add to Pokedex context**) and the team will see it.',
+  ].join('\n');
+}
+
+module.exports = { buildReceipt, numberList, buildTurnCapNotice };
