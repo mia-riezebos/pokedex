@@ -10,19 +10,26 @@ const data = new ContextMenuCommandBuilder()
   .setType(ApplicationCommandType.Message);
 
 async function execute(interaction) {
-  const thread = interaction.channel;
-  const issue = thread?.isThread?.() ? await firestore.getIssueByThreadId(thread.id) : null;
-  if (!issue) {
-    return interaction.reply({ content: 'Run this on a message inside a Pokedex issue thread.', ephemeral: true });
-  }
-
-  const target = interaction.targetMessage;
-  const text = normalizeAdditionalContextText(target?.content);
-  if (!text) {
-    return interaction.reply({ content: 'That message has no text to add.', ephemeral: true });
-  }
+  // Defer up front — every other path here makes at least one network call
+  // (Firestore read/update, channel.messages.fetch, message.edit) and Discord
+  // will time out the interaction without a deferred reply under normal latency.
+  await interaction.deferReply({ ephemeral: true });
 
   try {
+    const thread = interaction.channel;
+    const issue = thread?.isThread?.() ? await firestore.getIssueByThreadId(thread.id) : null;
+    if (!issue) {
+      await interaction.editReply({ content: 'Run this on a message inside a Pokedex issue thread.' });
+      return;
+    }
+
+    const target = interaction.targetMessage;
+    const text = normalizeAdditionalContextText(target?.content);
+    if (!text) {
+      await interaction.editReply({ content: 'That message has no text to add.' });
+      return;
+    }
+
     const updated = await firestore.appendAdditionalContext(issue.id, {
       text,
       authorId: target.author?.id || null,
@@ -31,15 +38,16 @@ async function execute(interaction) {
     });
 
     if (!updated) {
-      return interaction.reply({ content: 'Could not find the issue to update.', ephemeral: true });
+      await interaction.editReply({ content: 'Could not find the issue to update.' });
+      return;
     }
 
     const refreshed = await refreshTriageEmbedForIssue(interaction.guild, updated, updated.id);
     const tail = refreshed ? ' Triage embed updated.' : '';
-    return interaction.reply({ content: `Added that message to context.${tail}`, ephemeral: true });
+    await interaction.editReply({ content: `Added that message to context.${tail}` });
   } catch (err) {
     console.error('Add to Pokedex context failed:', err);
-    return interaction.reply({ content: 'Failed to add context.', ephemeral: true }).catch(() => {});
+    await interaction.editReply({ content: 'Failed to add context.' }).catch(() => {});
   }
 }
 

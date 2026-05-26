@@ -14,6 +14,9 @@ const CHANGELOG = [
       changed: [
         'Triage embed titles now lead with the ticket number: `#1234 — <summary>`. The `Issue ID` is unchanged and still in the footer',
       ],
+      internal: [
+        'Hardening: atomic `/addcontext` appends, transactional set-if-missing backfill, embed edits prefer the stored triage channel, and the right-click context-menu defers up front so the interaction never times out — covered by 221 passing unit tests',
+      ],
     },
   },
   {

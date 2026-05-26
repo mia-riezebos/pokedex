@@ -495,6 +495,9 @@ async function updateGap(normalizedKey, fields) {
 
 // --- Backfill / additional-context helpers ---
 
+// Scans all open issues and filters in memory. Fine at our scale (hundreds of
+// open issues at most). If this grows past ~5k docs, add a paged scan or a
+// queryable `hasNumber` flag.
 async function listOpenIssuesMissingNumbers() {
   const snapshot = await db.collection('issues')
     .where('status', '==', 'open')
@@ -504,10 +507,29 @@ async function listOpenIssuesMissingNumbers() {
     .filter(doc => typeof doc.number !== 'number');
 }
 
-async function setIssueNumber(issueId, number) {
-  await db.collection('issues').doc(issueId).update({ number });
+// Transactional set-if-missing. Returns true if this call wrote the number,
+// false if the doc was missing OR another writer (e.g. concurrent saveIssue)
+// already assigned one. Caller can drop the wasted counter value.
+async function setIssueNumberIfMissing(issueId, number) {
+  const ref = db.collection('issues').doc(issueId);
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    if (!snap.exists) return false;
+    if (typeof snap.data().number === 'number') return false;
+    tx.update(ref, { number });
+    return true;
+  });
 }
 
+// Atomic-append using arrayUnion so two concurrent /addcontext callers can't
+// lose each other's writes. Each stored entry gets a unique addedAt ISO
+// timestamp so arrayUnion's value-equality dedup does not collapse rapid
+// successive appends (collisions would need to land in the same millisecond
+// with identical author and text — vanishingly rare).
+//
+// Note: the additionalContext array is stored inline on the issue document.
+// At ~1KB per entry, the 1MB doc limit is ~1000 entries away; well past our
+// expected use. If this becomes a concern, move to a subcollection.
 async function appendAdditionalContext(issueId, entry) {
   const stored = {
     text: String(entry.text || '').trim(),
@@ -517,13 +539,17 @@ async function appendAdditionalContext(issueId, entry) {
     sourceMessageId: entry.sourceMessageId || null,
   };
   const docRef = db.collection('issues').doc(issueId);
-  const doc = await docRef.get();
-  if (!doc.exists) return null;
-  const data = doc.data();
-  const list = Array.isArray(data.additionalContext) ? [...data.additionalContext] : [];
-  list.push(stored);
-  await docRef.update({ additionalContext: list });
-  return { id: doc.id, ...data, additionalContext: list };
+  await docRef.update({
+    additionalContext: admin.firestore.FieldValue.arrayUnion(stored),
+  }).catch(err => {
+    // update() rejects with NOT_FOUND (code 5) if the doc doesn't exist —
+    // surface null rather than throwing so the caller can show "not found".
+    if (err?.code === 5) return null;
+    throw err;
+  });
+  const fresh = await docRef.get();
+  if (!fresh.exists) return null;
+  return { id: fresh.id, ...fresh.data() };
 }
 
 // --- Per-thread exclusion helpers ---
@@ -636,6 +662,6 @@ module.exports = {
   setExcludeMode,
   clearExclusions,
   listOpenIssuesMissingNumbers,
-  setIssueNumber,
+  setIssueNumberIfMissing,
   appendAdditionalContext,
 };

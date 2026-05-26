@@ -5,10 +5,16 @@
  *
  * Expected api shape:
  *   listOpenIssuesMissingNumbers(): Promise<{ id, number?, ... }[]>
- *   allocateIssueNumber(): Promise<number>      // shared counter, monotonic
- *   setIssueNumber(id, number): Promise<void>
+ *   allocateIssueNumber():          Promise<number>          // shared counter
+ *   setIssueNumberIfMissing(id, n): Promise<boolean>         // true if written;
+ *                                                            // false if doc gone
+ *                                                            // OR another writer
+ *                                                            // assigned a number
+ *                                                            // first (race lost)
  *
  * Returns { assigned: [{ issueId, number }], skipped: number }
+ *   `skipped` counts candidates that were filtered out by the typeof check
+ *   plus candidates whose setIssueNumberIfMissing returned false (race-lost).
  */
 async function backfillMissingIssueNumbers(api) {
   const candidates = await api.listOpenIssuesMissingNumbers();
@@ -16,8 +22,8 @@ async function backfillMissingIssueNumbers(api) {
   for (const doc of candidates) {
     if (typeof doc.number === 'number') continue;
     const number = await api.allocateIssueNumber();
-    await api.setIssueNumber(doc.id, number);
-    assigned.push({ issueId: doc.id, number });
+    const ok = await api.setIssueNumberIfMissing(doc.id, number);
+    if (ok) assigned.push({ issueId: doc.id, number });
   }
   return { assigned, skipped: candidates.length - assigned.length };
 }

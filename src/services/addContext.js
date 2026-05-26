@@ -16,9 +16,22 @@ function buildTriageRefreshPayload(issue, issueId) {
   return { embeds: [embed] };
 }
 
+// Prefer the channel that actually holds the message (issue.triageChannelId)
+// over the configured triage channel. Configured channels can change between
+// posting and editing, and `pokedex_bot` issues may have used the eng-triage
+// fallback — in either case findTriageChannel would point at the wrong place
+// and the edit would silently fail.
+async function resolveTriageChannel(guild, issue) {
+  const stored = issue.triageChannelId
+    ? guild?.channels?.cache?.get?.(issue.triageChannelId)
+    : null;
+  if (stored && stored.isTextBased?.()) return stored;
+  return findTriageChannel(guild, issue.target);
+}
+
 async function refreshTriageEmbedForIssue(guild, issue, issueId) {
   if (!issue.triageMessageId) return false;
-  const channel = findTriageChannel(guild, issue.target);
+  const channel = await resolveTriageChannel(guild, issue);
   if (!channel) return false;
   try {
     const msg = await channel.messages.fetch(issue.triageMessageId);
@@ -34,4 +47,5 @@ module.exports = {
   normalizeAdditionalContextText,
   buildTriageRefreshPayload,
   refreshTriageEmbedForIssue,
+  resolveTriageChannel,
 };

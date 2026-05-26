@@ -25,13 +25,16 @@ function makeApi({ docs, startCounter = 0, throwOn = {} } = {}) {
         counter += 1;
         return counter;
       },
-      async setIssueNumber(id, number) {
+      async setIssueNumberIfMissing(id, number) {
         log.sets += 1;
         if (throwOn.setAt && log.sets === throwOn.setAt) {
           throw new Error('boom: set');
         }
         const doc = store.get(id);
-        if (doc) doc.number = number;
+        if (!doc) return false;
+        if (typeof doc.number === 'number') return false;
+        doc.number = number;
+        return true;
       },
     },
   };
@@ -146,16 +149,55 @@ describe('backfillMissingIssueNumbers — failure paths', () => {
       async allocateIssueNumber() {
         inFlight.current += 1;
         inFlight.max = Math.max(inFlight.max, inFlight.current);
-        // simulate small async work
         await new Promise(r => setImmediate(r));
         counter += 1;
         inFlight.current -= 1;
         return counter;
       },
-      async setIssueNumber() {},
+      async setIssueNumberIfMissing() { return true; },
     };
     const result = await backfillMissingIssueNumbers(api);
     assert.equal(result.assigned.length, 10);
     assert.equal(inFlight.max, 1, 'allocations must be strictly sequential');
+  });
+});
+
+describe('backfillMissingIssueNumbers — race-lost handling', () => {
+  test('every doc races and loses → assigned is empty, all counted as skipped', async () => {
+    const docs = Array.from({ length: 5 }, (_, i) => ({ id: `i${i}`, status: 'open' }));
+    const { api } = makeApi({ docs });
+    api.setIssueNumberIfMissing = async () => false;
+    const result = await backfillMissingIssueNumbers(api);
+    assert.deepEqual(result.assigned, []);
+    assert.equal(result.skipped, 5, 'all 5 candidates were race-lost');
+  });
+
+  test('mixed: some race-lost, some successful', async () => {
+    const docs = [
+      { id: 'a', status: 'open' },
+      { id: 'b', status: 'open' },
+      { id: 'c', status: 'open' },
+    ];
+    const { api } = makeApi({ docs });
+    // 'b' races and loses; 'a' and 'c' succeed.
+    const realSet = api.setIssueNumberIfMissing;
+    api.setIssueNumberIfMissing = async (id, n) => {
+      if (id === 'b') return false;
+      return realSet(id, n);
+    };
+    const result = await backfillMissingIssueNumbers(api);
+    assert.equal(result.assigned.length, 2);
+    assert.ok(result.assigned.every(a => a.issueId !== 'b'));
+    assert.equal(result.skipped, 1, 'b is the one race-lost skip');
+  });
+
+  test('counter advances for race-lost docs (wasted allocations are acceptable)', async () => {
+    const docs = [{ id: 'a', status: 'open' }, { id: 'b', status: 'open' }];
+    const { api, log } = makeApi({ docs, startCounter: 0 });
+    let setAttempts = 0;
+    api.setIssueNumberIfMissing = async () => { setAttempts += 1; return false; };
+    await backfillMissingIssueNumbers(api);
+    assert.equal(log.allocations, 2, 'both candidates got an allocation even though both lost');
+    assert.equal(setAttempts, 2, 'both candidates attempted the if-missing write');
   });
 });

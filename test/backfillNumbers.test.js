@@ -16,9 +16,12 @@ function makeFakeDb(initialDocs, initialCounter = 0) {
         counter += 1;
         return counter;
       },
-      async setIssueNumber(id, number) {
+      async setIssueNumberIfMissing(id, number) {
         const doc = docs.get(id);
-        if (doc) doc.number = number;
+        if (!doc) return false;
+        if (typeof doc.number === 'number') return false;
+        doc.number = number;
+        return true;
       },
     },
   };
@@ -56,5 +59,16 @@ describe('backfillMissingIssueNumbers', () => {
     ]);
     const result = await backfillMissingIssueNumbers(api);
     assert.deepEqual(result.assigned, []);
+  });
+
+  test('race-lost docs (setIssueNumberIfMissing returns false) are skipped, not assigned', async () => {
+    // Simulate: list says doc 'a' is missing a number, but by the time we try
+    // to set it, another writer has assigned one. The transactional helper
+    // returns false; backfill must not include it in `assigned`.
+    const { api } = makeFakeDb([{ id: 'a', status: 'open' }], 100);
+    api.setIssueNumberIfMissing = async () => false; // always race-lost
+    const result = await backfillMissingIssueNumbers(api);
+    assert.deepEqual(result.assigned, []);
+    assert.equal(result.skipped, 1);
   });
 });

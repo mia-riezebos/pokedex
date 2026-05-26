@@ -1,27 +1,12 @@
 const { SlashCommandBuilder, PermissionFlagsBits } = require('discord.js');
 const firestore = require('../services/firestore');
 const { backfillMissingIssueNumbers } = require('../services/issueNumberBackfill');
-const { buildIssueEmbed, findTriageChannel } = require('../services/triage');
+const { refreshTriageEmbedForIssue } = require('../services/addContext');
 
 const data = new SlashCommandBuilder()
   .setName('backfill-numbers')
   .setDescription('Assign ticket #s to open issues that don\'t have one yet (admin)')
   .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild);
-
-async function refreshTriageEmbed(guild, issue, issueId) {
-  if (!issue.triageMessageId) return false;
-  const channel = findTriageChannel(guild, issue.target);
-  if (!channel) return false;
-  try {
-    const msg = await channel.messages.fetch(issue.triageMessageId);
-    const embed = buildIssueEmbed(issue, issueId);
-    embed.setTimestamp();
-    await msg.edit({ embeds: [embed] });
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 async function execute(interaction) {
   await interaction.deferReply({ ephemeral: true });
@@ -30,7 +15,7 @@ async function execute(interaction) {
     const api = {
       listOpenIssuesMissingNumbers: firestore.listOpenIssuesMissingNumbers,
       allocateIssueNumber: () => firestore.allocateIssueNumber(),
-      setIssueNumber: firestore.setIssueNumber,
+      setIssueNumberIfMissing: firestore.setIssueNumberIfMissing,
     };
     const { assigned } = await backfillMissingIssueNumbers(api);
 
@@ -40,7 +25,9 @@ async function execute(interaction) {
       try {
         const issue = await firestore.getIssueById(issueId);
         if (!issue) continue;
-        const ok = await refreshTriageEmbed(interaction.guild, { ...issue, number }, issueId);
+        // Use the shared helper so the edit prefers issue.triageChannelId and
+        // the embed shape stays consistent with /addcontext.
+        const ok = await refreshTriageEmbedForIssue(interaction.guild, { ...issue, number }, issueId);
         if (ok) refreshed += 1;
         else failedEdits += 1;
       } catch (err) {
