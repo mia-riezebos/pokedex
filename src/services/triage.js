@@ -54,7 +54,9 @@ function buildIssueEmbed(issue, issueId) {
   const priority = issue.priority || 'unclassified';
   const color = isSelf ? 0x8b5cf6 : (PRIORITY_COLORS[priority] ?? 0x808080);
   const selfPrefix = isSelf ? '[Pokedex self] ' : '';
-  const numberPrefix = typeof issue.number === 'number' ? `#${issue.number} — ` : '';
+  // isFinite excludes NaN/Infinity/string — only real ticket numbers get the prefix.
+  const hasNumber = Number.isFinite(issue.number);
+  const numberPrefix = hasNumber ? `#${issue.number} — ` : '';
 
   const hasOriginalMessageLink = issue.guildId
     && issue.channelId
@@ -74,7 +76,7 @@ function buildIssueEmbed(issue, issueId) {
       { name: 'Reporter', value: issue.reporterName || 'unknown', inline: true },
       { name: 'Reasoning', value: issue.reasoning || '(no reasoning provided)' },
     )
-    .setFooter({ text: typeof issue.number === 'number' ? `Ticket #${issue.number} | Issue ID: ${issueId}` : `Issue ID: ${issueId}` })
+    .setFooter({ text: hasNumber ? `Ticket #${issue.number} | Issue ID: ${issueId}` : `Issue ID: ${issueId}` })
     .setTimestamp();
 
   if (issue.assigneeName) {
@@ -110,17 +112,19 @@ function buildIssueEmbed(issue, issueId) {
   }
 
   if (Array.isArray(issue.additionalContext) && issue.additionalContext.length > 0) {
-    // Show most recent first so the latest addition is always at the top.
-    const lines = [...issue.additionalContext]
-      .reverse()
-      .map(entry => {
+    // Defensive: drop null/undefined entries (Firestore round-trips can leave holes).
+    const entries = issue.additionalContext.filter(e => e && typeof e === 'object');
+    if (entries.length > 0) {
+      // Show most recent first so the latest addition is always at the top.
+      const lines = [...entries].reverse().map(entry => {
         const who = entry.authorName ? `**${entry.authorName}**` : '_someone_';
         const text = String(entry.text || '').trim();
         return `${who}: ${text}`;
       });
-    let value = lines.join('\n');
-    if (value.length > 1024) value = `${value.slice(0, 1021)}…`;
-    embed.addFields({ name: '📝 Additional Context', value });
+      let value = lines.join('\n');
+      if (value.length > 1024) value = `${value.slice(0, 1021)}…`;
+      embed.addFields({ name: '📝 Additional Context', value });
+    }
   }
 
   return embed;
