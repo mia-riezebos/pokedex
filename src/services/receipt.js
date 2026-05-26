@@ -2,6 +2,9 @@ const NA = '(not provided)';
 
 function numberList(numbers) {
   const tags = numbers.map(n => `#${n}`);
+  // Defensive: empty input would otherwise produce ", and undefined" — leak it
+  // straight into the user-facing receipt. Surface the unusual state plainly.
+  if (tags.length === 0) return '(no number)';
   if (tags.length === 1) return tags[0];
   if (tags.length === 2) return `${tags[0]} and ${tags[1]}`;
   return `${tags.slice(0, -1).join(', ')}, and ${tags[tags.length - 1]}`;
