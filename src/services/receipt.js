@@ -21,4 +21,14 @@ function buildReceipt(numbers, fields = {}) {
   ].join('\n');
 }
 
-module.exports = { buildReceipt, numberList };
+// Sent when the bot stops asking because it hit MAX_QUESTION_TURNS. Tells the
+// reporter that question-time is over and points them at /addcontext for
+// anything they remember afterward.
+function buildTurnCapNotice() {
+  return [
+    "That's all the questions I'll ask — filing your report now.",
+    'If you remember more later, run `/addcontext` in this thread (or right-click a message → **Add to Pokedex context**) and the team will see it.',
+  ].join('\n');
+}
+
+module.exports = { buildReceipt, numberList, buildTurnCapNotice };

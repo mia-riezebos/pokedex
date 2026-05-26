@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.11.0] - 2026-05-25
+
+### Added
+- `/addcontext <text>` slash command and right-click **Add to Pokedex context** message action — add extra info to a filed report after Pokedex stops asking. Both append to the issue's `additionalContext` and refresh the triage embed in place.
+- `/backfill-numbers` admin slash command — assigns ticket #s to open issues that don't have one yet (using the same sequential counter) and re-renders their triage embeds.
+
+### Changed
+- Triage embed title now leads with the ticket # (`#1234 — <summary>`). Issue ID stays in the footer untouched, so existing links and lookups still work.
+- When Pokedex hits the 3-question cap, it now sends an explicit notice ("That's all the questions I'll ask — filing your report now. If you remember more later, run `/addcontext`…") before posting the closing receipt.
+
+### Internal
+- New `additionalContext: [{ text, authorId, authorName, addedAt, sourceMessageId }]` field on issue documents, rendered as a `📝 Additional Context` field in the triage embed (most-recent first, capped at 1024 chars).
+- Extracted pure helpers: `buildTurnCapNotice` (receipt.js), `normalizeAdditionalContextText` / `buildTriageRefreshPayload` (addContext.js), and `backfillMissingIssueNumbers` (issueNumberBackfill.js).
+
 ## [2.10.1] - 2026-05-25
 
 ### Fixed

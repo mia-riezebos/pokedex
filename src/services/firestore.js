@@ -493,6 +493,39 @@ async function updateGap(normalizedKey, fields) {
   await db.collection('capability_gaps').doc(normalizedKey).update(fields);
 }
 
+// --- Backfill / additional-context helpers ---
+
+async function listOpenIssuesMissingNumbers() {
+  const snapshot = await db.collection('issues')
+    .where('status', '==', 'open')
+    .get();
+  return snapshot.docs
+    .map(doc => ({ id: doc.id, ...doc.data() }))
+    .filter(doc => typeof doc.number !== 'number');
+}
+
+async function setIssueNumber(issueId, number) {
+  await db.collection('issues').doc(issueId).update({ number });
+}
+
+async function appendAdditionalContext(issueId, entry) {
+  const stored = {
+    text: String(entry.text || '').trim(),
+    authorId: entry.authorId || null,
+    authorName: entry.authorName || null,
+    addedAt: new Date().toISOString(),
+    sourceMessageId: entry.sourceMessageId || null,
+  };
+  const docRef = db.collection('issues').doc(issueId);
+  const doc = await docRef.get();
+  if (!doc.exists) return null;
+  const data = doc.data();
+  const list = Array.isArray(data.additionalContext) ? [...data.additionalContext] : [];
+  list.push(stored);
+  await docRef.update({ additionalContext: list });
+  return { id: doc.id, ...data, additionalContext: list };
+}
+
 // --- Per-thread exclusion helpers ---
 
 async function addExcludedMessageIds(issueId, ids) {
@@ -602,4 +635,7 @@ module.exports = {
   addExcludedMessageIds,
   setExcludeMode,
   clearExclusions,
+  listOpenIssuesMissingNumbers,
+  setIssueNumber,
+  appendAdditionalContext,
 };

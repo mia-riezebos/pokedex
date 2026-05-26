@@ -2,6 +2,21 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.11.0',
+    date: '2026-05-25',
+    headline: 'Ticket #s up front; add more context after filing.',
+    sections: {
+      new: [
+        '`/addcontext <text>` and right-click **Add to Pokedex context** — add details to a filed report after Pokedex finishes asking; the triage embed updates in place',
+        'When Pokedex hits its 3-question limit it now tells you out loud that question-time is over and points you at `/addcontext` for anything you remember later',
+        '`/backfill-numbers` (admin) — assigns ticket #s to open issues that pre-dated the counter, so every report shows a `#1234` in triage',
+      ],
+      changed: [
+        'Triage embed titles now lead with the ticket number: `#1234 — <summary>`. The `Issue ID` is unchanged and still in the footer',
+      ],
+    },
+  },
+  {
     version: '2.10.1',
     date: '2026-05-25',
     headline: 'Fixed a broken Approve button on MCP reports.',
