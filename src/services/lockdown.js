@@ -27,6 +27,9 @@ function planUnlock(lockedChannelIds = [], existingChannelIds = []) {
 }
 
 // --- Firestore state ---
+// Read helpers swallow errors and return safe defaults (a failed read should not
+// block a lockdown). Write helpers intentionally let Firestore errors propagate so
+// the calling command can report the failure to the moderator.
 
 async function getExcludedChannels() {
   try {
