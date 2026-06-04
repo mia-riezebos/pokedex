@@ -19,6 +19,7 @@ async function execute(interaction) {
 
   const member = await interaction.guild.members.fetch(target.id).catch(() => null);
   if (!member) return interaction.editReply('Could not find that member in the server.');
+  if (!member.moderatable) return interaction.editReply('I cannot unmute this user. They may have higher permissions than me.');
 
   const wasMuted = member.isCommunicationDisabled();
 
