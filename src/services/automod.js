@@ -579,8 +579,9 @@ async function handleJoin(member) {
   }
 }
 
-// Cleanup stale message history every 5 minutes
-setInterval(() => {
+// Cleanup stale message history every 5 minutes.
+// unref() so this background timer never keeps the process (or a test run) alive.
+const _cleanupTimer = setInterval(() => {
   const cutoff = Date.now() - 60000;
   for (const [userId, history] of messageHistory) {
     const fresh = history.filter(m => m.timestamp > cutoff);
@@ -591,6 +592,7 @@ setInterval(() => {
     }
   }
 }, 300000);
+if (typeof _cleanupTimer.unref === 'function') _cleanupTimer.unref();
 
 module.exports = {
   handleMessage,
