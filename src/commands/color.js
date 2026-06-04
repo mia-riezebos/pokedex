@@ -43,7 +43,13 @@ async function seedPalette(guild) {
   try {
     for (const [name, hex] of Object.entries(colorRoles.DEFAULT_PALETTE)) {
       if (palette[name]) continue;
-      const role = await guild.roles.create({ name, color: hex, mentionable: false, reason: 'Color role palette seed' });
+      // Reuse a guild role that already matches this preset (e.g. created by a concurrent
+      // seed on another shard, or a previous partial seed) instead of duplicating it.
+      const wantColor = parseInt(hex.slice(1), 16);
+      let role = guild.roles.cache.find(r => r.name === name && r.color === wantColor);
+      if (!role) {
+        role = await guild.roles.create({ name, color: hex, mentionable: false, reason: 'Color role palette seed' });
+      }
       palette[name] = { hex, roleId: role.id };
       await colorRoles.setPaletteEntry(name, hex, role.id);
     }
