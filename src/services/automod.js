@@ -326,10 +326,15 @@ const CRYPTO_SCAM_LINK_PATTERNS = [
   /https?:\/\/[^\s<]*wallet[-.]?connect[^\s<]*/i,
 ];
 
+// Messages that are clearly *warning about* scams (rather than perpetrating one) should
+// not be removed — these phrases almost never appear in an actual lure.
+const SCAM_WARNING_CONTEXT = /\b(scams?|scammers?|phishing|phish|beware|watch out|heads[- ]?up|psa|fraud|fraudulent|malicious|do ?n'?t click|stay safe|report(ed)? (this|it|the)|is a scam)\b/i;
+
 // Returns a reason string if crypto/giveaway scam content is detected, else null.
 function containsCryptoScam(content) {
   if (!content) return null;
   const text = normalizeForScan(content);
+  if (SCAM_WARNING_CONTEXT.test(text)) return null;
   for (const re of CRYPTO_SCAM_PATTERNS) {
     if (re.test(text)) return 'Crypto/giveaway scam pattern';
   }

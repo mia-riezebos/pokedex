@@ -42,6 +42,10 @@ const SAFE = [
   'our API has a free tier - nitro users get extra calls',
   'send me a DM and get back to me within twice the time',
   'I will give away my old GPU in the hardware channel',
+  // warnings ABOUT scams must not be auto-removed
+  'Watch out for airdrop scams targeting ETH holders this week',
+  'PSA: that BTC giveaway DM is a phishing scam, do not click',
+  'heads up, fake Elon giveaway going around — report it',
 ];
 
 test('flags known crypto-scam messages', () => {
