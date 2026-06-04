@@ -27,6 +27,7 @@ const DEFAULT_CONFIG = {
   capsPercentThreshold: 70,
   capsMinLength: 10,
   blockInviteLinks: true,
+  blockCryptoScams: true,
   // Action escalation
   timeoutDurations: [300, 1800, 3600], // 5m, 30m, 1h (seconds)
 };
@@ -277,6 +278,37 @@ function containsDiscordInvite(content) {
   return /discord\.(gg|com\/invite)\/[a-zA-Z0-9]+/i.test(content);
 }
 
+// --- Crypto-scam detection ---
+
+const CRYPTO_SCAM_PATTERNS = [
+  /\b(free|claim)\b[^\n]{0,40}\b(nitro|discord nitro|steam gift|gift card)\b/i,
+  /\bnitro\b[^\n]{0,20}\bfree\b/i,
+  /\b(airdrop|giveaway|claim)\b[^\n]{0,40}\b(crypto|bitcoin|btc|eth|ethereum|usdt|bnb|solana|sol|token|nft)\b/i,
+  /\b(crypto|bitcoin|btc|eth|ethereum|usdt|bnb|solana|nft)\b[^\n]{0,40}\b(airdrop|giveaway|claim now|free)\b/i,
+  /\bdouble (your |the )?(money|bitcoin|btc|eth|ethereum|crypto|deposit|investment)\b/i,
+  /\b(send|deposit)\b[^\n]{0,30}\b(get|receive|back)\b[^\n]{0,20}\b(double|2x|twice)\b/i,
+  /\b(seed phrase|recovery phrase|private key|connect (your )?wallet|validate (your )?wallet|wallet ?connect|sync (your )?wallet)\b/i,
+  /\b(elon|musk|tesla|binance|coinbase)\b[^\n]{0,40}\b(giveaway|airdrop|double|free)\b/i,
+];
+
+const CRYPTO_SCAM_LINK_PATTERNS = [
+  /https?:\/\/[^\s<]*free[-.]?nitro[^\s<]*/i,
+  /https?:\/\/[^\s<]*(giveaway|airdrop|claim)[^\s<]*\.(xyz|top|live|click|gift|app)\b/i,
+  /https?:\/\/[^\s<]*(discord|steamcommunity)[^\s<]*\.(ru|xyz|gift|top|click|live)\b/i,
+  /https?:\/\/[^\s<]*wallet[-.]?connect[^\s<]*/i,
+];
+
+function containsCryptoScam(content) {
+  if (!content) return null;
+  for (const re of CRYPTO_SCAM_PATTERNS) {
+    if (re.test(content)) return 'Crypto/giveaway scam pattern';
+  }
+  for (const re of CRYPTO_SCAM_LINK_PATTERNS) {
+    if (re.test(content)) return 'Suspected scam link';
+  }
+  return null;
+}
+
 // --- Raid detection ---
 
 function trackJoin(userId) {
@@ -415,6 +447,18 @@ async function handleMessage(message) {
       reason: 'Blocked word/phrase',
       evidence: `Matched: "${blockedWord}"`,
     });
+  }
+
+  // --- Check 4b: Crypto/giveaway scams ---
+  if (config.blockCryptoScams) {
+    const scamReason = containsCryptoScam(content);
+    if (scamReason) {
+      return await takeAction(message, config, {
+        userId, username, guildId,
+        reason: scamReason,
+        evidence: content.slice(0, 200),
+      });
+    }
   }
 
   // --- Check 5: Discord invite links ---
@@ -561,5 +605,6 @@ module.exports = {
   getExemptions,
   addExemption,
   removeExemption,
+  containsCryptoScam,
   DEFAULT_CONFIG,
 };
