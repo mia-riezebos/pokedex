@@ -284,7 +284,7 @@ const CRYPTO_SCAM_PATTERNS = [
   /\b(free|claim)\b[^\n]{0,40}\b(nitro|discord nitro|steam gift|gift card)\b/i,
   /\bnitro\b[^\n]{0,20}\bfree\b/i,
   /\b(airdrop|giveaway|claim)\b[^\n]{0,40}\b(crypto|bitcoin|btc|eth|ethereum|usdt|bnb|solana|sol|token|nft)\b/i,
-  /\b(crypto|bitcoin|btc|eth|ethereum|usdt|bnb|solana|nft)\b[^\n]{0,40}\b(airdrop|giveaway|claim now|free)\b/i,
+  /\b(crypto|bitcoin|btc|eth|ethereum|usdt|bnb|solana|sol|nft)\b[^\n]{0,40}\b(airdrop|giveaway|claim now|free)\b/i,
   /\bdouble (your |the )?(money|bitcoin|btc|eth|ethereum|crypto|deposit|investment)\b/i,
   /\b(send|deposit)\b[^\n]{0,30}\b(get|receive|back)\b[^\n]{0,20}\b(double|2x|twice)\b/i,
   /\b(seed phrase|recovery phrase|private key|connect (your )?wallet|validate (your )?wallet|wallet ?connect|sync (your )?wallet)\b/i,
@@ -293,11 +293,12 @@ const CRYPTO_SCAM_PATTERNS = [
 
 const CRYPTO_SCAM_LINK_PATTERNS = [
   /https?:\/\/[^\s<]*free[-.]?nitro[^\s<]*/i,
-  /https?:\/\/[^\s<]*(giveaway|airdrop|claim)[^\s<]*\.(xyz|top|live|click|gift|app)\b/i,
+  /https?:\/\/[^\s<]*(giveaway|airdrop|claim)[^\s<]*\.(xyz|top|live|click|gift)\b/i,
   /https?:\/\/[^\s<]*(discord|steamcommunity)[^\s<]*\.(ru|xyz|gift|top|click|live)\b/i,
   /https?:\/\/[^\s<]*wallet[-.]?connect[^\s<]*/i,
 ];
 
+// Returns a reason string if crypto/giveaway scam content is detected, else null.
 function containsCryptoScam(content) {
   if (!content) return null;
   for (const re of CRYPTO_SCAM_PATTERNS) {
