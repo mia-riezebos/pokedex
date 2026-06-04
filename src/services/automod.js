@@ -280,14 +280,42 @@ function containsDiscordInvite(content) {
 
 // --- Crypto-scam detection ---
 
+// Scammers split keywords across lines, pad them with zero-width characters, or use
+// fullwidth unicode to dodge plain-text matching. Fold all of that to normal text and
+// collapse whitespace (so the bounded [^\n] spans still match across former line breaks).
+function normalizeForScan(content) {
+  return String(content)
+    .replace(/[​-‍⁠﻿­]/g, '')                       // zero-width / soft hyphen
+    .replace(/[！-～]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xFEE0)) // fullwidth -> ASCII
+    .replace(/\s+/g, ' ');                                                   // collapse whitespace incl. newlines
+}
+
+// Shared crypto-ticker alternation (incl. $TICKER style for memecoins).
+const CRYPTO = 'crypto|bitcoin|btc|eth|ethereum|usdt|usdc|bnb|solana|sol|doge|dogecoin|pepe|shib|matic|avax|xrp|trx|token|nft|\\$[a-z]{2,6}';
+
 const CRYPTO_SCAM_PATTERNS = [
-  /\b(free|claim)\b[^\n]{0,40}\b(nitro|discord nitro|steam gift|gift card)\b/i,
-  /\bnitro\b[^\n]{0,20}\bfree\b/i,
-  /\b(airdrop|giveaway|claim)\b[^\n]{0,40}\b(crypto|bitcoin|btc|eth|ethereum|usdt|bnb|solana|sol|token|nft)\b/i,
-  /\b(crypto|bitcoin|btc|eth|ethereum|usdt|bnb|solana|sol|nft)\b[^\n]{0,40}\b(airdrop|giveaway|claim now|free)\b/i,
+  // Free-Nitro / gift-card bait. Require adjacency so "free. Nitro" and "free tier - nitro" don't trip.
+  /\bfree\s+nitro\b/i,
+  /\bnitro\s+(giveaway|gift|free|generator|drop)\b/i,
+  /\b(claim|get|grab)\s+(your\s+)?(free\s+)?(nitro|steam\s+gift|gift\s+card)\b/i,
+  // Airdrop / giveaway + a crypto ticker, in either order.
+  new RegExp(`\\b(airdrop|giveaway|claim)\\b[^\\n]{0,40}\\b(${CRYPTO})\\b`, 'i'),
+  new RegExp(`\\b(${CRYPTO})\\b[^\\n]{0,40}\\b(airdrop|giveaway|claim now|free)\\b`, 'i'),
+  // "Double your crypto" investment scam.
   /\bdouble (your |the )?(money|bitcoin|btc|eth|ethereum|crypto|deposit|investment)\b/i,
-  /\b(send|deposit)\b[^\n]{0,30}\b(get|receive|back)\b[^\n]{0,20}\b(double|2x|twice)\b/i,
-  /\b(seed phrase|recovery phrase|private key|connect (your )?wallet|validate (your )?wallet|wallet ?connect|sync (your )?wallet)\b/i,
+  // "send <amount> <crypto> ... get/receive ... back" — the number requirement avoids
+  // tripping on benign "send the eth address, get back to me".
+  new RegExp(`\\b(send|deposit)\\s+[\\d.]+\\s*(${CRYPTO})\\b[^\\n]{0,30}\\b(get|receive|return|back)\\b`, 'i'),
+  new RegExp(`\\b(send|deposit)\\b[^\\n]{0,30}\\b(${CRYPTO})\\b[^\\n]{0,30}\\b(double|2x|twice)\\b`, 'i'),
+  // Wallet-drainer phrasing. "validate/verify/sync wallet" is scam-specific. Plain "connect
+  // wallet" is also legit dApp wording, so only flag it next to a claim/airdrop/reward lure.
+  /\b(validate|verify|sync)\s+(your\s+)?wallet\b/i,
+  /\bconnect\s+(your\s+)?wallet\b[^\n.!?]{0,40}\b(claim|airdrop|free|receive|reward|token|validat|verif)/i,
+  /\b(claim|airdrop|free|receive|reward)\b[^\n.!?]{0,40}\bconnect\s+(your\s+)?wallet\b/i,
+  // Seed-phrase phishing — only with an action verb, so "never share your seed phrase"
+  // (security advice) and "how do I import a private key" (dev question) are NOT flagged.
+  /\b(enter|submit|paste)\s+(your\s+)?(seed phrase|recovery phrase|private key)\b/i,
+  // Impersonation giveaways.
   /\b(elon|musk|tesla|binance|coinbase)\b[^\n]{0,40}\b(giveaway|airdrop|double|free)\b/i,
 ];
 
@@ -301,11 +329,12 @@ const CRYPTO_SCAM_LINK_PATTERNS = [
 // Returns a reason string if crypto/giveaway scam content is detected, else null.
 function containsCryptoScam(content) {
   if (!content) return null;
+  const text = normalizeForScan(content);
   for (const re of CRYPTO_SCAM_PATTERNS) {
-    if (re.test(content)) return 'Crypto/giveaway scam pattern';
+    if (re.test(text)) return 'Crypto/giveaway scam pattern';
   }
   for (const re of CRYPTO_SCAM_LINK_PATTERNS) {
-    if (re.test(content)) return 'Suspected scam link';
+    if (re.test(text)) return 'Suspected scam link';
   }
   return null;
 }
