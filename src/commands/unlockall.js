@@ -17,28 +17,41 @@ async function execute(interaction) {
 
   const existingIds = interaction.guild.channels.cache.map(c => c.id);
   const toUnlock = lockdown.planUnlock(record.lockedChannelIds, existingIds);
+  // Channels in the record that no longer exist can be dropped from it outright.
+  const goneIds = record.lockedChannelIds.filter(id => !existingIds.includes(id));
 
   let failed = 0;
-  let unlocked = 0;
+  const resolvedIds = [...goneIds];
   for (const id of toUnlock) {
     const channel = interaction.guild.channels.cache.get(id);
     try {
       await channel.permissionOverwrites.edit(interaction.guild.roles.everyone, { SendMessages: null });
-      unlocked++;
+      resolvedIds.push(id);
     } catch (err) {
       console.error(`unlockall: failed to unlock ${id}:`, err.message);
       failed++;
     }
   }
 
-  await lockdown.clearLockdown();
+  // Only forget the channels we actually restored (plus ones already deleted). Anything
+  // that failed stays in the record so a follow-up /unlockall can retry it — a total
+  // failure must never leave the server stuck locked with no recovery path.
+  if (failed === 0) {
+    await lockdown.clearLockdown();
+  } else {
+    await lockdown.removeLockedChannels(resolvedIds);
+  }
 
+  const unlocked = resolvedIds.length - goneIds.length;
   const embed = new EmbedBuilder()
     .setTitle('🔓 Server Unlocked')
-    .setColor(0x00cc00)
+    .setColor(failed === 0 ? 0x00cc00 : 0xe67e22)
     .setDescription(`Restored **${unlocked}** channel(s). Channels locked before the lockdown were left locked.`)
     .addFields({ name: 'Failed', value: String(failed), inline: true })
     .setTimestamp();
+  if (failed > 0) {
+    embed.setFooter({ text: 'Some channels could not be unlocked and are kept on record — run /unlockall again to retry them.' });
+  }
   await interaction.editReply({ embeds: [embed] });
 }
 

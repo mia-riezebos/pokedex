@@ -86,6 +86,16 @@ async function clearLockdown() {
   await DOC().set({ lockedChannelIds: [] }, { merge: true });
 }
 
+// Drop specific channel IDs from the record (e.g. the ones /unlockall actually restored),
+// leaving any that failed so the lockdown can be retried. No-op for an empty list.
+async function removeLockedChannels(ids) {
+  if (!ids || ids.length === 0) return;
+  await DOC().set(
+    { lockedChannelIds: admin.firestore.FieldValue.arrayRemove(...ids) },
+    { merge: true },
+  );
+}
+
 module.exports = {
   planLockdown,
   planUnlock,
@@ -95,4 +105,5 @@ module.exports = {
   recordLockdown,
   getLockdown,
   clearLockdown,
+  removeLockedChannels,
 };
