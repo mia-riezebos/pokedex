@@ -61,17 +61,22 @@ async function execute(interaction) {
     return interaction.editReply('Failed to mute this user. Please check bot permissions and try again.');
   }
 
-  await getDb().collection('infractions').add({
-    type: 'mute',
-    userId: target.id,
-    username: target.username,
-    guildId: interaction.guild.id,
-    reason,
-    duration: durationKey,
-    moderatorId: interaction.user.id,
-    moderatorName: interaction.user.username,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
+  // The mute already applied; a failed log shouldn't be reported as a failed mute.
+  try {
+    await getDb().collection('infractions').add({
+      type: 'mute',
+      userId: target.id,
+      username: target.username,
+      guildId: interaction.guild.id,
+      reason,
+      duration: durationKey,
+      moderatorId: interaction.user.id,
+      moderatorName: interaction.user.username,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (err) {
+    console.error('Failed to log mute infraction:', err);
+  }
 
   const embed = new EmbedBuilder()
     .setTitle('🔇 User Muted')

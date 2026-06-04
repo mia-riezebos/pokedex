@@ -30,16 +30,21 @@ async function execute(interaction) {
     return interaction.editReply('Failed to unmute this user. Please check bot permissions and try again.');
   }
 
-  await getDb().collection('infractions').add({
-    type: 'unmute',
-    userId: target.id,
-    username: target.username,
-    guildId: interaction.guild.id,
-    reason,
-    moderatorId: interaction.user.id,
-    moderatorName: interaction.user.username,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
+  // The unmute already applied; a failed log shouldn't be reported as a failed unmute.
+  try {
+    await getDb().collection('infractions').add({
+      type: 'unmute',
+      userId: target.id,
+      username: target.username,
+      guildId: interaction.guild.id,
+      reason,
+      moderatorId: interaction.user.id,
+      moderatorName: interaction.user.username,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (err) {
+    console.error('Failed to log unmute infraction:', err);
+  }
 
   const embed = new EmbedBuilder()
     .setTitle('🔊 User Unmuted')
