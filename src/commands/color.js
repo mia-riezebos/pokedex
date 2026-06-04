@@ -76,9 +76,12 @@ async function runColor(interaction) {
     await interaction.deferReply({ ephemeral: true });
     const hex = colorRoles.normalizeHex(interaction.options.getString('code'));
     if (!hex) return interaction.editReply('That is not a valid hex color. Example: `#ff8800`.');
-    const custom = await colorRoles.getCustomMap();
-    const key = hex.replace(/[.#]/g, '_');
-    let roleId = custom[key];
+    // Reuse any existing role of this color — preset or previously-created custom —
+    // instead of making a duplicate. Seed the palette first so preset matches count.
+    await ensurePalette(interaction.guild);
+    let roleId = await colorRoles.findRoleIdByHex(hex);
+    // If the cached role was deleted from the guild, forget it and recreate.
+    if (roleId && !interaction.guild.roles.cache.has(roleId)) roleId = null;
     if (!roleId) {
       try {
         const role = await interaction.guild.roles.create({ name: hex, color: hex, mentionable: false, reason: 'Custom color role' });

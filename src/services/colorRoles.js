@@ -36,7 +36,26 @@ function rolesToStrip(memberRoleIds, colorRoleIds) {
   return memberRoleIds.filter(id => colorSet.has(id));
 }
 
+// Find an already-managed role id for a hex, checking presets first then customs,
+// so `/color hex` reuses an existing role (e.g. a preset of the same color)
+// instead of creating a duplicate. `hex` must be normalized (#rrggbb).
+function matchRoleIdByHex(palette, customMap, hex) {
+  const want = String(hex).toLowerCase();
+  for (const v of Object.values(palette || {})) {
+    if (v && v.hex && String(v.hex).toLowerCase() === want && v.roleId) return v.roleId;
+  }
+  const key = want.replace(/[.#]/g, '_');
+  if (customMap && customMap[key]) return customMap[key];
+  return null;
+}
+
 // --- Firestore palette/custom state ---
+
+async function findRoleIdByHex(hex) {
+  const palette = (await getPalette()) || {};
+  const custom = await getCustomMap();
+  return matchRoleIdByHex(palette, custom, hex);
+}
 
 async function getPalette() {
   try {
@@ -94,6 +113,8 @@ module.exports = {
   DEFAULT_PALETTE,
   normalizeHex,
   rolesToStrip,
+  matchRoleIdByHex,
+  findRoleIdByHex,
   getPalette,
   setPaletteEntry,
   deletePaletteEntry,
