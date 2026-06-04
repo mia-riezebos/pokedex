@@ -3,7 +3,7 @@ const { Client, GatewayIntentBits, Partials, REST, Routes, ActivityType, EmbedBu
 const firestore = require('./services/firestore');
 const config = require('./config/config');
 const triage = require('./services/triage');
-const { handleMention } = require('./triggers/mention');
+const { handleMention, mentionsBotDirectly } = require('./triggers/mention');
 const { handleReaction } = require('./triggers/reaction');
 const { handleThreadMessage } = require('./triggers/thread');
 const { handleForumPost } = require('./triggers/forum');
@@ -176,7 +176,7 @@ client.on('messageCreate', async (message) => {
     // Not an issue thread — fall through to mention handler if applicable
   }
 
-  if (!message.mentions.has(client.user)) return;
+  if (!mentionsBotDirectly(message, client.user)) return;
 
   try {
     await handleMention(message);

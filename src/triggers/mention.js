@@ -2,6 +2,13 @@ const { EmbedBuilder } = require('discord.js');
 const { enqueue } = require('../services/queue');
 const { processIssue } = require('../services/pipeline');
 
+// Only a direct @bot user-ping should trigger issue creation.
+// discord.js counts @everyone/@here and role pings as a match by default,
+// which made a mod's @everyone spin up triage. Ignore those.
+function mentionsBotDirectly(message, botUser) {
+  return message.mentions.has(botUser, { ignoreEveryone: true, ignoreRoles: true });
+}
+
 async function extractParentContext(message) {
   const refId = message?.reference?.messageId;
   if (!refId) return null;
@@ -75,4 +82,4 @@ async function handleMention(message) {
   }));
 }
 
-module.exports = { handleMention, extractParentContext };
+module.exports = { handleMention, extractParentContext, mentionsBotDirectly };
