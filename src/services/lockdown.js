@@ -54,13 +54,21 @@ async function removeExcludedChannel(id) {
   );
 }
 
+// Accumulates (unions) newly-locked channel IDs into the active record rather than
+// overwriting it. This protects the "only unlock what we locked" guarantee when
+// /lockall is run more than once before /unlockall: a second run that locks nothing
+// new (because everything is already locked) must NOT wipe the first run's record.
+// clearLockdown() resets the list, so a fresh lockdown after /unlockall starts clean.
 async function recordLockdown({ channelIds, lockedBy, reason }) {
-  await DOC().set({
-    lockedChannelIds: channelIds,
+  const data = {
     lockedBy,
     reason: reason || null,
     lockedAt: admin.firestore.FieldValue.serverTimestamp(),
-  }, { merge: true });
+  };
+  if (channelIds.length > 0) {
+    data.lockedChannelIds = admin.firestore.FieldValue.arrayUnion(...channelIds);
+  }
+  await DOC().set(data, { merge: true });
 }
 
 async function getLockdown() {
