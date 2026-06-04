@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.12.0] - 2026-06-04
+
+### Added
+- `/lockall now [reason]` and `/unlockall [reason]` — lock or unlock every text channel at once. `/lockall now` only records the channels it actually changes, so `/unlockall` never re-opens a channel that was already locked before the lockdown. Use `/lockall exclude add|remove|list` to skip channels (e.g. announcements, mod-chat). Requires **Manage Channels**.
+- `/mute <user> <duration> [reason]` and `/unmute <user> [reason]` — friendly wrappers over Discord timeouts, logged to the `infractions` collection and DM'd to the user. Requires **Moderate Members**.
+- `/color` — self-service color roles. `list`, `set <name>`, `hex <#code>`, and `clear` are open to everyone; `add <name> <hex>` and `remove <name>` require **Manage Roles**. Picking a new color strips any previous color role (no stacking); the palette is pre-seeded with 10 starter colors on first use.
+- AutoMod now detects and removes **crypto/giveaway scams** (free-nitro bait, airdrop/giveaway lures, "double your bitcoin" schemes, wallet-drainer links), escalating repeat offenders like other automod offenses. Toggled by the `blockCryptoScams` config flag (default on, only fires when automod is enabled).
+
+### Fixed
+- A mod or admin posting `@everyone`/`@here` (or pinging a role the bot belongs to) no longer makes Pokedex think it was mentioned and start triage. Only a direct `@Pokedex` ping creates an issue.
+
+### Internal
+- New pure, unit-tested helpers: `containsCryptoScam` (automod.js), `planLockdown`/`planUnlock` (lockdown.js), `mentionsBotDirectly` (mention.js), `normalizeHex`/`rolesToStrip` (colorRoles.js). New Firestore-backed services `lockdown.js` (config/lockdown doc) and `colorRoles.js` (color_roles collection).
+
 ## [2.11.0] - 2026-05-25
 
 ### Added
