@@ -48,8 +48,11 @@ async function execute(interaction) {
       { name: 'Moderator', value: `${interaction.user}`, inline: true },
       { name: 'Reason', value: reason },
     )
-    .setDescription(wasMuted ? '' : '_Note: this user was not currently muted._')
     .setTimestamp();
+
+  if (!wasMuted) {
+    embed.setDescription('_Note: this user was not currently muted._');
+  }
 
   await interaction.editReply({ embeds: [embed] });
 }
