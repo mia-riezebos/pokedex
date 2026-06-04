@@ -51,7 +51,10 @@ async function execute(interaction) {
   const reason = interaction.options.getString('reason') || 'No reason provided';
   const excludeIds = await lockdown.getExcludedChannels();
 
-  const textChannels = interaction.guild.channels.cache.filter(c => c.type === ChannelType.GuildText);
+  // Lock both standard text channels and announcement/news channels — members can post
+  // in announcement channels too, so a lockdown must cover them.
+  const LOCKABLE_TYPES = new Set([ChannelType.GuildText, ChannelType.GuildAnnouncement]);
+  const textChannels = interaction.guild.channels.cache.filter(c => LOCKABLE_TYPES.has(c.type));
   const channelsState = textChannels.map(c => ({ id: c.id, locked: isLocked(c, interaction.guild) }));
   const plan = lockdown.planLockdown(channelsState, excludeIds);
 
