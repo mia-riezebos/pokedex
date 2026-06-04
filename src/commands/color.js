@@ -20,17 +20,34 @@ const commandData = new SlashCommandBuilder()
     sub.setName('remove').setDescription('(Mods) Remove a preset color')
       .addStringOption(o => o.setName('name').setDescription('Color name').setRequired(true)));
 
+// In-process per-guild seed lock so two concurrent /color calls on a fresh server don't
+// both run the seed loop and create 20 duplicate roles.
+const seedLocks = new Map();
+
 // Ensure the palette exists, seeding defaults the first time.
 async function ensurePalette(guild) {
-  let palette = await colorRoles.getPalette();
-  if (palette) return palette;
-  palette = {};
+  if (await colorRoles.isPaletteSeeded()) {
+    return (await colorRoles.getPalette()) || {};
+  }
+  if (!seedLocks.has(guild.id)) {
+    seedLocks.set(guild.id, seedPalette(guild).finally(() => seedLocks.delete(guild.id)));
+  }
+  return seedLocks.get(guild.id);
+}
+
+// Create any default presets that don't exist yet, then mark the palette seeded.
+// Resumable: skips names already present, so a previously-failed partial seed is
+// completed rather than duplicated.
+async function seedPalette(guild) {
+  const palette = { ...((await colorRoles.getPalette()) || {}) };
   try {
     for (const [name, hex] of Object.entries(colorRoles.DEFAULT_PALETTE)) {
+      if (palette[name]) continue;
       const role = await guild.roles.create({ name, color: hex, mentionable: false, reason: 'Color role palette seed' });
       palette[name] = { hex, roleId: role.id };
       await colorRoles.setPaletteEntry(name, hex, role.id);
     }
+    await colorRoles.markPaletteSeeded();
   } catch (err) {
     console.error('color palette seed failed:', err.message);
     throw err;
@@ -41,10 +58,14 @@ async function ensurePalette(guild) {
 async function applyColor(interaction, roleId) {
   const member = interaction.member;
   const allIds = await colorRoles.allColorRoleIds();
-  const toStrip = colorRoles.rolesToStrip([...member.roles.cache.keys()], allIds);
+  // Strip every managed color role except the one we're about to apply.
+  const toStrip = colorRoles.rolesToStrip([...member.roles.cache.keys()], allIds)
+    .filter(id => id !== roleId);
   try {
-    if (toStrip.length) await member.roles.remove(toStrip, 'Switching color role');
+    // Add first, then strip — a failed add leaves the member's current color intact
+    // (no "colorless" window), and we never remove-then-fail-to-add.
     await member.roles.add(roleId, 'Color role');
+    if (toStrip.length) await member.roles.remove(toStrip, 'Switching color role');
   } catch (err) {
     console.error('color apply failed:', err.message);
     return interaction.editReply('I could not change your color. My role must be **above** the color roles, and I need **Manage Roles**.');
@@ -58,7 +79,9 @@ async function runColor(interaction) {
   if (sub === 'list') {
     await interaction.deferReply({ ephemeral: true });
     const palette = await ensurePalette(interaction.guild);
-    const lines = Object.entries(palette).map(([name, v]) => `• **${name}** — \`${v.hex}\``).join('\n');
+    let lines = Object.entries(palette).map(([name, v]) => `• **${name}** — \`${v.hex}\``).join('\n');
+    // Discord caps an embed description at 4096 chars; truncate defensively for huge palettes.
+    if (lines.length > 3900) lines = lines.slice(0, 3900) + '\n… (list truncated)';
     const embed = new EmbedBuilder().setTitle('🎨 Available colors').setDescription(lines || '_none_').setColor(0x5865f2);
     return interaction.editReply({ embeds: [embed] });
   }
@@ -120,7 +143,12 @@ async function runColor(interaction) {
     if (sub === 'add') {
       const hex = colorRoles.normalizeHex(interaction.options.getString('code'));
       if (!hex) return interaction.editReply('Invalid hex color. Example: `#ff8800`.');
-      await ensurePalette(interaction.guild);
+      const palette = await ensurePalette(interaction.guild);
+      // Reject a duplicate name (case-insensitive) so we don't orphan the existing role.
+      const clash = Object.keys(palette).find(n => n.toLowerCase() === name.toLowerCase());
+      if (clash) {
+        return interaction.editReply(`A preset named **${clash}** already exists. Use \`/color remove ${clash}\` first, or pick another name.`);
+      }
       try {
         const role = await interaction.guild.roles.create({ name, color: hex, mentionable: false, reason: 'Palette color added' });
         await colorRoles.setPaletteEntry(name, hex, role.id);

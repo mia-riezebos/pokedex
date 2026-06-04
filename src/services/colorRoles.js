@@ -69,6 +69,22 @@ async function getPalette() {
   return null; // caller seeds defaults if null
 }
 
+// Whether the default palette has been fully seeded at least once. Used so a partial
+// seed (some defaults created, then a failure) is resumed rather than treated as
+// complete, and so intentional removals are never auto-re-added after a full seed.
+async function isPaletteSeeded() {
+  try {
+    const doc = await COL().doc('palette').get();
+    return !!(doc.exists && doc.data().seeded);
+  } catch {
+    return false;
+  }
+}
+
+async function markPaletteSeeded() {
+  await COL().doc('palette').set({ seeded: true }, { merge: true });
+}
+
 async function setPaletteEntry(name, hex, roleId) {
   await COL().doc('palette').set(
     { colors: { [name]: { hex, roleId } } },
@@ -116,6 +132,8 @@ module.exports = {
   matchRoleIdByHex,
   findRoleIdByHex,
   getPalette,
+  isPaletteSeeded,
+  markPaletteSeeded,
   setPaletteEntry,
   deletePaletteEntry,
   getCustomMap,
