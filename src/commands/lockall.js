@@ -21,10 +21,25 @@ const commandData = new SlashCommandBuilder()
       .addSubcommand(sub =>
         sub.setName('list').setDescription('Show channels currently skipped')));
 
+// Channels members can post in and that /lockall therefore covers.
+const LOCKABLE_TYPES = new Set([
+  ChannelType.GuildText,
+  ChannelType.GuildAnnouncement,
+  ChannelType.GuildForum,
+]);
+
 function isLocked(channel, guild) {
   const overwrite = channel.permissionOverwrites.cache.get(guild.roles.everyone.id);
   if (!overwrite) return false;
-  return overwrite.deny.has(PermissionFlagsBits.SendMessages);
+  return overwrite.deny.has(lockdown.primaryLockFlag(channel.type));
+}
+
+// Capture the channel's pre-lock @everyone state so /unlockall can restore it exactly:
+// 'allow' = explicit allow we must re-grant; 'neutral' = inherit (clear to null on unlock).
+function priorState(channel, guild) {
+  const overwrite = channel.permissionOverwrites.cache.get(guild.roles.everyone.id);
+  if (overwrite && overwrite.allow.has(lockdown.primaryLockFlag(channel.type))) return 'allow';
+  return 'neutral';
 }
 
 async function execute(interaction) {
@@ -48,44 +63,54 @@ async function execute(interaction) {
 
   // sub === 'now'
   await interaction.deferReply();
-  const reason = interaction.options.getString('reason') || 'No reason provided';
-  const excludeIds = await lockdown.getExcludedChannels();
 
-  // Lock both standard text channels and announcement/news channels — members can post
-  // in announcement channels too, so a lockdown must cover them.
-  const LOCKABLE_TYPES = new Set([ChannelType.GuildText, ChannelType.GuildAnnouncement]);
-  const textChannels = interaction.guild.channels.cache.filter(c => LOCKABLE_TYPES.has(c.type));
-  const channelsState = textChannels.map(c => ({ id: c.id, locked: isLocked(c, interaction.guild) }));
-  const plan = lockdown.planLockdown(channelsState, excludeIds);
-
-  let failed = 0;
-  const locked = [];
-  for (const id of plan.toLock) {
-    const channel = textChannels.get(id);
-    try {
-      await channel.permissionOverwrites.edit(interaction.guild.roles.everyone, { SendMessages: false });
-      locked.push(id);
-    } catch (err) {
-      console.error(`lockall: failed to lock ${id}:`, err.message);
-      failed++;
-    }
+  if (!(await lockdown.acquireLock())) {
+    return interaction.editReply('Another lockdown operation is already in progress. Try again in a moment.');
   }
 
-  await lockdown.recordLockdown({ channelIds: locked, lockedBy: interaction.user.id, reason });
+  try {
+    const reason = interaction.options.getString('reason') || 'No reason provided';
+    const excludeIds = await lockdown.getExcludedChannels();
 
-  const embed = new EmbedBuilder()
-    .setTitle('🔒 Server Locked Down')
-    .setColor(0xff0000)
-    .setDescription(`Locked **${locked.length}** channel(s).`)
-    .addFields(
-      { name: 'Already locked (left as-is)', value: String(plan.skipped.length), inline: true },
-      { name: 'Excluded', value: String(plan.excluded.length), inline: true },
-      { name: 'Failed', value: String(failed), inline: true },
-      { name: 'Reason', value: reason },
-    )
-    .setFooter({ text: 'Use /unlockall to restore only the channels this lockdown changed.' })
-    .setTimestamp();
-  await interaction.editReply({ embeds: [embed] });
+    const textChannels = interaction.guild.channels.cache.filter(c => LOCKABLE_TYPES.has(c.type));
+    const channelsState = textChannels.map(c => ({ id: c.id, locked: isLocked(c, interaction.guild) }));
+    const plan = lockdown.planLockdown(channelsState, excludeIds);
+
+    let failed = 0;
+    const locked = []; // [{ id, prior }]
+    for (const id of plan.toLock) {
+      const channel = textChannels.get(id);
+      try {
+        const prior = priorState(channel, interaction.guild);
+        await channel.permissionOverwrites.edit(
+          interaction.guild.roles.everyone,
+          lockdown.lockOverwrite(channel.type),
+        );
+        locked.push({ id, prior });
+      } catch (err) {
+        console.error(`lockall: failed to lock ${id}:`, err.message);
+        failed++;
+      }
+    }
+
+    await lockdown.recordLockdown({ channels: locked, lockedBy: interaction.user.id, reason });
+
+    const embed = new EmbedBuilder()
+      .setTitle('🔒 Server Locked Down')
+      .setColor(0xff0000)
+      .setDescription(`Locked **${locked.length}** channel(s).`)
+      .addFields(
+        { name: 'Already locked (left as-is)', value: String(plan.skipped.length), inline: true },
+        { name: 'Excluded', value: String(plan.excluded.length), inline: true },
+        { name: 'Failed', value: String(failed), inline: true },
+        { name: 'Reason', value: reason },
+      )
+      .setFooter({ text: 'Use /unlockall to restore only the channels this lockdown changed.' })
+      .setTimestamp();
+    await interaction.editReply({ embeds: [embed] });
+  } finally {
+    await lockdown.releaseLock();
+  }
 }
 
 module.exports = { data: commandData, execute };
