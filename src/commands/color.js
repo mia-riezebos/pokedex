@@ -25,10 +25,15 @@ async function ensurePalette(guild) {
   let palette = await colorRoles.getPalette();
   if (palette) return palette;
   palette = {};
-  for (const [name, hex] of Object.entries(colorRoles.DEFAULT_PALETTE)) {
-    const role = await guild.roles.create({ name, color: hex, mentionable: false, reason: 'Color role palette seed' });
-    palette[name] = { hex, roleId: role.id };
-    await colorRoles.setPaletteEntry(name, hex, role.id);
+  try {
+    for (const [name, hex] of Object.entries(colorRoles.DEFAULT_PALETTE)) {
+      const role = await guild.roles.create({ name, color: hex, mentionable: false, reason: 'Color role palette seed' });
+      palette[name] = { hex, roleId: role.id };
+      await colorRoles.setPaletteEntry(name, hex, role.id);
+    }
+  } catch (err) {
+    console.error('color palette seed failed:', err.message);
+    throw err;
   }
   return palette;
 }
@@ -47,7 +52,7 @@ async function applyColor(interaction, roleId) {
   return interaction.editReply('✅ Color updated!');
 }
 
-async function execute(interaction) {
+async function runColor(interaction) {
   const sub = interaction.options.getSubcommand();
 
   if (sub === 'list') {
@@ -131,6 +136,19 @@ async function execute(interaction) {
     if (role) await role.delete('Palette color removed').catch(() => {});
     await colorRoles.deletePaletteEntry(entry[0]);
     return interaction.editReply(`✅ Removed **${entry[0]}** from the palette.`);
+  }
+}
+
+async function execute(interaction) {
+  try {
+    return await runColor(interaction);
+  } catch (err) {
+    console.error('color command failed:', err.message);
+    const msg = 'Something went wrong with that color command. Make sure I have **Manage Roles** and my role sits above the color roles.';
+    if (interaction.deferred || interaction.replied) {
+      return interaction.editReply(msg).catch(() => {});
+    }
+    return interaction.reply({ content: msg, ephemeral: true }).catch(() => {});
   }
 }
 
