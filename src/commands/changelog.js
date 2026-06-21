@@ -2,6 +2,22 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.12.0',
+    date: '2026-06-04',
+    headline: 'Server lockdown, mute/unmute, scam blocking, and color roles.',
+    sections: {
+      new: [
+        '`/lockall now` and `/unlockall` — lock or unlock every text channel at once. `/lockall exclude add` skips channels you choose, and `/unlockall` only re-opens channels this lockdown actually locked (anything locked beforehand stays locked)',
+        '`/mute` and `/unmute` — friendly wrappers over Discord timeouts',
+        '`/color` — pick a name color. `list` / `set` / `hex` / `clear` for everyone; `add` / `remove` for mods to manage the palette',
+        'AutoMod now removes **crypto/giveaway scams** (free-nitro bait, airdrop/giveaway lures, wallet-drainer links) and escalates repeat offenders',
+      ],
+      fixed: [
+        'A mod or admin posting `@everyone` (or pinging a role Pokedex has) no longer triggers triage — only a direct `@Pokedex` ping creates an issue',
+      ],
+    },
+  },
+  {
     version: '2.11.0',
     date: '2026-05-25',
     headline: 'Ticket #s up front; add more context after filing.',

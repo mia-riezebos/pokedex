@@ -2,6 +2,19 @@ const { EmbedBuilder } = require('discord.js');
 const { enqueue } = require('../services/queue');
 const { processIssue } = require('../services/pipeline');
 
+// Only a direct @bot user-ping should trigger issue creation.
+// discord.js counts @everyone/@here, role pings, AND the replied-to user as a match by
+// default. So a mod's @everyone, or someone merely *replying* to a Pokedex message
+// (Discord auto-pings the author on reply), would spin up triage. Ignore all of those —
+// only an explicitly typed @Pokedex still counts (it lands in parsedUsers).
+function mentionsBotDirectly(message, botUser) {
+  return message.mentions.has(botUser, {
+    ignoreEveryone: true,
+    ignoreRoles: true,
+    ignoreRepliedUser: true,
+  });
+}
+
 async function extractParentContext(message) {
   const refId = message?.reference?.messageId;
   if (!refId) return null;
@@ -75,4 +88,4 @@ async function handleMention(message) {
   }));
 }
 
-module.exports = { handleMention, extractParentContext };
+module.exports = { handleMention, extractParentContext, mentionsBotDirectly };

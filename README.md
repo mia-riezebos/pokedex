@@ -19,7 +19,7 @@ Built with discord.js 14, Express 5, Firebase/Firestore, and [OpenRouter](https:
 
 ### Moderation
 - **AutoMod** — Spam (rate/duplicate/mention), raid (join velocity), and content filters (caps, invites, blocklist) with escalating timeouts
-- **Manual tools** — `/ban`, `/kick`, `/timeout`, `/warn`, `/purge`, `/lock`, `/unlock`, `/slowmode`, `/deletethread`
+- **Manual tools** — `/ban`, `/kick`, `/mute`, `/unmute`, `/warn`, `/purge`, `/lock`, `/unlock`, `/slowmode`, `/deletethread`
 - **Infraction log** — Warnings persisted per user with reason and moderator
 
 ### Community & engagement
@@ -31,11 +31,8 @@ Built with discord.js 14, Express 5, Firebase/Firestore, and [OpenRouter](https:
 - **Starboard** — Configurable channel and star threshold
 - **Suggestions** — `/suggest` with status tracking (pending/approved/denied/considering/implemented)
 
-### Content & fun
-- **Pokédex lookup** — `/pokedex <name>` returns stats, types, abilities, and flavor text
-- **Type chart** — `/typechart <type>` for strengths, weaknesses, and sample Pokémon
+### Content
 - **Recipes** — `/recipes` browses the community recipe collection; `autoscrape` can auto-ingest new posts from `#show-and-tell`
-- **Rick and Morty** — `/rickandmorty` lookups, quotes, and burps
 
 ### Dashboard
 - Express REST API at `/api/issues`, `/api/stats`, and `/api/recipes`
@@ -113,11 +110,11 @@ Use `/help` in Discord for the live, grouped list. A summary:
 | Category | Commands |
 |----------|----------|
 | Issues | `/issue`, `/merge`, `/pokedexbug`, `/feedback`, `/feedbacktriage`, `/leaderboard` |
-| Moderation | `/automod`, `/ban`, `/kick`, `/timeout`, `/warn`, `/purge`, `/lock`, `/unlock`, `/slowmode`, `/deletethread` |
+| Moderation | `/automod`, `/ban`, `/kick`, `/mute`, `/unmute`, `/warn`, `/purge`, `/lock`, `/unlock`, `/slowmode`, `/deletethread` |
 | Community | `/level`, `/afk`, `/giveaway`, `/poll`, `/reactionrole`, `/starboard`, `/suggest` |
-| Content | `/pokedex`, `/typechart`, `/recipes`, `/rickandmorty` |
+| Content | `/recipes` |
 | Admin | `/config`, `/autoscrape` |
-| Meta | `/help`, `/ping`, `/serverinfo`, `/creator`, `/changelog` |
+| Meta | `/help`, `/ping`, `/serverinfo`, `/changelog` |
 
 ## Configuration
 
