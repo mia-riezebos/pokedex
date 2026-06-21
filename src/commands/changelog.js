@@ -2,6 +2,43 @@ const { SlashCommandBuilder, EmbedBuilder, ActionRowBuilder, ButtonBuilder, Butt
 
 const CHANGELOG = [
   {
+    version: '2.14.1',
+    date: '2026-06-21',
+    headline: 'Triage buttons stay clickable after you press one.',
+    sections: {
+      fixed: [
+        'Triage buttons no longer disable each other. Pressing a status (Acknowledged / Fixed / Won\'t Fix / Escalate) used to grey out **every** other button — including Delete and Gather Context — so you couldn\'t change the state again or fix a misclick. All buttons stay active now, and each press adds a status line to the embed as a log',
+      ],
+    },
+  },
+  {
+    version: '2.14.0',
+    date: '2026-06-21',
+    headline: 'Vision-powered image scam scanner.',
+    sections: {
+      new: [
+        '**Image scam scanner** — when a recently-joined member posts an image in a monitored channel, Pokedex scans it with a vision model. Confirmed scams are deleted, the user is muted, and admins are alerted. Set it up with `/automod scamscan` (off until you pick channels)',
+        '**Repost nuking** — confirmed scam images are fingerprinted, so the same picture (even resized or re-encoded) is removed on sight anywhere, with no second paid scan',
+      ],
+    },
+  },
+  {
+    version: '2.13.0',
+    date: '2026-06-21',
+    headline: 'Leaner command set and tougher scam filtering.',
+    sections: {
+      changed: [
+        'Removed the novelty commands `/pokedex`, `/typechart`, and `/rickandmorty` (off-topic for a triage bot). `/creator` stays',
+        'Removed `/timeout` — use `/mute <user> <duration>` instead (same Discord timeout, friendlier)',
+      ],
+      fixed: [
+        'AutoMod scam detection is harder to fool: sprinkling "PSA"/"beware" into a real lure no longer slips it past the filter, while genuine security advice like "never enter your seed phrase" is no longer wrongly flagged',
+        '`/unlockall` now restores every channel it locked, and a channel locked twice is restored once to its true previous state',
+        'Patched two vulnerable dependencies (`ws`, `@grpc/grpc-js`)',
+      ],
+    },
+  },
+  {
     version: '2.12.0',
     date: '2026-06-04',
     headline: 'Server lockdown, mute/unmute, scam blocking, and color roles.',

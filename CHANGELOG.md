@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [2.14.1] - 2026-06-21
+
+### Fixed
+- **Triage buttons stay active after a status click.** Pressing a status button (Acknowledged / Fixed / Won't Fix / Escalate) previously disabled *every* other button — including Delete and Gather Context — so a triager couldn't change the state again or recover from a misclick. All buttons now stay enabled; status is treated as a transition state, with each press appended to the embed as a running log.
+
 ## [2.14.0] - 2026-06-21
 
 ### Added
