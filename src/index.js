@@ -10,6 +10,7 @@ const { handleForumPost } = require('./triggers/forum');
 const { handleAutoScrape } = require('./triggers/autoscrape');
 // pending poller replaced by instant webhook message detection
 const automod = require('./services/automod');
+const scamscan = require('./services/scamscan');
 const { loadCommands, toRegistrationBody } = require('./commandLoader');
 
 // All slash + context-menu commands, loaded once at startup and keyed by their
@@ -125,6 +126,14 @@ client.on('messageCreate', async (message) => {
     if (automodResult) return; // Message was handled by automod (deleted)
   } catch (err) {
     console.error('Error in automod:', err);
+  }
+
+  // Image scam scanner — vision scan of new members' images + repost short-circuit
+  try {
+    const scamResult = await scamscan.handleMessage(message);
+    if (scamResult) return; // image removed
+  } catch (err) {
+    console.error('Error in scam scan:', err);
   }
 
   // AFK system — runs on every non-bot message (welcome back + mention notices)
