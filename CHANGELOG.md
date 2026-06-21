@@ -2,14 +2,29 @@
 
 ## [Unreleased]
 
+## [2.13.0] - 2026-06-21
+
 ### Removed
-- **Fun commands** — `/pokedex`, `/typechart`, `/rickandmorty`, and `/creator` have been removed. They were novelty/off-topic for a bug-triage bot and are no longer registered.
+- **Fun commands** — `/pokedex`, `/typechart`, and `/rickandmorty` have been removed. They were novelty/off-topic for a bug-triage bot and are no longer registered. (`/creator` is kept.)
 - **`/timeout`** — removed as redundant with `/mute` and `/unmute` (v2.12.0), which are friendlier wrappers over the same Discord timeout. Use `/mute <user> <duration>` instead.
 - **Colocated sub-projects** — `dashboard-vercel`, `forums-site`, `recipes-site`, `pokedex-mcp`, and `pokedex-mcp-cf` were extracted to their own standalone repositories (history preserved) and removed from this repo. The bot never referenced their code. The in-bot Express dashboard (`src/dashboard/`) and recipe ingestion (`src/recipes/`) are unaffected.
 
+### Fixed
+- **AutoMod scam detection — warning-context bypass closed.** A scammer could previously disable the entire crypto-scam scan just by sprinkling a warning word (`PSA`, `beware`, `scammers`, `phishing`) into a lure. Now an active call-to-action lure (`free nitro`, `send 1 BTC get 2 back`, `validate your wallet`, `double your bitcoin`) is flagged even when warning words are present, while genuine scam-warning PSAs are still left alone.
+- **AutoMod scam detection — fewer false positives.** Defensive security advice like "never enter your seed phrase" or "do not paste your private key anywhere" is no longer flagged as a scam (the existing "never share" exemption now also covers `enter`/`paste`/`submit` with `never`/`do not`/`avoid`). Legit dApp "connect your wallet" and plain price chatter remain unflagged.
+- **`/unlockall` restores every locked channel.** Channels recorded in legacy string form were misclassified as deleted and silently never reopened; they are now correctly unlocked. A channel recorded twice across repeated `/lockall` runs is restored once to its true pre-lock state instead of being edited twice.
+- **`/lockall`** also locks announcement/news channels (members can post there) and preserves each channel's pre-lock permission overwrites so `/unlockall` restores the exact prior state; forum channels are locked correctly, and a concurrency guard stops overlapping lockdown operations from corrupting the record. A total unlock failure never wipes the lockdown record, so a follow-up `/unlockall` can retry.
+- **`/mute`** no longer reports failure when the mute succeeded but the infraction-log write failed.
+- **`/color`** reuses an existing matching guild role (including presets) instead of creating duplicates, even under concurrent/cross-shard seeding; adds a duplicate-name guard, a resumable seed sentinel, and a list-length cap.
+- **Mentions** — replying to Pokedex no longer creates a spurious issue (`ignoreRepliedUser`).
+
+### Security
+- Bumped vulnerable transitive dependencies via `overrides`: **`ws`** 8.20.0 → 8.21.0 (remote memory-exhaustion DoS) and **`@grpc/grpc-js`** 1.14.3 → 1.14.4 (crash on malformed requests / compressed messages — GHSA-5375-pq7m-f5r2, GHSA-99f4-grh7-6pcq). Supersedes Dependabot PRs #65/#68/#71, whose remaining changes targeted the now-extracted sub-projects.
+
 ### Internal
 - **Command autoloader** — `src/index.js` now loads all slash + context-menu commands once at startup via a single `fs.readdirSync` loader (`src/commandLoader.js`) and derives the Discord registration payload from that map, replacing the hand-maintained per-command requires, registration array, and per-interaction dispatch map.
-- **Single test runner** — consolidated on `node --test`; ported the still-valuable specs out of the legacy `vitest` `tests/` directory into `test/` and removed `tests/`, the `test:legacy` script, and the `vitest` devDependency. Suite is green at 340 tests.
+- **Single test runner** — consolidated on `node --test`; ported the still-valuable specs out of the legacy `vitest` `tests/` directory into `test/` and removed `tests/`, the `test:legacy` script, and the `vitest` devDependency.
+- **Expanded edge-case coverage** — added hard-edge-case suites for lockdown, color roles, and crypto-scam detection. Suite is green at **435 tests**.
 - **CI** — added a GitHub Actions workflow that runs `npm ci` + `npm test` on Node 22 and 24 for every push to `main` and every pull request.
 
 ## [2.12.0] - 2026-06-04

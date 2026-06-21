@@ -20,19 +20,25 @@ async function execute(interaction) {
   }
 
   try {
+    // A recorded entry may be a bare channel-id string or a { id, prior } object
+    // (planUnlock honours both); read id/prior through helpers so legacy string
+    // records aren't all misclassified as "gone" (string.id === undefined).
+    const idOf = (item) => (typeof item === 'string' ? item : item.id);
+    const priorOf = (item) => (typeof item === 'string' ? undefined : item.prior);
+
     const existingIds = interaction.guild.channels.cache.map(c => c.id);
     const toUnlock = lockdown.planUnlock(record.lockedChannels, existingIds);
     // Records whose channel no longer exists can be dropped from the record outright.
-    const gone = record.lockedChannels.filter(c => !existingIds.includes(c.id));
+    const gone = record.lockedChannels.filter(c => !existingIds.includes(idOf(c)));
 
     let failed = 0;
     const resolved = [...gone];
     for (const item of toUnlock) {
-      const channel = interaction.guild.channels.cache.get(item.id);
+      const channel = interaction.guild.channels.cache.get(idOf(item));
       try {
         await channel.permissionOverwrites.edit(
           interaction.guild.roles.everyone,
-          lockdown.unlockOverwrite(channel.type, item.prior),
+          lockdown.unlockOverwrite(channel.type, priorOf(item)),
         );
         resolved.push(item);
       } catch (err) {

@@ -330,11 +330,35 @@ const CRYPTO_SCAM_LINK_PATTERNS = [
 // not be removed — these phrases almost never appear in an actual lure.
 const SCAM_WARNING_CONTEXT = /\b(scams?|scammers?|phishing|phish|beware|watch out|heads[- ]?up|psa|fraud|fraudulent|malicious|do ?n'?t click|stay safe|report(ed)? (this|it|the)|is a scam)\b/i;
 
+// Active call-to-action lures — a direct "do this now" that essentially never appears in a
+// genuine warning/PSA or in defensive security advice. If one matches it's a scam regardless
+// of any warning/advice words present, so a scammer can't disable the scan by sprinkling in
+// "PSA"/"beware"/"scammers"/"never".
+const ACTIVE_SCAM_LURE = new RegExp(
+  '\\bfree\\s+nitro\\b' +
+  '|\\b(claim|get|grab)\\s+(your\\s+)?(free\\s+)?(nitro|steam\\s+gift|gift\\s+card)\\b' +
+  '|\\bdouble (your |the )?(money|bitcoin|btc|eth|ethereum|crypto|deposit|investment)\\b' +
+  '|\\b(validate|verify|sync)\\s+(your\\s+)?wallet\\b' +
+  `|\\b(send|deposit)\\s+[\\d.]+\\s*(${CRYPTO})\\b[^\\n]{0,30}\\b(get|receive|return|back)\\b`,
+  'i',
+);
+
+// Defensive advice about credentials — "never enter / do not paste / avoid sharing your
+// seed phrase / private key". Mirrors the existing "never share" exemption so the seed-phrase
+// phishing pattern doesn't flag people warning others to protect their keys.
+const SECURITY_ADVICE = /\b(never|do not|do ?n'?t|avoid|keep|protect)\b[^.!?\n]{0,40}\b(seed phrase|recovery phrase|private key)\b/i;
+
 // Returns a reason string if crypto/giveaway scam content is detected, else null.
 function containsCryptoScam(content) {
   if (!content) return null;
   const text = normalizeForScan(content);
-  if (SCAM_WARNING_CONTEXT.test(text)) return null;
+  // Genuine warnings/PSAs and defensive security advice may quote scam phrasing. Exonerate
+  // them — but ONLY when no active call-to-action lure is present, so adding "PSA"/"beware"/
+  // "never" to a real lure can't disable the scan.
+  if (!ACTIVE_SCAM_LURE.test(text)) {
+    if (SCAM_WARNING_CONTEXT.test(text)) return null;
+    if (SECURITY_ADVICE.test(text)) return null;
+  }
   for (const re of CRYPTO_SCAM_PATTERNS) {
     if (re.test(text)) return 'Crypto/giveaway scam pattern';
   }

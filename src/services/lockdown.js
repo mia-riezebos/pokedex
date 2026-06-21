@@ -23,10 +23,21 @@ function planLockdown(channels, excludeIds = []) {
 }
 
 // `recorded` may be an array of channel-id strings or of { id, prior } records.
-// Returns the same items whose channel still exists in the guild.
+// Returns the items whose channel still exists in the guild, deduped by id keeping the
+// FIRST occurrence — that record carries the true pre-lockdown prior, and deduping stops
+// a channel that was recorded twice (re-locked with a changed overwrite) from being
+// edited twice during /unlockall.
 function planUnlock(recorded = [], existingChannelIds = []) {
   const existing = new Set(existingChannelIds);
-  return (recorded || []).filter(item => existing.has(typeof item === 'string' ? item : item.id));
+  const seen = new Set();
+  const out = [];
+  for (const item of (recorded || [])) {
+    const id = typeof item === 'string' ? item : item.id;
+    if (!existing.has(id) || seen.has(id)) continue;
+    seen.add(id);
+    out.push(item);
+  }
+  return out;
 }
 
 // --- Per-channel-type lock semantics (pure, unit-tested) ---
