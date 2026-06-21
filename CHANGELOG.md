@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+## [2.14.2] - 2026-06-21
+
+### Security
+- Patched three high-severity transitive vulnerabilities via `overrides`, all to in-major versions (no breaking upgrades): **`form-data`** → 2.5.6 (CRLF injection via unescaped multipart field names), **`protobufjs`** → 7.6.4 (prototype-shadowing + unbounded-`Any` DoS), and **`undici`** → 6.27.0 (Set-Cookie header injection + WebSocket DoS). Supersedes Dependabot #74. No remaining high/critical advisories; the 8 moderate advisories that remain are deep `firebase-admin` internals requiring a major `firebase-admin@14` bump (tracked separately).
+
 ## [2.14.1] - 2026-06-21
 
 ### Fixed
