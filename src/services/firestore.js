@@ -668,6 +668,45 @@ async function getPublishedFeedback(limit = 200) {
   return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
+// --- Raffles ---
+
+async function saveRaffle(raffleData) {
+  await db.collection('raffles').doc(raffleData.messageId).set({
+    ...raffleData,
+    updatedAt: Date.now(),
+  }, { merge: true });
+  return raffleData.messageId;
+}
+
+async function getRaffle(messageId) {
+  const doc = await db.collection('raffles').doc(messageId).get();
+  if (!doc.exists) return null;
+  return { id: doc.id, ...doc.data() };
+}
+
+async function updateRaffle(messageId, patch) {
+  await db.collection('raffles').doc(messageId).set({
+    ...patch,
+    updatedAt: Date.now(),
+  }, { merge: true });
+}
+
+async function listActiveRaffles(limit = 100) {
+  const snapshot = await db.collection('raffles')
+    .where('endedAt', '==', null)
+    .limit(Math.min(limit, 500))
+    .get();
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
+async function listRaffles(limit = 100) {
+  const snapshot = await db.collection('raffles')
+    .orderBy('updatedAt', 'desc')
+    .limit(Math.min(limit, 500))
+    .get();
+  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+}
+
 const noOp = undefined;
 const emptyArray = [];
 const emptyObject = {};
@@ -714,6 +753,11 @@ module.exports = {
   deleteRecipe: gate('deleteRecipe', deleteRecipe, noOp),
   saveFeedback: gate('saveFeedback', saveFeedback, () => ({ id: localIssueId(), duplicate: false, disabled: true })),
   getPublishedFeedback: gate('getPublishedFeedback', getPublishedFeedback, emptyArray),
+  saveRaffle: gate('saveRaffle', saveRaffle, noOp),
+  getRaffle: gate('getRaffle', getRaffle, nullValue),
+  updateRaffle: gate('updateRaffle', updateRaffle, noOp),
+  listActiveRaffles: gate('listActiveRaffles', listActiveRaffles, emptyArray),
+  listRaffles: gate('listRaffles', listRaffles, emptyArray),
   setIssueLastEvaluatedAt: gate('setIssueLastEvaluatedAt', setIssueLastEvaluatedAt, noOp),
   updateIssueResolution: gate('updateIssueResolution', updateIssueResolution, noOp),
   searchOpenIssuesForAgent: gate('searchOpenIssuesForAgent', searchOpenIssuesForAgent, emptyArray),

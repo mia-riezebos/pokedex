@@ -27,6 +27,7 @@ const welcomeCommand = commandMap.get('welcome');
 const changelogCommand = commandMap.get('changelog');
 const statusCommand = commandMap.get('status');
 const recipesCommand = commandMap.get('recipes');
+const raffleCommand = commandMap.get('raffle');
 const excludeContextCommand = commandMap.get('Exclude from Pokedex');
 const addContextMessageCommand = commandMap.get('Add to Pokedex context');
 const { createFetcher } = require('./services/statusFetcher');
@@ -106,6 +107,8 @@ client.once('clientReady', async () => {
   } else if (guild) {
     console.log('[triage] disabled (POKEDEX_DISABLE_TRIAGE=true)');
   }
+
+  raffleCommand.resumeActiveRaffles(client).catch((err) => console.error('[raffle] failed to resume active raffles:', err));
 
   if (config.getConfig('status_enabled')) {
     try {
@@ -487,6 +490,19 @@ async function handleButtonInteraction(interaction) {
       }
     } catch (err) {
       console.error('Failed to re-process as new issue:', err);
+    }
+    return;
+  }
+
+  // --- Raffle buttons ---
+  if (customId.startsWith('raffle_')) {
+    try {
+      await raffleCommand.handleRaffleButton(interaction);
+    } catch (err) {
+      console.error('Failed to process raffle interaction:', err);
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: 'Failed to process raffle action.', ephemeral: true }).catch(() => {});
+      }
     }
     return;
   }

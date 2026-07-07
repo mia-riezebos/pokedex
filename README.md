@@ -189,7 +189,7 @@ src/
 
 ### Firestore collections
 
-`issues`, `config`, `automod` (with `config` / `blocklist` / `links` / `exemptions` sub-documents), `levels`, `infractions`, `suggestions`, `suggest_config`, `giveaways`, `starboard_config`, `starboard_posts`, `recipes`, `feedback`, `reaction_roles`, `welcome_config`.
+`issues`, `config`, `automod` (with `config` / `blocklist` / `links` / `exemptions` sub-documents), `levels`, `infractions`, `suggestions`, `suggest_config`, `giveaways`, `raffles`, `starboard_config`, `starboard_posts`, `recipes`, `feedback`, `reaction_roles`, `welcome_config`.
 
 ## License
 
