@@ -71,12 +71,15 @@ cp .env.example .env
 | `DISCORD_TOKEN` | yes | Bot token from Discord Developer Portal |
 | `DISCORD_APP_ID` | yes | Application ID |
 | `DISCORD_GUILD_ID` | yes | Server ID (right-click server → Copy Server ID) |
-| `OPENROUTER_API_KEY` | yes | OpenRouter API key |
-| `FIREBASE_PROJECT_ID` | yes | Firebase project ID |
-| `FIREBASE_CLIENT_EMAIL` | yes | Service account email |
-| `FIREBASE_PRIVATE_KEY` | yes | Private key from Firebase service account JSON |
+| `OPENROUTER_API_KEY` | no | OpenRouter API key; AI classification/tagging falls back or disables when omitted |
+| `FIREBASE_PROJECT_ID` | no | Firebase project ID; Firebase-backed persistence/features disable when omitted |
+| `FIREBASE_CLIENT_EMAIL` | no | Service account email; Firebase-backed persistence/features disable when omitted |
+| `FIREBASE_PRIVATE_KEY` | no | Private key from Firebase service account JSON; keep `\\n` escapes |
 | `DASHBOARD_API_KEY` | no | API key for dashboard endpoints; omit to allow localhost only |
 | `DASHBOARD_PORT` | no | Dashboard port (default `3000`) |
+| `POKEDEX_DISABLE_TRIAGE` | no | Set to `true` to skip posting issue embeds to the triage channel in local dev |
+
+Local development can run without Firebase, OpenRouter, or a triage channel. Missing Firebase disables persistence-backed features such as issue storage, moderation state, reaction roles, starboard, levels, welcome config, forum/thread issue tracking, and Pokedex context actions. Missing OpenRouter disables AI-backed classification/deduplication/tagging and uses local fallbacks where available. `POKEDEX_DISABLE_TRIAGE=true` disables triage-channel checks and issue embed posting.
 
 ### 3. Discord Developer Portal
 
