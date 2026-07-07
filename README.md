@@ -26,6 +26,7 @@ Built with discord.js 14, Express 5, Firebase/Firestore, and [OpenRouter](https:
 - **Leveling** — XP per message with cooldown; `/level`, `/leaderboard`
 - **AFK** — `/afk` sets status; mentions auto-reply with the AFK message
 - **Giveaways** — `/giveaway` with configurable winners and reroll
+- **Raffles** — `/raffle create` with Join/Leave buttons, slash-command pick/cancel/reroll/entrant list, optional role eligibility, entrant caps, deadlines, and image galleries
 - **Polls** — `/poll` with auto-close and results tally
 - **Reaction roles** — `/reactionrole` to wire up self-assign menus
 - **Starboard** — Configurable channel and star threshold
@@ -114,7 +115,7 @@ Use `/help` in Discord for the live, grouped list. A summary:
 |----------|----------|
 | Issues | `/issue`, `/merge`, `/pokedexbug`, `/feedback`, `/feedbacktriage`, `/leaderboard` |
 | Moderation | `/automod`, `/ban`, `/kick`, `/mute`, `/unmute`, `/warn`, `/purge`, `/lock`, `/unlock`, `/slowmode`, `/deletethread` |
-| Community | `/level`, `/afk`, `/giveaway`, `/poll`, `/reactionrole`, `/starboard`, `/suggest` |
+| Community | `/level`, `/afk`, `/giveaway`, `/raffle`, `/poll`, `/reactionrole`, `/starboard`, `/suggest` |
 | Content | `/recipes` |
 | Admin | `/config`, `/autoscrape` |
 | Meta | `/help`, `/ping`, `/serverinfo`, `/changelog` |

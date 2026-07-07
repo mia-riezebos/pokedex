@@ -19,6 +19,12 @@ const RAFFLE_COLORS = {
   ended: 0x2ecc71,
   canceled: 0xe74c3c,
 };
+const MAX_ENTRANT_LIST_LENGTH = 1900;
+
+function normalizeMaxEntrants(maxEntrants) {
+  const value = Number(maxEntrants);
+  return Number.isSafeInteger(value) && value > 0 ? value : null;
+}
 
 const data = new SlashCommandBuilder()
   .setName('raffle')
@@ -55,6 +61,26 @@ const data = new SlashCommandBuilder()
           .setName('image')
           .setDescription('Optional raffle image')
           .setRequired(false),
+      )
+      .addRoleOption((option) =>
+        option
+          .setName('required_role')
+          .setDescription('Only members with this role can join')
+          .setRequired(false),
+      )
+      .addRoleOption((option) =>
+        option
+          .setName('blocked_role')
+          .setDescription('Members with this role cannot join')
+          .setRequired(false),
+      )
+      .addIntegerOption((option) =>
+        option
+          .setName('max_entrants')
+          .setDescription('Optional cap on entrants')
+          .setRequired(false)
+          .setMinValue(1)
+          .setMaxValue(10000),
       ),
   )
   .addSubcommand((subcommand) =>
@@ -92,15 +118,40 @@ const data = new SlashCommandBuilder()
           .setRequired(true)
           .setAutocomplete(true),
       ),
+  )
+  .addSubcommand((subcommand) =>
+    subcommand
+      .setName('entrants')
+      .setDescription('List entrants for a raffle')
+      .addStringOption((option) =>
+        option
+          .setName('raffle')
+          .setDescription('Raffle to inspect')
+          .setRequired(true)
+          .setAutocomplete(true),
+      ),
   );
 
-function createRaffle({ title, description, hostId, durationMinutes = null, imageUrl = null, now = Date.now() }) {
+function createRaffle({
+  title,
+  description,
+  hostId,
+  durationMinutes = null,
+  imageUrl = null,
+  requiredRoleId = null,
+  blockedRoleId = null,
+  maxEntrants = null,
+  now = Date.now(),
+}) {
   const endsAt = durationMinutes ? now + durationMinutes * 60_000 : null;
   return {
     title,
     description,
     hostId,
     imageUrl,
+    requiredRoleId: requiredRoleId || null,
+    blockedRoleId: blockedRoleId || null,
+    maxEntrants: normalizeMaxEntrants(maxEntrants),
     guildId: null,
     channelId: null,
     messageId: null,
@@ -123,6 +174,9 @@ function serializeRaffle(messageId, raffle) {
     description: raffle.description,
     hostId: raffle.hostId,
     imageUrl: raffle.imageUrl || null,
+    requiredRoleId: raffle.requiredRoleId || null,
+    blockedRoleId: raffle.blockedRoleId || null,
+    maxEntrants: normalizeMaxEntrants(raffle.maxEntrants),
     createdAt: raffle.createdAt || Date.now(),
     endsAt: raffle.endsAt || null,
     entrants: [...raffle.entrants.values()].map((entrant) => ({
@@ -142,6 +196,9 @@ function hydrateRaffle(data) {
     description: data.description,
     hostId: data.hostId,
     imageUrl: data.imageUrl || null,
+    requiredRoleId: data.requiredRoleId || null,
+    blockedRoleId: data.blockedRoleId || null,
+    maxEntrants: normalizeMaxEntrants(data.maxEntrants),
     guildId: data.guildId || null,
     channelId: data.channelId || null,
     messageId: data.messageId || data.id || null,
@@ -198,9 +255,29 @@ function ticketCount(raffle) {
   return raffle.entrants.size;
 }
 
-function joinRaffle(raffle, user, now = Date.now()) {
+function memberHasRole(member, roleId) {
+  if (!member || !roleId) return false;
+  const roles = member.roles;
+  if (!roles) return false;
+  if (roles.cache?.has(roleId)) return true;
+  if (typeof roles.has === 'function' && roles.has(roleId)) return true;
+  if (Array.isArray(roles)) return roles.includes(roleId) || roles.some((role) => role?.id === roleId);
+  if (Array.isArray(roles.cache)) return roles.cache.some((role) => role?.id === roleId || role === roleId);
+  return false;
+}
+
+function getRaffleEligibilityFailure(raffle, member) {
+  if (raffle.maxEntrants && raffle.entrants.size >= raffle.maxEntrants) return 'full';
+  if (raffle.blockedRoleId && memberHasRole(member, raffle.blockedRoleId)) return 'blocked_role';
+  if (raffle.requiredRoleId && !memberHasRole(member, raffle.requiredRoleId)) return 'missing_required_role';
+  return null;
+}
+
+function joinRaffle(raffle, user, now = Date.now(), member = null) {
   if (raffle.endedAt) return { ok: false, reason: 'ended' };
   if (raffle.entrants.has(user.id)) return { ok: false, reason: 'already_joined' };
+  const eligibilityFailure = getRaffleEligibilityFailure(raffle, member);
+  if (eligibilityFailure) return { ok: false, reason: eligibilityFailure };
   raffle.entrants.set(user.id, { id: user.id, username: user.username || user.tag || user.id, joinedAt: now });
   return { ok: true };
 }
@@ -251,7 +328,8 @@ function getRaffleColor(raffle) {
 }
 
 function buildRaffleStatus(raffle) {
-  const parts = [`🎟️ ${ticketCount(raffle)} entered`];
+  const count = raffle.maxEntrants ? `${ticketCount(raffle)}/${raffle.maxEntrants}` : ticketCount(raffle);
+  const parts = [`🎟️ ${count} entered`];
   if (raffle.winnerId) {
     parts.push(`winner <@${raffle.winnerId}>`);
   } else if (raffle.canceledAt) {
@@ -262,6 +340,36 @@ function buildRaffleStatus(raffle) {
     parts.push(`ends in <t:${Math.floor(raffle.endsAt / 1000)}:R>`);
   }
   return `-# ${parts.join(' • ')}`;
+}
+
+function buildRaffleEligibilityLine(raffle) {
+  const parts = [];
+  if (raffle.requiredRoleId) parts.push(`requires <@&${raffle.requiredRoleId}>`);
+  if (raffle.blockedRoleId) parts.push(`excludes <@&${raffle.blockedRoleId}>`);
+  if (raffle.maxEntrants) parts.push(`max ${raffle.maxEntrants} entrant${raffle.maxEntrants === 1 ? '' : 's'}`);
+  return parts.length ? `-# Eligibility: ${parts.join(' • ')}` : null;
+}
+
+function formatEntrantList(raffle) {
+  const entrants = [...raffle.entrants.values()].sort((a, b) => (a.joinedAt || 0) - (b.joinedAt || 0));
+  if (entrants.length === 0) return `**${raffle.title}** has no entrants yet.`;
+
+  const header = `**${raffle.title}** has ${entrants.length} entrant${entrants.length === 1 ? '' : 's'}:`;
+  const lines = [];
+  let length = header.length;
+
+  for (const [index, entrant] of entrants.entries()) {
+    const joined = entrant.joinedAt ? ` — joined <t:${Math.floor(entrant.joinedAt / 1000)}:R>` : '';
+    const line = `${index + 1}. <@${entrant.id}>${joined}`;
+    if (length + line.length + 1 > MAX_ENTRANT_LIST_LENGTH) {
+      lines.push(`…and ${entrants.length - index} more.`);
+      break;
+    }
+    lines.push(line);
+    length += line.length + 1;
+  }
+
+  return `${header}\n${lines.join('\n')}`;
 }
 
 function buildRaffleActionRow(messageId, raffleOrEnded = false) {
@@ -299,6 +407,9 @@ function buildRaffleComponents(messageId, raffleOrEnded = false) {
     );
   }
 
+  const eligibilityLine = buildRaffleEligibilityLine(raffle);
+  if (eligibilityLine) container.addTextDisplayComponents(new TextDisplayBuilder().setContent(eligibilityLine));
+
   container
     .addSeparatorComponents(new SeparatorBuilder())
     .addTextDisplayComponents(new TextDisplayBuilder().setContent(buildRaffleStatus(raffle)));
@@ -315,6 +426,7 @@ function buildRaffleMessagePayload(messageId, raffle) {
   return {
     flags: MessageFlags.IsComponentsV2,
     components: buildRaffleComponents(messageId, raffle),
+    allowedMentions: { parse: [] },
   };
 }
 
@@ -377,8 +489,20 @@ async function resumeActiveRaffles(client) {
   if (resumed > 0) console.log(`[raffle] resumed ${resumed} active raffle deadline${resumed === 1 ? '' : 's'}`);
 }
 
-function canManageRaffles(member) {
-  return Boolean(member?.permissions?.has(PermissionFlagsBits.ManageGuild));
+function isRaffleInGuild(raffle, interactionGuildId, requestedGuildId = null) {
+  if (!interactionGuildId) return true;
+  if (requestedGuildId && requestedGuildId !== interactionGuildId) return false;
+  return !raffle.guildId || raffle.guildId === interactionGuildId;
+}
+
+async function loadRaffleForInteraction(raffleId, interaction) {
+  const { guildId: requestedGuildId, messageId } = parseRaffleId(raffleId);
+  const raffle = await loadRaffle(raffleId);
+  if (!raffle) return { raffle: null, messageId, wrongGuild: false };
+  if (!isRaffleInGuild(raffle, interaction.guildId, requestedGuildId)) {
+    return { raffle: null, messageId, wrongGuild: true };
+  }
+  return { raffle, messageId, wrongGuild: false };
 }
 
 async function listKnownRaffles() {
@@ -398,6 +522,7 @@ async function listKnownRaffles() {
 
 function filterRafflesForAction(items, action) {
   return items.filter(({ raffle }) => {
+    if (action === 'entrants') return true;
     if (action === 'reroll') return !!raffle.endedAt && !!raffle.winnerId && !raffle.canceledAt;
     return !raffle.endedAt && !raffle.canceledAt;
   });
@@ -410,9 +535,20 @@ function formatRaffleChoice(id, raffle) {
 }
 
 async function fetchRaffleMessage(interaction, raffle) {
-  const channelId = raffle.channelId || interaction.channelId;
-  const channel = await interaction.client.channels.fetch(channelId);
-  return channel.messages.fetch(raffle.messageId);
+  try {
+    const channelId = raffle.channelId || interaction.channelId;
+    const channel = await interaction.client.channels.fetch(channelId);
+    return await channel.messages.fetch(raffle.messageId);
+  } catch (err) {
+    const missing = new Error('Raffle message could not be found');
+    missing.code = 'RAFFLE_MESSAGE_NOT_FOUND';
+    missing.cause = err;
+    throw missing;
+  }
+}
+
+async function editMissingRaffleMessageReply(interaction) {
+  await interaction.editReply({ content: 'I could not find the original raffle message. It may have been deleted.' });
 }
 
 async function execute(interaction) {
@@ -421,11 +557,15 @@ async function execute(interaction) {
   if (subcommand === 'pick') return executePick(interaction);
   if (subcommand === 'cancel') return executeCancel(interaction);
   if (subcommand === 'reroll') return executeReroll(interaction);
+  if (subcommand === 'entrants') return executeEntrants(interaction);
 }
 
 async function executeCreate(interaction) {
   const durationMinutes = interaction.options.getInteger('duration_minutes');
   const image = interaction.options.getAttachment('image');
+  const requiredRole = interaction.options.getRole('required_role');
+  const blockedRole = interaction.options.getRole('blocked_role');
+  const maxEntrants = interaction.options.getInteger('max_entrants');
   if (image && image.contentType && !image.contentType.startsWith('image/')) {
     await interaction.reply({ content: 'The raffle attachment must be an image.', ephemeral: true });
     return;
@@ -437,6 +577,9 @@ async function executeCreate(interaction) {
     hostId: interaction.user.id,
     durationMinutes,
     imageUrl: image?.url || null,
+    requiredRoleId: requiredRole?.id || null,
+    blockedRoleId: blockedRole?.id || null,
+    maxEntrants,
   });
 
   const message = await interaction.reply({
@@ -456,14 +599,24 @@ async function executeCreate(interaction) {
 async function executePick(interaction) {
   await interaction.deferReply({ ephemeral: true });
   const raffleId = interaction.options.getString('raffle');
-  const { messageId } = parseRaffleId(raffleId);
-  const raffle = await loadRaffle(raffleId);
+  const { raffle, wrongGuild } = await loadRaffleForInteraction(raffleId, interaction);
+  if (wrongGuild) {
+    await interaction.editReply({ content: 'That raffle belongs to another server.' });
+    return;
+  }
   if (!raffle || raffle.endedAt || raffle.canceledAt) {
     await interaction.editReply({ content: 'That raffle is not active.' });
     return;
   }
 
-  const message = await fetchRaffleMessage(interaction, raffle);
+  let message;
+  try {
+    message = await fetchRaffleMessage(interaction, raffle);
+  } catch (err) {
+    await editMissingRaffleMessageReply(interaction);
+    return;
+  }
+
   const result = await endRaffle(message, raffle);
   if (!result.ok && result.reason === 'no_entrants') {
     await interaction.editReply({ content: 'Raffle ended with no entrants.' });
@@ -475,10 +628,21 @@ async function executePick(interaction) {
 async function executeCancel(interaction) {
   await interaction.deferReply({ ephemeral: true });
   const raffleId = interaction.options.getString('raffle');
-  const { messageId } = parseRaffleId(raffleId);
-  const raffle = await loadRaffle(raffleId);
+  const { raffle, messageId, wrongGuild } = await loadRaffleForInteraction(raffleId, interaction);
+  if (wrongGuild) {
+    await interaction.editReply({ content: 'That raffle belongs to another server.' });
+    return;
+  }
   if (!raffle || raffle.endedAt || raffle.canceledAt) {
     await interaction.editReply({ content: 'That raffle is not active.' });
+    return;
+  }
+
+  let message;
+  try {
+    message = await fetchRaffleMessage(interaction, raffle);
+  } catch (err) {
+    await editMissingRaffleMessageReply(interaction);
     return;
   }
 
@@ -488,7 +652,6 @@ async function executeCancel(interaction) {
     return;
   }
 
-  const message = await fetchRaffleMessage(interaction, raffle);
   await persistRaffle(messageId, raffle);
   await refreshRaffleMessage(message, raffle);
   await interaction.editReply({ content: `Canceled **${raffle.title}**.` });
@@ -497,19 +660,49 @@ async function executeCancel(interaction) {
 async function executeReroll(interaction) {
   await interaction.deferReply({ ephemeral: true });
   const raffleId = interaction.options.getString('raffle');
-  const raffle = await loadRaffle(raffleId);
+  const { raffle, wrongGuild } = await loadRaffleForInteraction(raffleId, interaction);
+  if (wrongGuild) {
+    await interaction.editReply({ content: 'That raffle belongs to another server.' });
+    return;
+  }
   if (!raffle || !raffle.endedAt || !raffle.winnerId || raffle.canceledAt) {
     await interaction.editReply({ content: 'That raffle does not have a winner to reroll.' });
     return;
   }
 
-  const message = await fetchRaffleMessage(interaction, raffle);
+  let message;
+  try {
+    message = await fetchRaffleMessage(interaction, raffle);
+  } catch (err) {
+    await editMissingRaffleMessageReply(interaction);
+    return;
+  }
+
   const result = await endRaffle(message, raffle, { reroll: true });
   if (!result.ok) {
     await interaction.editReply({ content: 'Could not reroll this raffle.' });
     return;
   }
   await interaction.editReply({ content: `Rerolled **${raffle.title}**: <@${result.winnerId}>` });
+}
+
+async function executeEntrants(interaction) {
+  await interaction.deferReply({ ephemeral: true });
+  const raffleId = interaction.options.getString('raffle');
+  const { raffle, wrongGuild } = await loadRaffleForInteraction(raffleId, interaction);
+  if (wrongGuild) {
+    await interaction.editReply({ content: 'That raffle belongs to another server.' });
+    return;
+  }
+  if (!raffle) {
+    await interaction.editReply({ content: 'That raffle could not be found.' });
+    return;
+  }
+
+  await interaction.editReply({
+    content: formatEntrantList(raffle),
+    allowedMentions: { parse: [] },
+  });
 }
 
 async function autocomplete(interaction) {
@@ -527,19 +720,31 @@ async function handleRaffleButton(interaction) {
   const [, action, messageId] = interaction.customId.split('_');
   const raffle = await loadRaffle(messageId);
 
-  if (!raffle) {
+  if (!raffle || (raffle.guildId && raffle.guildId !== interaction.guildId)) {
     await interaction.reply({ content: 'This raffle is no longer active.', ephemeral: true });
     return;
   }
 
   if (action === 'join') {
-    const result = joinRaffle(raffle, interaction.user);
+    const result = joinRaffle(raffle, interaction.user, Date.now(), interaction.member);
     if (result.reason === 'ended') {
       await interaction.reply({ content: 'This raffle has already ended.', ephemeral: true });
       return;
     }
     if (result.reason === 'already_joined') {
       await interaction.reply({ content: 'You are already in this raffle. You still have 1 ticket.', ephemeral: true });
+      return;
+    }
+    if (result.reason === 'full') {
+      await interaction.reply({ content: 'This raffle is full.', ephemeral: true });
+      return;
+    }
+    if (result.reason === 'blocked_role') {
+      await interaction.reply({ content: 'You are not eligible to join this raffle.', ephemeral: true });
+      return;
+    }
+    if (result.reason === 'missing_required_role') {
+      await interaction.reply({ content: `You need <@&${raffle.requiredRoleId}> to join this raffle.`, ephemeral: true, allowedMentions: { parse: [] } });
       return;
     }
 
@@ -584,9 +789,13 @@ module.exports = {
   leaveRaffle,
   pickWinner,
   cancelRaffle,
+  memberHasRole,
+  isRaffleInGuild,
   buildRaffleStatus,
+  buildRaffleEligibilityLine,
   buildRaffleComponents,
   buildRaffleMessagePayload,
+  formatEntrantList,
   raffles,
   requiresFirebase: false,
 };

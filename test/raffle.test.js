@@ -8,8 +8,12 @@ const {
   pickWinner,
   cancelRaffle,
   buildRaffleComponents,
+  buildRaffleEligibilityLine,
+  buildRaffleMessagePayload,
   buildRaffleStatus,
+  formatEntrantList,
   hydrateRaffle,
+  isRaffleInGuild,
   makeRaffleId,
   parseRaffleId,
   serializeRaffle,
@@ -62,18 +66,55 @@ describe('raffle', () => {
   });
 
   test('serializes and hydrates persistent raffle state', () => {
-    const raffle = createRaffle({ title: 'Prize', description: 'Desc', hostId: 'host', durationMinutes: 10, now: 1000 });
+    const raffle = createRaffle({
+      title: 'Prize',
+      description: 'Desc',
+      hostId: 'host',
+      durationMinutes: 10,
+      requiredRoleId: 'eligible',
+      blockedRoleId: 'blocked',
+      maxEntrants: 20,
+      now: 1000,
+    });
     raffle.guildId = 'guild';
     raffle.channelId = 'channel';
-    joinRaffle(raffle, { id: 'u1', username: 'Mia' }, 2000);
+    joinRaffle(raffle, { id: 'u1', username: 'Mia' }, 2000, { roles: ['eligible'] });
 
     const saved = serializeRaffle('message', raffle);
     const hydrated = hydrateRaffle(saved);
 
     assert.equal(hydrated.messageId, 'message');
     assert.equal(hydrated.endsAt, 601000);
+    assert.equal(hydrated.requiredRoleId, 'eligible');
+    assert.equal(hydrated.blockedRoleId, 'blocked');
+    assert.equal(hydrated.maxEntrants, 20);
     assert.deepEqual([...hydrated.entrants.keys()], ['u1']);
     assert.equal(hydrated.entrants.get('u1').joinedAt, 2000);
+  });
+
+  test('enforces eligibility controls before joining', () => {
+    const raffle = createRaffle({
+      title: 'Prize',
+      description: 'Desc',
+      hostId: 'host',
+      requiredRoleId: 'eligible',
+      blockedRoleId: 'blocked',
+      maxEntrants: 1,
+    });
+
+    assert.deepEqual(joinRaffle(raffle, { id: 'u1' }, 1000, { roles: [] }), { ok: false, reason: 'missing_required_role' });
+    assert.deepEqual(joinRaffle(raffle, { id: 'u1' }, 1000, { roles: ['eligible', 'blocked'] }), { ok: false, reason: 'blocked_role' });
+    assert.deepEqual(joinRaffle(raffle, { id: 'u1' }, 1000, { roles: { cache: new Map([['eligible', {}]]) } }), { ok: true });
+    assert.deepEqual(joinRaffle(raffle, { id: 'u2' }, 1000, { roles: ['eligible'] }), { ok: false, reason: 'full' });
+  });
+
+  test('guild-bound raffle ids cannot be used from another guild', () => {
+    const raffle = createRaffle({ title: 'Prize', description: 'Desc', hostId: 'host' });
+    raffle.guildId = 'guild-a';
+
+    assert.equal(isRaffleInGuild(raffle, 'guild-a', 'guild-a'), true);
+    assert.equal(isRaffleInGuild(raffle, 'guild-b', 'guild-a'), false);
+    assert.equal(isRaffleInGuild(raffle, 'guild-b'), false);
   });
 
   test('renders ticket count and active buttons', () => {
@@ -97,6 +138,38 @@ describe('raffle', () => {
       'raffle_join_message-id',
       'raffle_leave_message-id',
     ]);
+  });
+
+  test('renders eligibility controls without enabling mention parsing', () => {
+    const raffle = createRaffle({
+      title: '@everyone prize',
+      description: 'Desc <@123>',
+      hostId: 'host',
+      requiredRoleId: 'eligible',
+      blockedRoleId: 'blocked',
+      maxEntrants: 2,
+    });
+    joinRaffle(raffle, { id: 'u1' }, 1000, { roles: ['eligible'] });
+
+    assert.equal(buildRaffleStatus(raffle), '-# 🎟️ 1/2 entered');
+    assert.equal(buildRaffleEligibilityLine(raffle), '-# Eligibility: requires <@&eligible> • excludes <@&blocked> • max 2 entrants');
+
+    const payload = buildRaffleMessagePayload('message-id', raffle);
+    assert.deepEqual(payload.allowedMentions, { parse: [] });
+
+    const components = payload.components.map((component) => component.toJSON());
+    assert.equal(components[1].components[2].content, '-# Eligibility: requires <@&eligible> • excludes <@&blocked> • max 2 entrants');
+  });
+
+  test('formats entrant lists for moderator inspection', () => {
+    const raffle = createRaffle({ title: 'Prize', description: 'Desc', hostId: 'host' });
+    joinRaffle(raffle, { id: 'u2' }, 2000);
+    joinRaffle(raffle, { id: 'u1' }, 1000);
+
+    assert.equal(
+      formatEntrantList(raffle),
+      '**Prize** has 2 entrants:\n1. <@u1> — joined <t:1:R>\n2. <@u2> — joined <t:2:R>',
+    );
   });
 
   test('after a winner is picked, join and leave buttons are removed', () => {
