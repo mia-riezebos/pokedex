@@ -21,6 +21,17 @@ const RAFFLE_COLORS = {
 };
 const MAX_ENTRANT_LIST_LENGTH = 1900;
 
+function withoutMentionParsing(payload) {
+  return {
+    ...payload,
+    allowedMentions: { parse: [] },
+  };
+}
+
+function buildRaffleReplyPayload(content) {
+  return withoutMentionParsing({ content });
+}
+
 function normalizeMaxEntrants(maxEntrants) {
   const value = Number(maxEntrants);
   return Number.isSafeInteger(value) && value > 0 ? value : null;
@@ -423,11 +434,10 @@ function buildRaffleComponents(messageId, raffleOrEnded = false) {
 }
 
 function buildRaffleMessagePayload(messageId, raffle) {
-  return {
+  return withoutMentionParsing({
     flags: MessageFlags.IsComponentsV2,
     components: buildRaffleComponents(messageId, raffle),
-    allowedMentions: { parse: [] },
-  };
+  });
 }
 
 async function refreshRaffleMessage(message, raffle) {
@@ -622,7 +632,7 @@ async function executePick(interaction) {
     await interaction.editReply({ content: 'Raffle ended with no entrants.' });
     return;
   }
-  await interaction.editReply({ content: `Picked winner for **${raffle.title}**: <@${result.winnerId}>` });
+  await interaction.editReply(buildRaffleReplyPayload(`Picked winner for **${raffle.title}**: <@${result.winnerId}>`));
 }
 
 async function executeCancel(interaction) {
@@ -654,7 +664,7 @@ async function executeCancel(interaction) {
 
   await persistRaffle(messageId, raffle);
   await refreshRaffleMessage(message, raffle);
-  await interaction.editReply({ content: `Canceled **${raffle.title}**.` });
+  await interaction.editReply(buildRaffleReplyPayload(`Canceled **${raffle.title}**.`));
 }
 
 async function executeReroll(interaction) {
@@ -683,7 +693,7 @@ async function executeReroll(interaction) {
     await interaction.editReply({ content: 'Could not reroll this raffle.' });
     return;
   }
-  await interaction.editReply({ content: `Rerolled **${raffle.title}**: <@${result.winnerId}>` });
+  await interaction.editReply(buildRaffleReplyPayload(`Rerolled **${raffle.title}**: <@${result.winnerId}>`));
 }
 
 async function executeEntrants(interaction) {
@@ -699,10 +709,7 @@ async function executeEntrants(interaction) {
     return;
   }
 
-  await interaction.editReply({
-    content: formatEntrantList(raffle),
-    allowedMentions: { parse: [] },
-  });
+  await interaction.editReply(buildRaffleReplyPayload(formatEntrantList(raffle)));
 }
 
 async function autocomplete(interaction) {
@@ -744,13 +751,19 @@ async function handleRaffleButton(interaction) {
       return;
     }
     if (result.reason === 'missing_required_role') {
-      await interaction.reply({ content: `You need <@&${raffle.requiredRoleId}> to join this raffle.`, ephemeral: true, allowedMentions: { parse: [] } });
+      await interaction.reply({
+        ...buildRaffleReplyPayload(`You need <@&${raffle.requiredRoleId}> to join this raffle.`),
+        ephemeral: true,
+      });
       return;
     }
 
     await persistRaffle(messageId, raffle);
     await refreshRaffleMessage(interaction.message, raffle);
-    await interaction.reply({ content: `You joined **${raffle.title}**. You have 1 raffle ticket.`, ephemeral: true });
+    await interaction.reply({
+      ...buildRaffleReplyPayload(`You joined **${raffle.title}**. You have 1 raffle ticket.`),
+      ephemeral: true,
+    });
     return;
   }
 
@@ -767,7 +780,10 @@ async function handleRaffleButton(interaction) {
 
     await persistRaffle(messageId, raffle);
     await refreshRaffleMessage(interaction.message, raffle);
-    await interaction.reply({ content: `You left **${raffle.title}**.`, ephemeral: true });
+    await interaction.reply({
+      ...buildRaffleReplyPayload(`You left **${raffle.title}**.`),
+      ephemeral: true,
+    });
     return;
   }
 
@@ -795,6 +811,7 @@ module.exports = {
   buildRaffleEligibilityLine,
   buildRaffleComponents,
   buildRaffleMessagePayload,
+  buildRaffleReplyPayload,
   formatEntrantList,
   raffles,
   requiresFirebase: false,

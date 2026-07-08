@@ -10,6 +10,7 @@ const {
   buildRaffleComponents,
   buildRaffleEligibilityLine,
   buildRaffleMessagePayload,
+  buildRaffleReplyPayload,
   buildRaffleStatus,
   formatEntrantList,
   hydrateRaffle,
@@ -170,6 +171,15 @@ describe('raffle', () => {
       formatEntrantList(raffle),
       '**Prize** has 2 entrants:\n1. <@u1> — joined <t:1:R>\n2. <@u2> — joined <t:2:R>',
     );
+  });
+
+  test('suppresses mention parsing for raffle reply payloads', () => {
+    const payload = buildRaffleReplyPayload('Picked winner for **@everyone prize**: <@winner>');
+
+    assert.deepEqual(payload, {
+      content: 'Picked winner for **@everyone prize**: <@winner>',
+      allowedMentions: { parse: [] },
+    });
   });
 
   test('after a winner is picked, join and leave buttons are removed', () => {
